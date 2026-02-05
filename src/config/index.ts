@@ -1,62 +1,59 @@
-import dotenv from 'dotenv';
-import path from 'path';
+// src/config/index.ts
 
-// Load env file
-dotenv.config({ path: path.join(__dirname, '../../.env') });
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 export const config = {
   // App
   nodeEnv: process.env.NODE_ENV || 'development',
-  port: parseInt(process.env.PORT || '5000', 10),
+  port: parseInt(process.env.PORT || '10000', 10),
   apiVersion: process.env.API_VERSION || 'v1',
-  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
+  
+  // Frontend URL - Make sure this is set!
+  frontendUrl: process.env.FRONTEND_URL || 'https://wabmeta.com',
   
   // Database
-  databaseUrl: process.env.DATABASE_URL!,
-  
-  // Redis
-  redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
+  databaseUrl: process.env.DATABASE_URL || '',
   
   // JWT
-  jwt: {
-    secret: process.env.JWT_SECRET!,
-    expiresIn: process.env.JWT_EXPIRES_IN || '15m',
-    refreshSecret: process.env.JWT_REFRESH_SECRET!,
-    refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
-  },
+  jwtSecret: process.env.JWT_SECRET || 'your-secret-key',
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || 'your-refresh-secret',
+  jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
   
   // Email
-  email: {
-    host: process.env.SMTP_HOST!,
+  smtp: {
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
     port: parseInt(process.env.SMTP_PORT || '587', 10),
-    user: process.env.SMTP_USER!,
-    pass: process.env.SMTP_PASS!,
-    from: process.env.EMAIL_FROM || 'noreply@wabmeta.com',
+    user: process.env.SMTP_USER || '',
+    pass: process.env.SMTP_PASS || '',
+    from: process.env.EMAIL_FROM || 'WabMeta <noreply@wabmeta.com>',
   },
   
   // Google OAuth
   google: {
-    clientId: process.env.GOOGLE_CLIENT_ID!,
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    clientId: process.env.GOOGLE_CLIENT_ID || '',
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
   },
   
   // Meta/WhatsApp
   meta: {
-    appId: process.env.META_APP_ID!,
-    appSecret: process.env.META_APP_SECRET!,
-    webhookVerifyToken: process.env.META_WEBHOOK_VERIFY_TOKEN!,
+    appId: process.env.META_APP_ID || '',
+    appSecret: process.env.META_APP_SECRET || '',
+    webhookVerifyToken: process.env.META_WEBHOOK_VERIFY_TOKEN || '',
   },
-} as const;
+  
+  // Razorpay
+  razorpay: {
+    keyId: process.env.RAZORPAY_KEY_ID || '',
+    keySecret: process.env.RAZORPAY_KEY_SECRET || '',
+  },
+};
 
-// Validate required env vars
-const requiredEnvVars = [
-  'DATABASE_URL',
-  'JWT_SECRET',
-  'JWT_REFRESH_SECRET',
-];
-
-for (const envVar of requiredEnvVars) {
-  if (!process.env[envVar]) {
-    throw new Error(`Missing required environment variable: ${envVar}`);
-  }
-}
+// Log config on startup (for debugging)
+console.log('📝 Config loaded:');
+console.log('   - NODE_ENV:', config.nodeEnv);
+console.log('   - PORT:', config.port);
+console.log('   - FRONTEND_URL:', config.frontendUrl);
+console.log('   - API_VERSION:', config.apiVersion);
