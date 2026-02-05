@@ -8,10 +8,11 @@ const transporter = nodemailer.createTransport({
   host: config.email.host,
   port: config.email.port,
   secure: config.email.port === 465,
-  auth: {
-    user: config.email.user,
-    pass: config.email.pass,
-  },
+  auth: { user: config.email.user, pass: config.email.pass },
+
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 20000,
 });
 
 // Email template result interface
@@ -402,6 +403,7 @@ export const verifyEmailConnection = async (): Promise<boolean> => {
     return false;
   }
 };
+/* Duplicate transporter declaration removed */
 
 export default {
   sendEmail,

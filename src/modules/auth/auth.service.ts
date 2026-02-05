@@ -33,6 +33,19 @@ const otpStore = new Map<string, OTPData>();
 // HELPER FUNCTIONS
 // ============================================
 
+const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
+// ✅ Non-blocking email helper (never blocks request)
+const sendEmailNonBlocking = (options: { to: string; subject: string; html: string }) => {
+  void sendEmail(options)
+    .then((ok) => {
+      if (!ok) console.warn('📧 Email failed (sendEmail returned false):', options.subject);
+    })
+    .catch((err) => {
+      console.error('📧 Email failed (promise rejected):', err);
+    });
+};
+
 const formatUserResponse = (user: any): AuthUser => ({
   id: user.id,
   email: user.email,
@@ -55,9 +68,7 @@ const generateTokens = async (
   const refreshToken = generateRefreshToken(payload);
 
   // Store refresh token in database
-  const expiresAt = new Date(
-    Date.now() + parseExpiryTime(config.jwt.refreshExpiresIn)
-  );
+  const expiresAt = new Date(Date.now() + parseExpiryTime(config.jwt.refreshExpiresIn));
 
   await prisma.refreshToken.create({
     data: {
@@ -101,162 +112,151 @@ const getDefaultOrganization = async (userId: string) => {
 // ============================================
 
 export class AuthService {
- // ==========================================
-// REGISTER
-// ==========================================
-async register(input: RegisterInput): Promise<AuthResponse> {
-  const { email, password, firstName, lastName, phone, organizationName } = input;
+  // ==========================================
+  // REGISTER
+  // ==========================================
+  async register(input: RegisterInput): Promise<AuthResponse> {
+    const { email, password, firstName, lastName, phone, organizationName } = input;
+    const normalizedEmail = normalizeEmail(email);
 
-  // (Optional but recommended) normalize email
-  const normalizedEmail = email.trim().toLowerCase();
+    // Check if user already exists
+    const existingUser = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
 
-  // Check if user already exists
-  const existingUser = await prisma.user.findUnique({
-    where: { email: normalizedEmail },
-  });
+    // ✅ If email exists, handle verified/unverified cases
+    if (existingUser) {
+      // If user exists but not verified, resend verification email
+      if (!existingUser.emailVerified) {
+        const emailVerifyToken = generateToken();
+        const emailVerifyExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
-  if (existingUser) {
-    // If user exists but not verified, resend verification email
-    if (!existingUser.emailVerified) {
-      const emailVerifyToken = generateToken();
-      const emailVerifyExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+        await prisma.user.update({
+          where: { id: existingUser.id },
+          data: { emailVerifyToken, emailVerifyExpires },
+        });
 
-      await prisma.user.update({
-        where: { id: existingUser.id },
-        data: { emailVerifyToken, emailVerifyExpires },
-      });
+        const verifyUrl = `${config.frontendUrl}/verify-email?token=${emailVerifyToken}`;
+        const emailContent = emailTemplates.verifyEmail(existingUser.firstName, verifyUrl);
 
-      const verifyUrl = `${config.frontendUrl}/verify-email?token=${emailVerifyToken}`;
-      const emailContent = emailTemplates.verifyEmail(existingUser.firstName, verifyUrl);
-
-      try {
-        await sendEmail({
+        // ✅ Non-blocking email send (no await)
+        sendEmailNonBlocking({
           to: normalizedEmail,
           subject: emailContent.subject,
           html: emailContent.html,
         });
-      } catch (error) {
-        console.error('Failed to resend verification email:', error);
-        // Do not block flow if email fails
+
+        throw new AppError('Email already registered. Verification email resent.', 409);
       }
 
-      // Important: do NOT issue tokens here
-      throw new AppError('Email already registered. Verification email resent.', 409);
+      // If already verified, just block
+      throw new AppError('Email already registered', 409);
     }
 
-    // If already verified, just block
-    throw new AppError('Email already registered', 409);
-  }
+    // Hash password
+    const hashedPassword = await hashPassword(password);
 
-  // Hash password
-  const hashedPassword = await hashPassword(password);
+    // Generate email verification token
+    const emailVerifyToken = generateToken();
+    const emailVerifyExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
-  // Generate email verification token
-  const emailVerifyToken = generateToken();
-  const emailVerifyExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    // Create user and organization in transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // Create user
+      const user = await tx.user.create({
+        data: {
+          email: normalizedEmail,
+          password: hashedPassword,
+          firstName,
+          lastName,
+          phone,
+          emailVerifyToken,
+          emailVerifyExpires,
+          status: 'PENDING_VERIFICATION',
+        },
+      });
 
-  // Create user and organization in transaction
-  const result = await prisma.$transaction(async (tx) => {
-    // Create user
-    const user = await tx.user.create({
-      data: {
-        email: normalizedEmail,
-        password: hashedPassword,
-        firstName,
-        lastName,
-        phone,
-        emailVerifyToken,
-        emailVerifyExpires,
-        status: 'PENDING_VERIFICATION',
-      },
+      // Create organization if name provided (your current flow)
+      let organization = null;
+
+      if (organizationName && organizationName.trim().length > 0) {
+        organization = await tx.organization.create({
+          data: {
+            name: organizationName.trim(),
+            slug: generateSlug(organizationName),
+            ownerId: user.id,
+            planType: 'FREE',
+          },
+        });
+
+        // Add user as organization member
+        await tx.organizationMember.create({
+          data: {
+            organizationId: organization.id,
+            userId: user.id,
+            role: 'OWNER',
+            joinedAt: new Date(),
+          },
+        });
+
+        // Create free subscription
+        const freePlan = await tx.plan.findUnique({ where: { type: 'FREE' } });
+        if (!freePlan) {
+          throw new AppError('FREE plan not found. Please run db:seed.', 500);
+        }
+
+        await tx.subscription.create({
+          data: {
+            organizationId: organization.id,
+            planId: freePlan.id,
+            status: 'ACTIVE',
+            billingCycle: 'monthly',
+            currentPeriodStart: new Date(),
+            currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          },
+        });
+      }
+
+      return { user, organization };
     });
 
-    // Create organization if name provided
-    let organization = null;
-    if (organizationName) {
-      organization = await tx.organization.create({
-        data: {
-          name: organizationName,
-          slug: generateSlug(organizationName),
-          ownerId: user.id,
-          planType: 'FREE',
-        },
-      });
+    // Send verification email (✅ non-blocking)
+    const verifyUrl = `${config.frontendUrl}/verify-email?token=${emailVerifyToken}`;
+    const emailContent = emailTemplates.verifyEmail(firstName, verifyUrl);
 
-      // Add user as organization member
-      await tx.organizationMember.create({
-        data: {
-          organizationId: organization.id,
-          userId: user.id,
-          role: 'OWNER',
-          joinedAt: new Date(),
-        },
-      });
-
-      // Create free subscription
-      const freePlan = await tx.plan.findUnique({ where: { type: 'FREE' } });
-      if (!freePlan) {
-        throw new AppError('FREE plan not found. Please run db:seed.', 500);
-      }
-
-      await tx.subscription.create({
-        data: {
-          organizationId: organization.id,
-          planId: freePlan.id,
-          status: 'ACTIVE',
-          billingCycle: 'monthly',
-          currentPeriodStart: new Date(),
-          currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        },
-      });
-    }
-
-    return { user, organization };
-  });
-
-  // Send verification email
-  const verifyUrl = `${config.frontendUrl}/verify-email?token=${emailVerifyToken}`;
-  const emailContent = emailTemplates.verifyEmail(firstName, verifyUrl);
-
-  try {
-    await sendEmail({
+    sendEmailNonBlocking({
       to: normalizedEmail,
       subject: emailContent.subject,
       html: emailContent.html,
     });
-  } catch (error) {
-    console.error('Failed to send verification email:', error);
+
+    // Generate tokens
+    const tokens = await generateTokens(result.user.id, result.user.email, result.organization?.id);
+
+    return {
+      user: formatUserResponse(result.user),
+      tokens,
+      organization: result.organization
+        ? {
+            id: result.organization.id,
+            name: result.organization.name,
+            slug: result.organization.slug,
+            planType: result.organization.planType,
+          }
+        : undefined,
+    };
   }
 
-  // Generate tokens
-  const tokens = await generateTokens(
-    result.user.id,
-    result.user.email,
-    result.organization?.id
-  );
-
-  return {
-    user: formatUserResponse(result.user),
-    tokens,
-    organization: result.organization
-      ? {
-          id: result.organization.id,
-          name: result.organization.name,
-          slug: result.organization.slug,
-          planType: result.organization.planType,
-        }
-      : undefined,
-  };
-}
   // ==========================================
   // LOGIN
   // ==========================================
   async login(input: LoginInput): Promise<AuthResponse> {
-    const { email, password } = input;
+    const normalizedEmail = normalizeEmail(input.email);
+    const { password } = input;
 
     // Find user
     const user = await prisma.user.findUnique({
-      where: { email },
+      where: { email: normalizedEmail },
     });
 
     if (!user) {
@@ -332,8 +332,10 @@ async register(input: RegisterInput): Promise<AuthResponse> {
   // RESEND VERIFICATION EMAIL
   // ==========================================
   async resendVerificationEmail(email: string): Promise<{ message: string }> {
+    const normalizedEmail = normalizeEmail(email);
+
     const user = await prisma.user.findUnique({
-      where: { email },
+      where: { email: normalizedEmail },
     });
 
     if (!user) {
@@ -357,12 +359,12 @@ async register(input: RegisterInput): Promise<AuthResponse> {
       },
     });
 
-    // Send email
+    // Send email (✅ non-blocking)
     const verifyUrl = `${config.frontendUrl}/verify-email?token=${emailVerifyToken}`;
     const emailContent = emailTemplates.verifyEmail(user.firstName, verifyUrl);
 
-    await sendEmail({
-      to: email,
+    sendEmailNonBlocking({
+      to: normalizedEmail,
       subject: emailContent.subject,
       html: emailContent.html,
     });
@@ -374,8 +376,10 @@ async register(input: RegisterInput): Promise<AuthResponse> {
   // FORGOT PASSWORD
   // ==========================================
   async forgotPassword(email: string): Promise<{ message: string }> {
+    const normalizedEmail = normalizeEmail(email);
+
     const user = await prisma.user.findUnique({
-      where: { email },
+      where: { email: normalizedEmail },
     });
 
     // Always return success message (security)
@@ -397,19 +401,15 @@ async register(input: RegisterInput): Promise<AuthResponse> {
       },
     });
 
-    // Send email
+    // Send email (✅ non-blocking)
     const resetUrl = `${config.frontendUrl}/reset-password?token=${resetToken}`;
     const emailContent = emailTemplates.resetPassword(user.firstName, resetUrl);
 
-    try {
-      await sendEmail({
-        to: email,
-        subject: emailContent.subject,
-        html: emailContent.html,
-      });
-    } catch (error) {
-      console.error('Failed to send reset email:', error);
-    }
+    sendEmailNonBlocking({
+      to: normalizedEmail,
+      subject: emailContent.subject,
+      html: emailContent.html,
+    });
 
     return { message: successMessage };
   }
@@ -454,8 +454,10 @@ async register(input: RegisterInput): Promise<AuthResponse> {
   // SEND OTP
   // ==========================================
   async sendOTP(email: string): Promise<{ message: string }> {
+    const normalizedEmail = normalizeEmail(email);
+
     const user = await prisma.user.findUnique({
-      where: { email },
+      where: { email: normalizedEmail },
     });
 
     if (!user) {
@@ -467,17 +469,17 @@ async register(input: RegisterInput): Promise<AuthResponse> {
     const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
 
     // Store OTP (Use Redis in production)
-    otpStore.set(email, {
+    otpStore.set(normalizedEmail, {
       otp,
       expiresAt,
       attempts: 0,
     });
 
-    // Send OTP email
+    // Send OTP email (✅ non-blocking)
     const emailContent = emailTemplates.otp(user.firstName, otp);
 
-    await sendEmail({
-      to: email,
+    sendEmailNonBlocking({
+      to: normalizedEmail,
       subject: emailContent.subject,
       html: emailContent.html,
     });
@@ -489,7 +491,9 @@ async register(input: RegisterInput): Promise<AuthResponse> {
   // VERIFY OTP
   // ==========================================
   async verifyOTP(email: string, otp: string): Promise<AuthResponse> {
-    const storedOTP = otpStore.get(email);
+    const normalizedEmail = normalizeEmail(email);
+
+    const storedOTP = otpStore.get(normalizedEmail);
 
     if (!storedOTP) {
       throw new AppError('OTP expired or not found', 400);
@@ -497,13 +501,13 @@ async register(input: RegisterInput): Promise<AuthResponse> {
 
     // Check expiry
     if (Date.now() > storedOTP.expiresAt) {
-      otpStore.delete(email);
+      otpStore.delete(normalizedEmail);
       throw new AppError('OTP expired', 400);
     }
 
     // Check attempts
     if (storedOTP.attempts >= 5) {
-      otpStore.delete(email);
+      otpStore.delete(normalizedEmail);
       throw new AppError('Too many attempts. Please request a new OTP', 429);
     }
 
@@ -514,11 +518,11 @@ async register(input: RegisterInput): Promise<AuthResponse> {
     }
 
     // Clear OTP
-    otpStore.delete(email);
+    otpStore.delete(normalizedEmail);
 
     // Get user
     const user = await prisma.user.findUnique({
-      where: { email },
+      where: { email: normalizedEmail },
     });
 
     if (!user) {
@@ -553,7 +557,7 @@ async register(input: RegisterInput): Promise<AuthResponse> {
   // GOOGLE AUTH
   // ==========================================
   async googleAuth(credential: string): Promise<AuthResponse> {
-    // Verify Google token
+    // Verify Google token (credential should be ID token / JWT)
     let payload: GoogleUserPayload;
 
     try {
@@ -573,10 +577,11 @@ async register(input: RegisterInput): Promise<AuthResponse> {
     }
 
     const { email, given_name, family_name, picture, sub: googleId } = payload;
+    const normalizedEmail = normalizeEmail(email);
 
     // Find or create user
     let user = await prisma.user.findUnique({
-      where: { email },
+      where: { email: normalizedEmail },
     });
 
     if (user) {
@@ -596,7 +601,7 @@ async register(input: RegisterInput): Promise<AuthResponse> {
       // Create new user
       user = await prisma.user.create({
         data: {
-          email,
+          email: normalizedEmail,
           googleId,
           firstName: given_name,
           lastName: family_name,
