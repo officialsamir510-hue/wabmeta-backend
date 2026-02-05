@@ -59,7 +59,9 @@ export const errorHandler = (
       case 'P2025':
         return sendError(res, 'Record not found', 404);
       default:
-        return sendError(res, 'Database error', 500, { code: err.code });
+        return sendError(res, 'Database error', 500, [
+          { field: 'prisma', message: `Error code: ${err.code}` }
+        ]);
     }
   }
 

@@ -20,7 +20,7 @@ import {
   deleteContactGroupSchema,
 } from './contacts.schema';
 
-const router = Router();
+const router: Router = Router();
 
 // All routes require authentication
 router.use(authenticate);

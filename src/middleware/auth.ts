@@ -1,17 +1,20 @@
-import { Request, Response, NextFunction } from 'express';
+// src/middleware/auth.ts
+
+import { Response, NextFunction } from 'express';
+import { AuthRequest } from '../types/express';
 import { verifyAccessToken, TokenPayload } from '../utils/jwt';
 import { AppError } from './errorHandler';
 import prisma from '../config/database';
 
 export const authenticate = async (
-  req: Request,
+  req: AuthRequest,
   res: Response,
   next: NextFunction
-) => {
+): Promise<void> => {
   try {
     // Get token from header
     const authHeader = req.headers.authorization;
-    
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       throw new AppError('Access token required', 401);
     }
@@ -19,7 +22,7 @@ export const authenticate = async (
     const token = authHeader.split(' ')[1];
 
     // Verify token
-    const decoded = verifyAccessToken(token);
+    const decoded = verifyAccessToken(token) as TokenPayload;
 
     // Check if user exists
     const user = await prisma.user.findUnique({
@@ -54,10 +57,10 @@ export const authenticate = async (
 };
 
 export const requireEmailVerified = async (
-  req: Request,
+  req: AuthRequest,
   res: Response,
   next: NextFunction
-) => {
+): Promise<void> => {
   try {
     if (!req.user) {
       throw new AppError('Authentication required', 401);
@@ -79,10 +82,10 @@ export const requireEmailVerified = async (
 };
 
 export const requireOrganization = async (
-  req: Request,
+  req: AuthRequest,
   res: Response,
   next: NextFunction
-) => {
+): Promise<void> => {
   try {
     if (!req.user?.organizationId) {
       throw new AppError('Organization context required', 400);
@@ -97,6 +100,47 @@ export const requireOrganization = async (
     }
 
     req.organization = organization;
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const optionalAuth = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+
+      try {
+        const decoded = verifyAccessToken(token) as TokenPayload;
+
+        const user = await prisma.user.findUnique({
+          where: { id: decoded.userId },
+          select: {
+            id: true,
+            email: true,
+            status: true,
+          },
+        });
+
+        if (user && user.status !== 'SUSPENDED') {
+          req.user = {
+            id: user.id,
+            email: user.email,
+            organizationId: decoded.organizationId,
+          };
+        }
+      } catch {
+        // Token invalid, continue without user
+      }
+    }
+
     next();
   } catch (error) {
     next(error);
