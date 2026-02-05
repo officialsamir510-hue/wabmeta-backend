@@ -101,125 +101,153 @@ const getDefaultOrganization = async (userId: string) => {
 // ============================================
 
 export class AuthService {
-  // ==========================================
-  // REGISTER
-  // ==========================================
-  async register(input: RegisterInput): Promise<AuthResponse> {
-    const { email, password, firstName, lastName, phone, organizationName } = input;
+ // ==========================================
+// REGISTER
+// ==========================================
+async register(input: RegisterInput): Promise<AuthResponse> {
+  const { email, password, firstName, lastName, phone, organizationName } = input;
 
-    // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email },
-    });
+  // (Optional but recommended) normalize email
+  const normalizedEmail = email.trim().toLowerCase();
 
-    if (existingUser) {
-      throw new AppError('Email already registered', 409);
+  // Check if user already exists
+  const existingUser = await prisma.user.findUnique({
+    where: { email: normalizedEmail },
+  });
+
+  if (existingUser) {
+    // If user exists but not verified, resend verification email
+    if (!existingUser.emailVerified) {
+      const emailVerifyToken = generateToken();
+      const emailVerifyExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+      await prisma.user.update({
+        where: { id: existingUser.id },
+        data: { emailVerifyToken, emailVerifyExpires },
+      });
+
+      const verifyUrl = `${config.frontendUrl}/verify-email?token=${emailVerifyToken}`;
+      const emailContent = emailTemplates.verifyEmail(existingUser.firstName, verifyUrl);
+
+      try {
+        await sendEmail({
+          to: normalizedEmail,
+          subject: emailContent.subject,
+          html: emailContent.html,
+        });
+      } catch (error) {
+        console.error('Failed to resend verification email:', error);
+        // Do not block flow if email fails
+      }
+
+      // Important: do NOT issue tokens here
+      throw new AppError('Email already registered. Verification email resent.', 409);
     }
 
-    // Hash password
-    const hashedPassword = await hashPassword(password);
+    // If already verified, just block
+    throw new AppError('Email already registered', 409);
+  }
 
-    // Generate email verification token
-    const emailVerifyToken = generateToken();
-    const emailVerifyExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+  // Hash password
+  const hashedPassword = await hashPassword(password);
 
-    // Create user and organization in transaction
-    const result = await prisma.$transaction(async (tx) => {
-      // Create user
-      const user = await tx.user.create({
+  // Generate email verification token
+  const emailVerifyToken = generateToken();
+  const emailVerifyExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+  // Create user and organization in transaction
+  const result = await prisma.$transaction(async (tx) => {
+    // Create user
+    const user = await tx.user.create({
+      data: {
+        email: normalizedEmail,
+        password: hashedPassword,
+        firstName,
+        lastName,
+        phone,
+        emailVerifyToken,
+        emailVerifyExpires,
+        status: 'PENDING_VERIFICATION',
+      },
+    });
+
+    // Create organization if name provided
+    let organization = null;
+    if (organizationName) {
+      organization = await tx.organization.create({
         data: {
-          email,
-          password: hashedPassword,
-          firstName,
-          lastName,
-          phone,
-          emailVerifyToken,
-          emailVerifyExpires,
-          status: 'PENDING_VERIFICATION',
+          name: organizationName,
+          slug: generateSlug(organizationName),
+          ownerId: user.id,
+          planType: 'FREE',
         },
       });
 
-      // Create organization if name provided
-      let organization = null;
-      if (organizationName) {
-        organization = await tx.organization.create({
-          data: {
-            name: organizationName,
-            slug: generateSlug(organizationName),
-            ownerId: user.id,
-            planType: 'FREE',
-          },
-        });
+      // Add user as organization member
+      await tx.organizationMember.create({
+        data: {
+          organizationId: organization.id,
+          userId: user.id,
+          role: 'OWNER',
+          joinedAt: new Date(),
+        },
+      });
 
-        // Add user as organization member
-        await tx.organizationMember.create({
-          data: {
-            organizationId: organization.id,
-            userId: user.id,
-            role: 'OWNER',
-            joinedAt: new Date(),
-          },
-        });
-
-        // Create free subscription
-       // ✅ Create free subscription (SAFE)
-const freePlan = await tx.plan.findUnique({ where: { type: 'FREE' } });
-
-if (!freePlan) {
-  throw new AppError('FREE plan not found. Please run db:seed.', 500);
-}
-
-await tx.subscription.create({
-  data: {
-    organizationId: organization.id,
-    planId: freePlan.id,
-    status: 'ACTIVE',
-    billingCycle: 'monthly',
-    currentPeriodStart: new Date(),
-    currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-  },
-});
+      // Create free subscription
+      const freePlan = await tx.plan.findUnique({ where: { type: 'FREE' } });
+      if (!freePlan) {
+        throw new AppError('FREE plan not found. Please run db:seed.', 500);
       }
 
-      return { user, organization };
-    });
-
-    // Send verification email
-    const verifyUrl = `${config.frontendUrl}/verify-email?token=${emailVerifyToken}`;
-    const emailContent = emailTemplates.verifyEmail(firstName, verifyUrl);
-
-    try {
-      await sendEmail({
-        to: email,
-        subject: emailContent.subject,
-        html: emailContent.html,
+      await tx.subscription.create({
+        data: {
+          organizationId: organization.id,
+          planId: freePlan.id,
+          status: 'ACTIVE',
+          billingCycle: 'monthly',
+          currentPeriodStart: new Date(),
+          currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        },
       });
-    } catch (error) {
-      console.error('Failed to send verification email:', error);
-      // Don't throw error, user is created successfully
     }
 
-    // Generate tokens
-    const tokens = await generateTokens(
-      result.user.id,
-      result.user.email,
-      result.organization?.id
-    );
+    return { user, organization };
+  });
 
-    return {
-      user: formatUserResponse(result.user),
-      tokens,
-      organization: result.organization
-        ? {
-            id: result.organization.id,
-            name: result.organization.name,
-            slug: result.organization.slug,
-            planType: result.organization.planType,
-          }
-        : undefined,
-    };
+  // Send verification email
+  const verifyUrl = `${config.frontendUrl}/verify-email?token=${emailVerifyToken}`;
+  const emailContent = emailTemplates.verifyEmail(firstName, verifyUrl);
+
+  try {
+    await sendEmail({
+      to: normalizedEmail,
+      subject: emailContent.subject,
+      html: emailContent.html,
+    });
+  } catch (error) {
+    console.error('Failed to send verification email:', error);
   }
 
+  // Generate tokens
+  const tokens = await generateTokens(
+    result.user.id,
+    result.user.email,
+    result.organization?.id
+  );
+
+  return {
+    user: formatUserResponse(result.user),
+    tokens,
+    organization: result.organization
+      ? {
+          id: result.organization.id,
+          name: result.organization.name,
+          slug: result.organization.slug,
+          planType: result.organization.planType,
+        }
+      : undefined,
+  };
+}
   // ==========================================
   // LOGIN
   // ==========================================
