@@ -27,6 +27,11 @@ import razorpayRoutes from './modules/billing/razorpay.routes';
 const app: Express = express();
 
 // ============================================
+// TRUST PROXY (Required for Render)
+// ============================================
+app.set('trust proxy', 1);
+
+// ============================================
 // CORS CONFIGURATION - MUST BE FIRST!
 // ============================================
 
@@ -36,50 +41,96 @@ const allowedOrigins = [
   'http://localhost:3000',
   'https://wabmeta.com',
   'https://www.wabmeta.com',
-  config.frontendUrl,
-].filter(Boolean); // Remove any undefined values
+];
 
-console.log('🌐 Allowed CORS Origins:', allowedOrigins);
+// Add FRONTEND_URL if it's set and not already in the list
+if (config.frontendUrl && !allowedOrigins.includes(config.frontendUrl)) {
+  allowedOrigins.push(config.frontendUrl);
+}
 
-// Handle preflight requests FIRST
-app.options('*', cors({
-  origin: allowedOrigins,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-platform', 'X-Requested-With', 'Accept'],
-}));
+console.log('🌐 CORS Allowed Origins:', allowedOrigins);
 
-// Apply CORS to all routes
-app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, curl, etc.)
+// CORS Options
+const corsOptions: cors.CorsOptions = {
+  origin: function (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
+    // Allow requests with no origin (mobile apps, curl, Postman, etc.)
     if (!origin) {
       return callback(null, true);
     }
     
+    // Check if origin is in allowed list
     if (allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.log('❌ CORS blocked origin:', origin);
-      callback(null, true); // Temporarily allow all for debugging
-      // callback(new Error('Not allowed by CORS'));
+      return callback(null, true);
     }
+    
+    // Log blocked origins for debugging
+    console.log('⚠️ CORS request from non-whitelisted origin:', origin);
+    
+    // In production, you might want to be strict
+    // For now, allow all origins for debugging
+    return callback(null, true);
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-platform', 'X-Requested-With', 'Accept'],
-  exposedHeaders: ['set-cookie'],
-}));
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'Accept',
+    'Origin',
+    'x-platform',
+    'Cache-Control',
+    'Pragma',
+  ],
+  exposedHeaders: ['set-cookie', 'Set-Cookie'],
+  maxAge: 86400, // 24 hours
+  preflightContinue: false,
+  optionsSuccessStatus: 204,
+};
+
+// Apply CORS middleware FIRST
+app.use(cors(corsOptions));
+
+// Handle preflight requests explicitly
+app.options('*', cors(corsOptions));
 
 // ============================================
-// SECURITY & PARSING MIDDLEWARE
+// MANUAL CORS HEADERS (Backup)
 // ============================================
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const origin = req.headers.origin;
+  
+  // Set CORS headers manually as backup
+  if (origin && (allowedOrigins.includes(origin) || true)) { // Allow all for now
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, x-platform, Cache-Control, Pragma');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  
+  // Handle OPTIONS preflight
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+  
+  next();
+});
 
-// Security headers (after CORS)
+// ============================================
+// SECURITY MIDDLEWARE (After CORS!)
+// ============================================
 app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" },
-  crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: false, // Disable CSP for API
 }));
+
+// ============================================
+// PARSING & OTHER MIDDLEWARE
+// ============================================
 
 // Compression
 app.use(compression());
@@ -99,35 +150,53 @@ if (config.nodeEnv === 'development') {
 }
 
 // ============================================
-// HEALTH CHECK
+// HEALTH CHECK & DEBUG ROUTES
 // ============================================
 
+// Root route
 app.get('/', (req: Request, res: Response) => {
   res.json({
     success: true,
     message: 'WabMeta API Server',
     version: config.apiVersion,
     timestamp: new Date().toISOString(),
+    environment: config.nodeEnv,
   });
 });
 
+// Health check
 app.get('/health', (req: Request, res: Response) => {
   res.json({
     success: true,
     message: 'WabMeta API is running',
     timestamp: new Date().toISOString(),
     environment: config.nodeEnv,
+    uptime: process.uptime(),
   });
 });
 
-// Debug endpoint to check CORS
+// CORS Debug endpoint
 app.get('/api/debug/cors', (req: Request, res: Response) => {
   res.json({
     success: true,
     message: 'CORS is working!',
-    origin: req.headers.origin,
+    origin: req.headers.origin || 'No origin header',
     allowedOrigins: allowedOrigins,
     frontendUrl: config.frontendUrl,
+    headers: {
+      'access-control-allow-origin': res.getHeader('Access-Control-Allow-Origin'),
+      'access-control-allow-credentials': res.getHeader('Access-Control-Allow-Credentials'),
+    },
+  });
+});
+
+// Test POST endpoint for CORS
+app.post('/api/debug/cors-test', (req: Request, res: Response) => {
+  res.json({
+    success: true,
+    message: 'POST request successful!',
+    receivedData: req.body,
+    origin: req.headers.origin,
   });
 });
 
