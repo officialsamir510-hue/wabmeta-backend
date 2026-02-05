@@ -1,56 +1,137 @@
 // src/utils/jwt.ts
 
-import jwt, { JwtPayload } from 'jsonwebtoken';
+import jwt, { SignOptions, Secret } from 'jsonwebtoken';
 import { config } from '../config';
 
 export interface TokenPayload {
   userId: string;
   email: string;
   organizationId?: string;
+  type?: 'access' | 'refresh';
 }
 
-export const generateAccessToken = (payload: TokenPayload): string => {
-  return jwt.sign(payload, config.jwt.secret, {
-    expiresIn: config.jwt.expiresIn as jwt.SignOptions['expiresIn'],
-  });
-};
-
-export const generateRefreshToken = (payload: TokenPayload): string => {
-  return jwt.sign(payload, config.jwt.refreshSecret, {
-    expiresIn: config.jwt.refreshExpiresIn as jwt.SignOptions['expiresIn'],
-  });
-};
-
-export const verifyAccessToken = (token: string): TokenPayload => {
-  return jwt.verify(token, config.jwt.secret) as TokenPayload;
-};
-
-export const verifyRefreshToken = (token: string): TokenPayload => {
-  return jwt.verify(token, config.jwt.refreshSecret) as TokenPayload;
-};
-
-export const decodeToken = (token: string): JwtPayload | null => {
-  return jwt.decode(token) as JwtPayload | null;
-};
-
-// Parse expiry time string to milliseconds
-export const parseExpiryTime = (time: string): number => {
-  const match = time.match(/^(\d+)([smhd])$/);
-  if (!match) return 15 * 60 * 1000; // default 15 minutes
+// Helper to get expiry in seconds
+const getExpirySeconds = (expiryString: string): number => {
+  const match = expiryString.match(/^(\d+)([smhdw])$/);
+  
+  if (!match) {
+    // Default to 7 days in seconds
+    return 7 * 24 * 60 * 60;
+  }
 
   const value = parseInt(match[1], 10);
   const unit = match[2];
 
   switch (unit) {
-    case 's':
-      return value * 1000;
-    case 'm':
-      return value * 60 * 1000;
-    case 'h':
-      return value * 60 * 60 * 1000;
-    case 'd':
-      return value * 24 * 60 * 60 * 1000;
-    default:
-      return 15 * 60 * 1000;
+    case 's': return value;
+    case 'm': return value * 60;
+    case 'h': return value * 60 * 60;
+    case 'd': return value * 24 * 60 * 60;
+    case 'w': return value * 7 * 24 * 60 * 60;
+    default: return 7 * 24 * 60 * 60;
   }
+};
+
+// Generate Access Token
+export const generateAccessToken = (payload: Omit<TokenPayload, 'type'>): string => {
+  const secret: Secret = config.jwt.secret;
+  const options: SignOptions = {
+    expiresIn: getExpirySeconds(config.jwt.expiresIn),
+  };
+  
+  return jwt.sign(
+    { ...payload, type: 'access' },
+    secret,
+    options
+  );
+};
+
+// Generate Refresh Token
+export const generateRefreshToken = (payload: Omit<TokenPayload, 'type'>): string => {
+  const secret: Secret = config.jwt.refreshSecret;
+  const options: SignOptions = {
+    expiresIn: getExpirySeconds(config.jwt.refreshExpiresIn),
+  };
+  
+  return jwt.sign(
+    { ...payload, type: 'refresh' },
+    secret,
+    options
+  );
+};
+
+// Verify Access Token
+export const verifyAccessToken = (token: string): TokenPayload => {
+  const secret: Secret = config.jwt.secret;
+  return jwt.verify(token, secret) as TokenPayload;
+};
+
+// Verify Refresh Token
+export const verifyRefreshToken = (token: string): TokenPayload => {
+  const secret: Secret = config.jwt.refreshSecret;
+  return jwt.verify(token, secret) as TokenPayload;
+};
+
+// Generate both tokens
+export const generateTokens = (payload: Omit<TokenPayload, 'type'>) => {
+  return {
+    accessToken: generateAccessToken(payload),
+    refreshToken: generateRefreshToken(payload),
+  };
+};
+
+// Decode token without verification (for debugging)
+export const decodeToken = (token: string): TokenPayload | null => {
+  try {
+    return jwt.decode(token) as TokenPayload;
+  } catch {
+    return null;
+  }
+};
+
+// Parse expiry time string to milliseconds
+export const parseExpiryTime = (expiryString: string): number => {
+  return getExpirySeconds(expiryString) * 1000;
+};
+
+// Get expiry date from expiry string
+export const getTokenExpiry = (expiryString: string): Date => {
+  const ms = parseExpiryTime(expiryString);
+  return new Date(Date.now() + ms);
+};
+
+// Check if token is expired
+export const isTokenExpired = (token: string): boolean => {
+  try {
+    const decoded = jwt.decode(token) as { exp?: number };
+    if (!decoded || !decoded.exp) return true;
+    return Date.now() >= decoded.exp * 1000;
+  } catch {
+    return true;
+  }
+};
+
+// Get remaining time in milliseconds
+export const getTokenRemainingTime = (token: string): number => {
+  try {
+    const decoded = jwt.decode(token) as { exp?: number };
+    if (!decoded || !decoded.exp) return 0;
+    const remaining = decoded.exp * 1000 - Date.now();
+    return remaining > 0 ? remaining : 0;
+  } catch {
+    return 0;
+  }
+};
+
+export default {
+  generateAccessToken,
+  generateRefreshToken,
+  verifyAccessToken,
+  verifyRefreshToken,
+  generateTokens,
+  decodeToken,
+  parseExpiryTime,
+  getTokenExpiry,
+  isTokenExpired,
+  getTokenRemainingTime,
 };
