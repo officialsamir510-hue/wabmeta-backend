@@ -1,9 +1,7 @@
-// src/modules/whatsapp/whatsapp.service.ts
-
 import prisma from '../../config/database';
 import { config } from '../../config';
 import { AppError } from '../../middleware/errorHandler';
-import { MessageStatus, MessageType, MessageDirection, Prisma } from '@prisma/client';
+import { MessageStatus, MessageType, Prisma } from '@prisma/client';
 import { MetaApiClient } from './whatsapp.api';
 import {
   WhatsAppAccountResponse,
@@ -11,7 +9,6 @@ import {
   WebhookPayload,
   WebhookMessage,
   WebhookStatus,
-  ProcessedMessage,
   TemplateComponent,
 } from './whatsapp.types';
 
@@ -48,7 +45,14 @@ const mapWebhookMessageType = (type: string): MessageType => {
   return typeMap[type] || 'TEXT';
 };
 
-const extractMessageContent = (message: WebhookMessage): { content: string | null; mediaUrl: string | null; mediaType: string | null; mediaMimeType: string | null } => {
+const extractMessageContent = (
+  message: WebhookMessage
+): {
+  content: string | null;
+  mediaUrl: string | null;
+  mediaType: string | null;
+  mediaMimeType: string | null;
+} => {
   let content: string | null = null;
   let mediaUrl: string | null = null;
   let mediaType: string | null = null;
@@ -82,7 +86,9 @@ const extractMessageContent = (message: WebhookMessage): { content: string | nul
       mediaMimeType = message.sticker?.mime_type || null;
       break;
     case 'location':
-      content = message.location ? `${message.location.latitude},${message.location.longitude}` : null;
+      content = message.location
+        ? `${message.location.latitude},${message.location.longitude}`
+        : null;
       break;
     case 'button':
       content = message.button?.text || null;
@@ -105,84 +111,155 @@ const extractMessageContent = (message: WebhookMessage): { content: string | nul
 
 export class WhatsAppService {
   // ==========================================
-  // CONNECT ACCOUNT
+  // CONNECT ACCOUNT (Embedded Signup / OAuth code)
   // ==========================================
   async connectAccount(
     organizationId: string,
     code: string,
     redirectUri: string
   ): Promise<WhatsAppAccountResponse> {
+    const startedAt = Date.now();
+
     try {
-      // Exchange code for access token
+      console.log('[WA CONNECT] start', { organizationId });
+
+      // 1) Exchange code -> short-lived token
+      console.log('[WA CONNECT] exchangeCodeForToken...');
       const tokenResponse = await MetaApiClient.exchangeCodeForToken(code, redirectUri);
-      
-      // Get long-lived token
+
+      // 2) short -> long lived token
+      console.log('[WA CONNECT] getLongLivedToken...');
       const longLivedToken = await MetaApiClient.getLongLivedToken(tokenResponse.access_token);
 
-      // Create API client
+      const tokenExpiresAt =
+        typeof longLivedToken.expires_in === 'number'
+          ? new Date(Date.now() + longLivedToken.expires_in * 1000)
+          : null;
+
+      // 3) Create client (discovery calls)
       const client = new MetaApiClient(longLivedToken.access_token, '', '');
 
-      // Get WhatsApp Business Accounts
-      const wabaList = await client.getWhatsAppBusinessAccounts();
-      
-      if (wabaList.length === 0) {
-        throw new AppError('No WhatsApp Business Account found', 400);
+      // 4) Get WABA list (primary)
+      console.log('[WA CONNECT] getWhatsAppBusinessAccounts...');
+      let wabaList: any[] = [];
+      try {
+        wabaList = await client.getWhatsAppBusinessAccounts();
+      } catch (e: any) {
+        console.warn('[WA CONNECT] getWhatsAppBusinessAccounts failed, fallback to businesses:', e?.message || e);
       }
 
-      const waba = wabaList[0];
+      // 5) Fallback: /me/businesses -> owned_whatsapp_business_accounts
+      if (!wabaList || wabaList.length === 0) {
+        console.log('[WA CONNECT] fallback -> getBusinessAccounts...');
+        const businesses = await client.getBusinessAccounts();
+        const owned: any[] = [];
 
-      // Get phone numbers for the WABA
-      const phoneNumbers = await client.getPhoneNumbers(waba.id);
+        for (const b of businesses || []) {
+          const w = (b as any)?.owned_whatsapp_business_accounts?.data || [];
+          for (const item of w) owned.push(item);
+        }
 
-      if (phoneNumbers.length === 0) {
-        throw new AppError('No phone numbers found in WhatsApp Business Account', 400);
+        wabaList = owned;
       }
 
-      const phoneNumber = phoneNumbers[0];
+      if (!wabaList || wabaList.length === 0) {
+        throw new AppError('No WhatsApp Business Account found for this Meta user/business.', 400);
+      }
 
-      // Check if account already connected
+      // 6) Choose first WABA that has phone numbers; prefer VERIFIED number
+      let selectedWaba: any | null = null;
+      let selectedPhone: any | null = null;
+
+      for (const waba of wabaList) {
+        const phoneNumbers = await client.getPhoneNumbers(waba.id).catch(() => []);
+
+        if (!phoneNumbers || phoneNumbers.length === 0) continue;
+
+        const verified =
+          phoneNumbers.find(
+            (p: any) =>
+              String(p.code_verification_status || '').toUpperCase() === 'VERIFIED'
+          ) || phoneNumbers[0];
+
+        selectedWaba = waba;
+        selectedPhone = verified;
+        break;
+      }
+
+      if (!selectedWaba || !selectedPhone) {
+        throw new AppError('No phone numbers found in your WhatsApp Business Account.', 400);
+      }
+
+      console.log('[WA CONNECT] selected', {
+        wabaId: selectedWaba.id,
+        phoneNumberId: selectedPhone.id,
+        displayPhone: selectedPhone.display_phone_number,
+      });
+
+      // 7) Check existing connection by phoneNumberId (global unique)
       const existing = await prisma.whatsAppAccount.findUnique({
-        where: { phoneNumberId: phoneNumber.id },
+        where: { phoneNumberId: selectedPhone.id },
       });
 
       if (existing) {
-        // Update existing account
+        // Security: don't allow takeover by other org
+        if (existing.organizationId !== organizationId) {
+          throw new AppError(
+            'This WhatsApp phone number is already connected to another organization.',
+            409
+          );
+        }
+
         const updated = await prisma.whatsAppAccount.update({
           where: { id: existing.id },
           data: {
             accessToken: longLivedToken.access_token,
+            tokenExpiresAt: tokenExpiresAt || undefined,
             status: 'CONNECTED',
-            displayName: phoneNumber.verified_name,
-            qualityRating: phoneNumber.quality_rating,
+            displayName: selectedPhone.verified_name,
+            qualityRating: selectedPhone.quality_rating,
           },
         });
+
+        console.log('[WA CONNECT] updated existing account in', Date.now() - startedAt, 'ms');
         return formatWhatsAppAccount(updated);
       }
 
-      // Check if org has any accounts (for default setting)
+      // 8) Default account logic
       const existingAccountsCount = await prisma.whatsAppAccount.count({
         where: { organizationId },
       });
 
-      // Create new account
+      // If this will be first account, ensure no other default (safety)
+      if (existingAccountsCount === 0) {
+        await prisma.whatsAppAccount.updateMany({
+          where: { organizationId },
+          data: { isDefault: false },
+        });
+      }
+
+      // 9) Create account
       const account = await prisma.whatsAppAccount.create({
         data: {
           organizationId,
-          phoneNumberId: phoneNumber.id,
-          wabaId: waba.id,
-          phoneNumber: phoneNumber.display_phone_number,
-          displayName: phoneNumber.verified_name,
-          qualityRating: phoneNumber.quality_rating,
+          phoneNumberId: selectedPhone.id,
+          wabaId: selectedWaba.id,
+          phoneNumber: selectedPhone.display_phone_number,
+          displayName: selectedPhone.verified_name,
+          qualityRating: selectedPhone.quality_rating,
           accessToken: longLivedToken.access_token,
+          tokenExpiresAt: tokenExpiresAt || undefined,
           status: 'CONNECTED',
           isDefault: existingAccountsCount === 0,
         },
       });
 
+      console.log('[WA CONNECT] created new account in', Date.now() - startedAt, 'ms');
       return formatWhatsAppAccount(account);
     } catch (error: any) {
-      console.error('WhatsApp connect error:', error);
-      throw new AppError(error.message || 'Failed to connect WhatsApp account', 400);
+      console.error('[WA CONNECT] error:', error?.message || error, error);
+      // keep 400 for expected issues, but preserve message
+      throw new AppError(error?.message || 'Failed to connect WhatsApp account', 400);
     }
   }
 
@@ -194,21 +271,18 @@ export class WhatsAppService {
     accountId: string
   ): Promise<{ message: string }> {
     const account = await prisma.whatsAppAccount.findFirst({
-      where: {
-        id: accountId,
-        organizationId,
-      },
+      where: { id: accountId, organizationId },
     });
 
-    if (!account) {
-      throw new AppError('WhatsApp account not found', 404);
-    }
+    if (!account) throw new AppError('WhatsApp account not found', 404);
 
     await prisma.whatsAppAccount.update({
       where: { id: accountId },
       data: {
         status: 'DISCONNECTED',
         accessToken: '',
+        tokenExpiresAt: null,
+        isDefault: false,
       },
     });
 
@@ -235,15 +309,10 @@ export class WhatsAppService {
     accountId: string
   ): Promise<WhatsAppAccountResponse> {
     const account = await prisma.whatsAppAccount.findFirst({
-      where: {
-        id: accountId,
-        organizationId,
-      },
+      where: { id: accountId, organizationId },
     });
 
-    if (!account) {
-      throw new AppError('WhatsApp account not found', 404);
-    }
+    if (!account) throw new AppError('WhatsApp account not found', 404);
 
     return formatWhatsAppAccount(account);
   }
@@ -256,26 +325,16 @@ export class WhatsAppService {
     accountId: string
   ): Promise<WhatsAppAccountResponse> {
     const account = await prisma.whatsAppAccount.findFirst({
-      where: {
-        id: accountId,
-        organizationId,
-      },
+      where: { id: accountId, organizationId },
     });
 
-    if (!account) {
-      throw new AppError('WhatsApp account not found', 404);
-    }
+    if (!account) throw new AppError('WhatsApp account not found', 404);
 
-    // Remove default from all other accounts
     await prisma.whatsAppAccount.updateMany({
-      where: {
-        organizationId,
-        id: { not: accountId },
-      },
+      where: { organizationId, id: { not: accountId } },
       data: { isDefault: false },
     });
 
-    // Set this account as default
     const updated = await prisma.whatsAppAccount.update({
       where: { id: accountId },
       data: { isDefault: true },
@@ -295,13 +354,11 @@ export class WhatsAppService {
     replyToMessageId?: string
   ): Promise<SendMessageResponse> {
     const account = await this.getWhatsAppAccountWithToken(organizationId, whatsappAccountId);
-    
     const client = new MetaApiClient(account.accessToken, account.phoneNumberId, account.wabaId);
 
     try {
       const response = await client.sendTextMessage(to, text, false, replyToMessageId);
 
-      // Save message to database
       await this.saveOutboundMessage(
         organizationId,
         account.id,
@@ -318,10 +375,7 @@ export class WhatsAppService {
         waId: response.contacts[0].wa_id,
       };
     } catch (error: any) {
-      return {
-        success: false,
-        error: error.message || 'Failed to send message',
-      };
+      return { success: false, error: error.message || 'Failed to send message' };
     }
   }
 
@@ -337,13 +391,11 @@ export class WhatsAppService {
     components?: TemplateComponent[]
   ): Promise<SendMessageResponse> {
     const account = await this.getWhatsAppAccountWithToken(organizationId, whatsappAccountId);
-
     const client = new MetaApiClient(account.accessToken, account.phoneNumberId, account.wabaId);
 
     try {
       const response = await client.sendTemplateMessage(to, templateName, languageCode, components);
 
-      // Save message to database
       await this.saveOutboundMessage(
         organizationId,
         account.id,
@@ -361,10 +413,7 @@ export class WhatsAppService {
         waId: response.contacts[0].wa_id,
       };
     } catch (error: any) {
-      return {
-        success: false,
-        error: error.message || 'Failed to send template message',
-      };
+      return { success: false, error: error.message || 'Failed to send template message' };
     }
   }
 
@@ -381,11 +430,10 @@ export class WhatsAppService {
     filename?: string
   ): Promise<SendMessageResponse> {
     const account = await this.getWhatsAppAccountWithToken(organizationId, whatsappAccountId);
-
     const client = new MetaApiClient(account.accessToken, account.phoneNumberId, account.wabaId);
 
     try {
-      let response;
+      let response: any;
 
       switch (type) {
         case 'image':
@@ -406,12 +454,10 @@ export class WhatsAppService {
           break;
       }
 
-      if (!response) {
-        throw new Error('Failed to send media message');
-      }
+      if (!response) throw new Error('Failed to send media message');
 
-      // Save message to database
       const messageType = type.toUpperCase() as MessageType;
+
       await this.saveOutboundMessage(
         organizationId,
         account.id,
@@ -429,10 +475,7 @@ export class WhatsAppService {
         waId: response.contacts[0].wa_id,
       };
     } catch (error: any) {
-      return {
-        success: false,
-        error: error.message || 'Failed to send media message',
-      };
+      return { success: false, error: error.message || 'Failed to send media message' };
     }
   }
 
@@ -454,11 +497,10 @@ export class WhatsAppService {
     }
   ): Promise<SendMessageResponse> {
     const account = await this.getWhatsAppAccountWithToken(organizationId, whatsappAccountId);
-
     const client = new MetaApiClient(account.accessToken, account.phoneNumberId, account.wabaId);
 
     try {
-      let response;
+      let response: any;
 
       if (interactiveType === 'button' && options.buttons) {
         response = await client.sendButtonMessage(
@@ -481,7 +523,6 @@ export class WhatsAppService {
         throw new Error('Invalid interactive message configuration');
       }
 
-      // Save message to database
       await this.saveOutboundMessage(
         organizationId,
         account.id,
@@ -497,10 +538,7 @@ export class WhatsAppService {
         waId: response.contacts[0].wa_id,
       };
     } catch (error: any) {
-      return {
-        success: false,
-        error: error.message || 'Failed to send interactive message',
-      };
+      return { success: false, error: error.message || 'Failed to send interactive message' };
     }
   }
 
@@ -508,14 +546,17 @@ export class WhatsAppService {
   // PROCESS WEBHOOK
   // ==========================================
   async processWebhook(payload: WebhookPayload): Promise<void> {
+    if (!payload?.entry?.length) return;
+
     for (const entry of payload.entry) {
-      for (const change of entry.changes) {
+      for (const change of entry.changes || []) {
         if (change.field !== 'messages') continue;
 
         const value = change.value;
-        const phoneNumberId = value.metadata.phone_number_id;
+        const phoneNumberId = value?.metadata?.phone_number_id;
 
-        // Find WhatsApp account
+        if (!phoneNumberId) continue;
+
         const account = await prisma.whatsAppAccount.findUnique({
           where: { phoneNumberId },
           include: { organization: true },
@@ -526,14 +567,12 @@ export class WhatsAppService {
           continue;
         }
 
-        // Process incoming messages
         if (value.messages) {
           for (const message of value.messages) {
             await this.processIncomingMessage(account, message, value.contacts?.[0]);
           }
         }
 
-        // Process status updates
         if (value.statuses) {
           for (const status of value.statuses) {
             await this.processStatusUpdate(status);
@@ -555,16 +594,11 @@ export class WhatsAppService {
     const fromName = contact?.profile?.name || fromPhone;
     const organizationId = account.organizationId;
 
-    // Find or create contact
     let dbContact = await prisma.contact.findFirst({
-      where: {
-        organizationId,
-        phone: fromPhone,
-      },
+      where: { organizationId, phone: fromPhone },
     });
 
     if (!dbContact) {
-      // Create new contact
       dbContact = await prisma.contact.create({
         data: {
           organizationId,
@@ -576,12 +610,8 @@ export class WhatsAppService {
       });
     }
 
-    // Find or create conversation
     let conversation = await prisma.conversation.findFirst({
-      where: {
-        organizationId,
-        contactId: dbContact.id,
-      },
+      where: { organizationId, contactId: dbContact.id },
     });
 
     if (!conversation) {
@@ -594,7 +624,6 @@ export class WhatsAppService {
         },
       });
     } else {
-      // Update conversation
       await prisma.conversation.update({
         where: { id: conversation.id },
         data: {
@@ -605,10 +634,8 @@ export class WhatsAppService {
       });
     }
 
-    // Extract message content
     const { content, mediaUrl, mediaType, mediaMimeType } = extractMessageContent(message);
 
-    // Save message
     await prisma.message.create({
       data: {
         conversationId: conversation.id,
@@ -627,7 +654,6 @@ export class WhatsAppService {
       },
     });
 
-    // Update contact last message time
     await prisma.contact.update({
       where: { id: dbContact.id },
       data: {
@@ -636,7 +662,6 @@ export class WhatsAppService {
       },
     });
 
-    // Update conversation preview
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: {
@@ -645,7 +670,6 @@ export class WhatsAppService {
       },
     });
 
-    // Mark message as read on WhatsApp
     try {
       const client = new MetaApiClient(account.accessToken, account.phoneNumberId, account.wabaId);
       await client.markAsRead(message.id);
@@ -661,17 +685,13 @@ export class WhatsAppService {
     const messageId = status.id;
     const newStatus = status.status.toUpperCase() as MessageStatus;
 
-    // Find message
     const message = await prisma.message.findUnique({
       where: { waMessageId: messageId },
     });
 
     if (!message) return;
 
-    // Update message status
-    const updateData: Prisma.MessageUpdateInput = {
-      status: newStatus,
-    };
+    const updateData: Prisma.MessageUpdateInput = { status: newStatus };
 
     switch (status.status) {
       case 'sent':
@@ -694,7 +714,6 @@ export class WhatsAppService {
       data: updateData,
     });
 
-    // Update campaign contact if exists
     if (message.conversationId) {
       const conversation = await prisma.conversation.findUnique({
         where: { id: message.conversationId },
@@ -702,16 +721,13 @@ export class WhatsAppService {
 
       if (conversation) {
         await prisma.campaignContact.updateMany({
-          where: {
-            contactId: conversation.contactId,
-            waMessageId: messageId,
-          },
+          where: { contactId: conversation.contactId, waMessageId: messageId },
           data: {
             status: newStatus,
             ...(status.status === 'sent' && { sentAt: new Date(parseInt(status.timestamp) * 1000) }),
             ...(status.status === 'delivered' && { deliveredAt: new Date(parseInt(status.timestamp) * 1000) }),
             ...(status.status === 'read' && { readAt: new Date(parseInt(status.timestamp) * 1000) }),
-            ...(status.status === 'failed' && { 
+            ...(status.status === 'failed' && {
               failedAt: new Date(parseInt(status.timestamp) * 1000),
               failureReason: status.errors?.[0]?.message,
             }),
@@ -729,7 +745,6 @@ export class WhatsAppService {
     whatsappAccountId: string
   ): Promise<{ synced: number; updated: number }> {
     const account = await this.getWhatsAppAccountWithToken(organizationId, whatsappAccountId);
-
     const client = new MetaApiClient(account.accessToken, account.phoneNumberId, account.wabaId);
 
     const metaTemplates = await client.getTemplates(account.wabaId);
@@ -739,30 +754,32 @@ export class WhatsAppService {
 
     for (const metaTemplate of metaTemplates) {
       const existing = await prisma.template.findFirst({
-        where: {
-          organizationId,
-          metaTemplateId: metaTemplate.id,
-        },
+        where: { organizationId, metaTemplateId: metaTemplate.id },
       });
 
-      const status = metaTemplate.status === 'APPROVED' ? 'APPROVED' : 
-                     metaTemplate.status === 'REJECTED' ? 'REJECTED' : 'PENDING';
-      const category = metaTemplate.category === 'MARKETING' ? 'MARKETING' :
-                       metaTemplate.category === 'UTILITY' ? 'UTILITY' : 'AUTHENTICATION';
+      const status =
+        metaTemplate.status === 'APPROVED'
+          ? 'APPROVED'
+          : metaTemplate.status === 'REJECTED'
+          ? 'REJECTED'
+          : 'PENDING';
 
-      // Extract body text from components
-      const bodyComponent = metaTemplate.components.find(c => c.type === 'BODY');
-      const headerComponent = metaTemplate.components.find(c => c.type === 'HEADER');
-      const footerComponent = metaTemplate.components.find(c => c.type === 'FOOTER');
-      const buttonsComponent = metaTemplate.components.find(c => c.type === 'BUTTONS');
+      const category =
+        metaTemplate.category === 'MARKETING'
+          ? 'MARKETING'
+          : metaTemplate.category === 'UTILITY'
+          ? 'UTILITY'
+          : 'AUTHENTICATION';
+
+      const bodyComponent = metaTemplate.components.find((c: any) => c.type === 'BODY');
+      const headerComponent = metaTemplate.components.find((c: any) => c.type === 'HEADER');
+      const footerComponent = metaTemplate.components.find((c: any) => c.type === 'FOOTER');
+      const buttonsComponent = metaTemplate.components.find((c: any) => c.type === 'BUTTONS');
 
       if (existing) {
         await prisma.template.update({
           where: { id: existing.id },
-          data: {
-            status,
-            rejectionReason: null,
-          },
+          data: { status, rejectionReason: null },
         });
         updated++;
       } else {
@@ -798,11 +815,9 @@ export class WhatsAppService {
     mediaId: string
   ): Promise<{ url: string }> {
     const account = await this.getWhatsAppAccountWithToken(organizationId, whatsappAccountId);
-
     const client = new MetaApiClient(account.accessToken, account.phoneNumberId, account.wabaId);
 
     const mediaInfo = await client.getMediaUrl(mediaId);
-
     return { url: mediaInfo.url };
   }
 
@@ -814,23 +829,12 @@ export class WhatsAppService {
     accountId: string
   ): Promise<any> {
     const account = await prisma.whatsAppAccount.findFirst({
-      where: {
-        id: accountId,
-        organizationId,
-      },
+      where: { id: accountId, organizationId },
     });
 
-    if (!account) {
-      throw new AppError('WhatsApp account not found', 404);
-    }
-
-    if (account.status !== 'CONNECTED') {
-      throw new AppError('WhatsApp account is not connected', 400);
-    }
-
-    if (!account.accessToken) {
-      throw new AppError('WhatsApp account access token is missing', 400);
-    }
+    if (!account) throw new AppError('WhatsApp account not found', 404);
+    if (account.status !== 'CONNECTED') throw new AppError('WhatsApp account is not connected', 400);
+    if (!account.accessToken) throw new AppError('WhatsApp account access token is missing', 400);
 
     return account;
   }
@@ -848,15 +852,10 @@ export class WhatsAppService {
     replyToMessageId?: string,
     metadata?: any
   ): Promise<void> {
-    // Clean phone number
     const cleanPhone = to.replace(/\D/g, '');
 
-    // Find or create contact
     let contact = await prisma.contact.findFirst({
-      where: {
-        organizationId,
-        phone: cleanPhone,
-      },
+      where: { organizationId, phone: cleanPhone },
     });
 
     if (!contact) {
@@ -870,24 +869,16 @@ export class WhatsAppService {
       });
     }
 
-    // Find or create conversation
     let conversation = await prisma.conversation.findFirst({
-      where: {
-        organizationId,
-        contactId: contact.id,
-      },
+      where: { organizationId, contactId: contact.id },
     });
 
     if (!conversation) {
       conversation = await prisma.conversation.create({
-        data: {
-          organizationId,
-          contactId: contact.id,
-        },
+        data: { organizationId, contactId: contact.id },
       });
     }
 
-    // Save message
     await prisma.message.create({
       data: {
         conversationId: conversation.id,
@@ -904,7 +895,6 @@ export class WhatsAppService {
       },
     });
 
-    // Update conversation
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: {
@@ -913,7 +903,6 @@ export class WhatsAppService {
       },
     });
 
-    // Update contact
     await prisma.contact.update({
       where: { id: contact.id },
       data: {
@@ -927,12 +916,9 @@ export class WhatsAppService {
   // VERIFY WEBHOOK
   // ==========================================
   verifyWebhook(mode: string, token: string, challenge: string): string | null {
-    if (mode === 'subscribe' && token === config.meta.webhookVerifyToken) {
-      return challenge;
-    }
+    if (mode === 'subscribe' && token === config.meta.webhookVerifyToken) return challenge;
     return null;
   }
 }
 
-// Export singleton instance
 export const whatsappService = new WhatsAppService();
