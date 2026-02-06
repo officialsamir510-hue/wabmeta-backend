@@ -77,4 +77,20 @@ export const whatsappApi = {
     });
     return res.data;
   },
+// ✅ Create message template on Meta (WABA)
+async createMessageTemplate(wabaId: string, accessToken: string, payload: any) {
+  const res = await graph.post(`/${wabaId}/message_templates`, payload, {
+    params: { access_token: accessToken },
+    headers: { "Content-Type": "application/json" },
+  });
+  return res.data;
+},
+
+// ✅ List templates from Meta
+async listMessageTemplates(wabaId: string, accessToken: string) {
+  const res = await graph.get(`/${wabaId}/message_templates`, {
+    params: { access_token: accessToken, limit: 200 },
+  });
+  return res.data?.data || [];
+}
 };

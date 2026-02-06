@@ -2,7 +2,7 @@
 
 import prisma from '../../config/database';
 import { AppError } from '../../middleware/errorHandler';
-import { TemplateStatus, TemplateCategory, Prisma } from '@prisma/client';
+import { TemplateStatus, Prisma } from '@prisma/client';
 import {
   CreateTemplateInput,
   UpdateTemplateInput,
@@ -14,9 +14,10 @@ import {
   TemplateButton,
   TemplateVariable,
 } from './templates.types';
+import { whatsappApi } from '../whatsapp/whatsapp.api';
 
 // ============================================
-// HELPER FUNCTIONS
+// HELPERS
 // ============================================
 
 const formatTemplate = (template: any): TemplateResponse => ({
@@ -37,81 +38,152 @@ const formatTemplate = (template: any): TemplateResponse => ({
   updatedAt: template.updatedAt,
 });
 
-// Extract variables from body text ({{1}}, {{2}}, etc.)
 const extractVariables = (text: string): number[] => {
   const regex = /\{\{(\d+)\}\}/g;
   const variables: number[] = [];
   let match;
-  while ((match = regex.exec(text)) !== null) {
-    variables.push(parseInt(match[1], 10));
-  }
+  while ((match = regex.exec(text)) !== null) variables.push(parseInt(match[1], 10));
   return [...new Set(variables)].sort((a, b) => a - b);
 };
 
-// Replace variables with values
 const replaceVariables = (text: string, values: Record<string, string>): string => {
-  return text.replace(/\{\{(\d+)\}\}/g, (match, index) => {
-    return values[index] || match;
-  });
+  return text.replace(/\{\{(\d+)\}\}/g, (match, index) => values[index] || match);
 };
 
-// Convert to Prisma JSON compatible format
-const toJsonValue = (value: any): Prisma.InputJsonValue => {
-  return JSON.parse(JSON.stringify(value));
+const toJsonValue = (value: any): Prisma.InputJsonValue => JSON.parse(JSON.stringify(value));
+
+const toMetaLanguage = (lang: string) => {
+  // Meta expects like en_US, hi_IN etc.
+  if (!lang) return 'en_US';
+  if (lang.includes('_')) return lang;
+  if (lang === 'en') return 'en_US';
+  if (lang === 'hi') return 'hi_IN';
+  return 'en_US';
+};
+
+const buildMetaTemplatePayload = (t: {
+  name: string;
+  language: string;
+  category: string;
+  headerType?: string | null;
+  headerContent?: string | null;
+  bodyText: string;
+  footerText?: string | null;
+  buttons?: TemplateButton[];
+}) => {
+  const components: any[] = [];
+
+  // HEADER (only TEXT fully supported; media header needs header_handle example)
+  if (t.headerType && t.headerType !== 'NONE') {
+    if (t.headerType === 'TEXT' && t.headerContent) {
+      const headerVars = extractVariables(t.headerContent);
+      const headerComp: any = { type: 'HEADER', format: 'TEXT', text: t.headerContent };
+
+      if (headerVars.length > 0) {
+        headerComp.example = {
+          header_text: headerVars.map((i) => `Example${i}`),
+        };
+      }
+      components.push(headerComp);
+    } else {
+      // If you want media headers, you must upload media & use header_handle example.
+      throw new AppError(
+        `HeaderType ${t.headerType} needs media upload + header_handle example. Use TEXT header for now.`,
+        400
+      );
+    }
+  }
+
+  // BODY
+  const bodyVars = extractVariables(t.bodyText);
+  const bodyComp: any = { type: 'BODY', text: t.bodyText };
+
+  if (bodyVars.length > 0) {
+    bodyComp.example = {
+      body_text: [bodyVars.map((i) => `Example${i}`)],
+    };
+  }
+  components.push(bodyComp);
+
+  // FOOTER
+  if (t.footerText) {
+    components.push({ type: 'FOOTER', text: t.footerText });
+  }
+
+  // BUTTONS
+  if (t.buttons && t.buttons.length > 0) {
+    const buttons = t.buttons.slice(0, 3).map((b: any) => {
+      const type = String(b.type || '').toUpperCase();
+
+      if (type.includes('URL')) {
+        if (!b.url) throw new AppError('URL button requires url field', 400);
+        return { type: 'URL', text: b.text, url: b.url };
+      }
+
+      if (type.includes('PHONE')) {
+        if (!b.phoneNumber) throw new AppError('PHONE button requires phoneNumber field', 400);
+        return { type: 'PHONE_NUMBER', text: b.text, phone_number: b.phoneNumber };
+      }
+
+      // default quick reply
+      return { type: 'QUICK_REPLY', text: b.text };
+    });
+
+    components.push({ type: 'BUTTONS', buttons });
+  }
+
+  return {
+    name: t.name,
+    language: toMetaLanguage(t.language),
+    category: String(t.category || 'UTILITY').toUpperCase(),
+    components,
+  };
+};
+
+const getDefaultConnectedWaAccount = async (organizationId: string) => {
+  const wa = await prisma.whatsAppAccount.findFirst({
+    where: {
+      organizationId,
+      status: 'CONNECTED',
+      isDefault: true,
+    },
+  });
+
+  if (!wa) throw new AppError('WhatsApp account not connected. Connect WhatsApp first.', 400);
+  if (!wa.wabaId) throw new AppError('WABA ID missing on WhatsApp account.', 400);
+  if (!wa.accessToken) throw new AppError('Access token missing on WhatsApp account.', 400);
+
+  return wa;
 };
 
 // ============================================
-// TEMPLATES SERVICE CLASS
+// SERVICE
 // ============================================
 
 export class TemplatesService {
-  // ==========================================
-  // CREATE TEMPLATE
-  // ==========================================
+  // CREATE TEMPLATE (✅ creates on Meta too)
   async create(organizationId: string, input: CreateTemplateInput): Promise<TemplateResponse> {
-    const { name, language, category, headerType, headerContent, bodyText, footerText, buttons, variables } = input;
+    const { name, language, category, headerType, headerContent, bodyText, footerText, buttons, variables } =
+      input;
 
-    // Check for duplicate name + language
     const existing = await prisma.template.findUnique({
       where: {
-        organizationId_name_language: {
-          organizationId,
-          name,
-          language,
-        },
+        organizationId_name_language: { organizationId, name, language },
       },
     });
+    if (existing) throw new AppError('Template with this name and language already exists', 409);
 
-    if (existing) {
-      throw new AppError('Template with this name and language already exists', 409);
-    }
-
-    // Check organization limits
-    const org = await prisma.organization.findUnique({
-      where: { id: organizationId },
-      include: {
-        subscription: {
-          include: { plan: true },
-        },
-        _count: {
-          select: { templates: true },
-        },
-      },
-    });
-
-    if (org?.subscription?.plan) {
-      if (org._count.templates >= org.subscription.plan.maxTemplates) {
-        throw new AppError('Template limit reached. Please upgrade your plan.', 400);
-      }
-    }
-
-    // Auto-extract variables if not provided
+    // Auto-extract variables
     const extractedVars = extractVariables(bodyText);
-    const finalVariables = variables && variables.length > 0
-      ? variables
-      : extractedVars.map((index) => ({ index, type: 'text' as const }));
+    const finalVariables =
+      variables && variables.length > 0
+        ? variables
+        : extractedVars.map((index) => ({ index, type: 'text' as const }));
 
-    // Create template
+    // ✅ Require WhatsApp connected to push template to Meta
+    const wa = await getDefaultConnectedWaAccount(organizationId);
+
+    // 1) Create locally first
     const template = await prisma.template.create({
       data: {
         organizationId,
@@ -128,132 +200,83 @@ export class TemplatesService {
       },
     });
 
-    return formatTemplate(template);
+    // 2) Create on Meta (WABA)
+    try {
+      const metaPayload = buildMetaTemplatePayload({
+        name,
+        language,
+        category,
+        headerType: headerType || null,
+        headerContent: headerContent || null,
+        bodyText,
+        footerText: footerText || null,
+        buttons: (buttons || []) as any,
+      });
+
+      const metaRes = await whatsappApi.createMessageTemplate(wa.wabaId, wa.accessToken, metaPayload);
+
+      const metaTemplateId = metaRes?.id || metaRes?.template_id;
+
+      await prisma.template.update({
+        where: { id: template.id },
+        data: {
+          metaTemplateId: metaTemplateId ? String(metaTemplateId) : null,
+          status: 'PENDING',
+        },
+      });
+
+      console.log('✅ Meta template created:', { metaTemplateId, name });
+    } catch (e: any) {
+      console.error('❌ Meta template create failed:', e?.response?.data || e);
+      // Keep local template; user can retry sync/submit later
+    }
+
+    const latest = await prisma.template.findUnique({ where: { id: template.id } });
+    return formatTemplate(latest);
   }
 
-  // ==========================================
-  // GET TEMPLATES LIST
-  // ==========================================
+  // LIST
   async getList(organizationId: string, query: TemplatesQueryInput): Promise<TemplatesListResponse> {
-    const {
-      page = 1,
-      limit = 20,
-      search,
-      status,
-      category,
-      language,
-      sortBy = 'createdAt',
-      sortOrder = 'desc',
-    } = query;
+    const { page = 1, limit = 20, search, status, category, language, sortBy = 'createdAt', sortOrder = 'desc' } = query;
 
     const skip = (page - 1) * limit;
 
-    // Build where clause
-    const where: Prisma.TemplateWhereInput = {
-      organizationId,
-    };
-
+    const where: Prisma.TemplateWhereInput = { organizationId };
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
         { bodyText: { contains: search, mode: 'insensitive' } },
       ];
     }
+    if (status) where.status = status;
+    if (category) where.category = category;
+    if (language) where.language = language;
 
-    if (status) {
-      where.status = status;
-    }
-
-    if (category) {
-      where.category = category;
-    }
-
-    if (language) {
-      where.language = language;
-    }
-
-    // Execute query
     const [templates, total] = await Promise.all([
-      prisma.template.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { [sortBy]: sortOrder },
-      }),
+      prisma.template.findMany({ where, skip, take: limit, orderBy: { [sortBy]: sortOrder } }),
       prisma.template.count({ where }),
     ]);
 
     return {
       templates: templates.map(formatTemplate),
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
   }
 
-  // ==========================================
-  // GET TEMPLATE BY ID
-  // ==========================================
   async getById(organizationId: string, templateId: string): Promise<TemplateResponse> {
-    const template = await prisma.template.findFirst({
-      where: {
-        id: templateId,
-        organizationId,
-      },
-    });
-
-    if (!template) {
-      throw new AppError('Template not found', 404);
-    }
-
+    const template = await prisma.template.findFirst({ where: { id: templateId, organizationId } });
+    if (!template) throw new AppError('Template not found', 404);
     return formatTemplate(template);
   }
 
-  // ==========================================
-  // UPDATE TEMPLATE
-  // ==========================================
-  async update(
-    organizationId: string,
-    templateId: string,
-    input: UpdateTemplateInput
-  ): Promise<TemplateResponse> {
-    // Check template exists
-    const existing = await prisma.template.findFirst({
-      where: {
-        id: templateId,
-        organizationId,
-      },
-    });
+  async update(organizationId: string, templateId: string, input: UpdateTemplateInput): Promise<TemplateResponse> {
+    const existing = await prisma.template.findFirst({ where: { id: templateId, organizationId } });
+    if (!existing) throw new AppError('Template not found', 404);
 
-    if (!existing) {
-      throw new AppError('Template not found', 404);
-    }
-
-    // Cannot update approved templates (need to create new version)
     if (existing.status === 'APPROVED' && existing.metaTemplateId) {
       throw new AppError('Cannot modify approved templates. Create a new template instead.', 400);
     }
 
-    // Check for duplicate name if name is being changed
-    if (input.name && input.name !== existing.name) {
-      const duplicate = await prisma.template.findFirst({
-        where: {
-          organizationId,
-          name: input.name,
-          language: input.language || existing.language,
-          id: { not: templateId },
-        },
-      });
-
-      if (duplicate) {
-        throw new AppError('Template with this name and language already exists', 409);
-      }
-    }
-
-    // Auto-extract variables from new body text
     let finalVariables = input.variables;
     if (input.bodyText) {
       const extractedVars = extractVariables(input.bodyText);
@@ -262,7 +285,6 @@ export class TemplatesService {
       }
     }
 
-    // Build update data
     const updateData: Prisma.TemplateUpdateInput = {
       name: input.name,
       language: input.language,
@@ -273,118 +295,28 @@ export class TemplatesService {
       footerText: input.footerText,
     };
 
-    // Add buttons if provided
-    if (input.buttons !== undefined) {
-      updateData.buttons = toJsonValue(input.buttons);
-    }
+    if (input.buttons !== undefined) updateData.buttons = toJsonValue(input.buttons);
+    if (finalVariables !== undefined) updateData.variables = toJsonValue(finalVariables);
 
-    // Add variables if provided
-    if (finalVariables !== undefined) {
-      updateData.variables = toJsonValue(finalVariables);
-    }
+    if (input.bodyText || input.headerContent) updateData.status = 'PENDING';
 
-    // Reset status to pending if content changed
-    if (input.bodyText || input.headerContent) {
-      updateData.status = 'PENDING';
-    }
-
-    // Update template
-    const template = await prisma.template.update({
-      where: { id: templateId },
-      data: updateData,
-    });
-
+    const template = await prisma.template.update({ where: { id: templateId }, data: updateData });
     return formatTemplate(template);
   }
 
-  // ==========================================
-  // DELETE TEMPLATE
-  // ==========================================
   async delete(organizationId: string, templateId: string): Promise<{ message: string }> {
-    const template = await prisma.template.findFirst({
-      where: {
-        id: templateId,
-        organizationId,
-      },
-    });
-
-    if (!template) {
-      throw new AppError('Template not found', 404);
-    }
-
-    await prisma.template.delete({
-      where: { id: templateId },
-    });
-
+    const template = await prisma.template.findFirst({ where: { id: templateId, organizationId } });
+    if (!template) throw new AppError('Template not found', 404);
+    await prisma.template.delete({ where: { id: templateId } });
     return { message: 'Template deleted successfully' };
   }
 
-  // ==========================================
-  // DUPLICATE TEMPLATE
-  // ==========================================
-  async duplicate(
-    organizationId: string,
-    templateId: string,
-    newName: string
-  ): Promise<TemplateResponse> {
-    const original = await prisma.template.findFirst({
-      where: {
-        id: templateId,
-        organizationId,
-      },
-    });
-
-    if (!original) {
-      throw new AppError('Template not found', 404);
-    }
-
-    // Check for duplicate name
-    const existing = await prisma.template.findUnique({
-      where: {
-        organizationId_name_language: {
-          organizationId,
-          name: newName,
-          language: original.language,
-        },
-      },
-    });
-
-    if (existing) {
-      throw new AppError('Template with this name already exists', 409);
-    }
-
-    // Create duplicate
-    const duplicate = await prisma.template.create({
-      data: {
-        organizationId,
-        name: newName,
-        language: original.language,
-        category: original.category,
-        headerType: original.headerType,
-        headerContent: original.headerContent,
-        bodyText: original.bodyText,
-        footerText: original.footerText,
-        buttons: original.buttons || toJsonValue([]),
-        variables: original.variables || toJsonValue([]),
-        status: 'PENDING',
-      },
-    });
-
-    return formatTemplate(duplicate);
-  }
-
-  // ==========================================
-  // GET TEMPLATE STATS
-  // ==========================================
   async getStats(organizationId: string): Promise<TemplateStats> {
-    const [total, pending, approved, rejected, marketing, utility, authentication] = await Promise.all([
+    const [total, pending, approved, rejected] = await Promise.all([
       prisma.template.count({ where: { organizationId } }),
       prisma.template.count({ where: { organizationId, status: 'PENDING' } }),
       prisma.template.count({ where: { organizationId, status: 'APPROVED' } }),
       prisma.template.count({ where: { organizationId, status: 'REJECTED' } }),
-      prisma.template.count({ where: { organizationId, category: 'MARKETING' } }),
-      prisma.template.count({ where: { organizationId, category: 'UTILITY' } }),
-      prisma.template.count({ where: { organizationId, category: 'AUTHENTICATION' } }),
     ]);
 
     return {
@@ -393,16 +325,13 @@ export class TemplatesService {
       approved,
       rejected,
       byCategory: {
-        marketing,
-        utility,
-        authentication,
+        marketing: await prisma.template.count({ where: { organizationId, category: 'MARKETING' } }),
+        utility: await prisma.template.count({ where: { organizationId, category: 'UTILITY' } }),
+        authentication: await prisma.template.count({ where: { organizationId, category: 'AUTHENTICATION' } }),
       },
     };
   }
 
-  // ==========================================
-  // PREVIEW TEMPLATE
-  // ==========================================
   async preview(
     bodyText: string,
     variables: Record<string, string> = {},
@@ -411,184 +340,67 @@ export class TemplatesService {
     footerText?: string,
     buttons?: TemplateButton[]
   ): Promise<TemplatePreview> {
-    const preview: TemplatePreview = {
-      body: replaceVariables(bodyText, variables),
-    };
+    const preview: TemplatePreview = { body: replaceVariables(bodyText, variables) };
 
-    if (headerType === 'TEXT' && headerContent) {
-      preview.header = replaceVariables(headerContent, variables);
-    } else if (headerType && headerType !== 'NONE') {
-      preview.header = `[${headerType}]`;
-    }
+    if (headerType === 'TEXT' && headerContent) preview.header = replaceVariables(headerContent, variables);
+    else if (headerType && headerType !== 'NONE') preview.header = `[${headerType}]`;
 
-    if (footerText) {
-      preview.footer = footerText;
-    }
+    if (footerText) preview.footer = footerText;
 
     if (buttons && buttons.length > 0) {
-      preview.buttons = buttons.map((btn) => ({
-        type: btn.type,
-        text: btn.text,
-      }));
+      preview.buttons = buttons.map((btn) => ({ type: btn.type, text: btn.text }));
     }
 
     return preview;
   }
 
-  // ==========================================
-  // GET APPROVED TEMPLATES (for campaigns)
-  // ==========================================
-  async getApprovedTemplates(organizationId: string): Promise<TemplateResponse[]> {
-    const templates = await prisma.template.findMany({
-      where: {
-        organizationId,
-        status: 'APPROVED',
-      },
-      orderBy: { name: 'asc' },
-    });
+  // ✅ Sync from Meta: updates status/metaTemplateId
+  async syncFromMeta(organizationId: string): Promise<{ message: string; synced: number }> {
+    const wa = await getDefaultConnectedWaAccount(organizationId);
 
-    return templates.map(formatTemplate);
-  }
+    const metaTemplates = await whatsappApi.listMessageTemplates(wa.wabaId, wa.accessToken);
 
-  // ==========================================
-  // GET LANGUAGES
-  // ==========================================
-  async getLanguages(organizationId: string): Promise<{ language: string; count: number }[]> {
-    const templates = await prisma.template.groupBy({
-      by: ['language'],
-      where: { organizationId },
-      _count: { language: true },
-      orderBy: { _count: { language: 'desc' } },
-    });
+    let synced = 0;
 
-    return templates.map((t) => ({
-      language: t.language,
-      count: t._count.language,
-    }));
-  }
+    for (const mt of metaTemplates) {
+      const metaId = String(mt.id);
+      const metaName = String(mt.name);
+      const metaLang = String(mt.language);
 
-  // ==========================================
-  // SUBMIT TO META (Placeholder)
-  // ==========================================
-  async submitToMeta(
-    organizationId: string,
-    templateId: string,
-    whatsappAccountId: string
-  ): Promise<{ message: string; metaTemplateId?: string }> {
-    const template = await prisma.template.findFirst({
-      where: {
-        id: templateId,
-        organizationId,
-      },
-    });
+      const metaStatusRaw = String(mt.status || 'PENDING').toUpperCase();
+      const mappedStatus: TemplateStatus =
+        metaStatusRaw === 'APPROVED' ? 'APPROVED' : metaStatusRaw === 'REJECTED' ? 'REJECTED' : 'PENDING';
 
-    if (!template) {
-      throw new AppError('Template not found', 404);
-    }
+      const local = await prisma.template.findFirst({
+        where: { organizationId, OR: [{ metaTemplateId: metaId }, { name: metaName, language: metaLang }] },
+      });
 
-    const waAccount = await prisma.whatsAppAccount.findFirst({
-      where: {
-        id: whatsappAccountId,
-        organizationId,
-      },
-    });
-
-    if (!waAccount) {
-      throw new AppError('WhatsApp account not found', 404);
-    }
-
-    // TODO: Implement actual Meta API call
-    await prisma.template.update({
-      where: { id: templateId },
-      data: { status: 'PENDING' },
-    });
-
-    return {
-      message: 'Template submitted for approval. This may take up to 24 hours.',
-    };
-  }
-
-  // ==========================================
-  // SYNC FROM META (Placeholder)
-  // ==========================================
-  async syncFromMeta(
-    organizationId: string,
-    whatsappAccountId: string
-  ): Promise<{ message: string; synced: number }> {
-    const waAccount = await prisma.whatsAppAccount.findFirst({
-      where: {
-        id: whatsappAccountId,
-        organizationId,
-      },
-    });
-
-    if (!waAccount) {
-      throw new AppError('WhatsApp account not found', 404);
-    }
-
-    return {
-      message: 'Templates synced successfully',
-      synced: 0,
-    };
-  }
-
-  // ==========================================
-  // UPDATE STATUS (Internal)
-  // ==========================================
-  async updateStatus(
-    metaTemplateId: string,
-    status: TemplateStatus,
-    rejectionReason?: string
-  ): Promise<void> {
-    await prisma.template.updateMany({
-      where: { metaTemplateId },
-      data: {
-        status,
-        rejectionReason: rejectionReason || null,
-      },
-    });
-  }
-
-  // ==========================================
-  // VALIDATE TEMPLATE
-  // ==========================================
-  validateTemplate(input: CreateTemplateInput): { valid: boolean; errors: string[] } {
-    const errors: string[] = [];
-
-    if (!/^[a-z0-9_]+$/.test(input.name)) {
-      errors.push('Template name must be lowercase with underscores only');
-    }
-
-    if (input.bodyText.length > 1024) {
-      errors.push('Body text exceeds 1024 characters');
-    }
-
-    if (input.headerType === 'TEXT' && input.headerContent && input.headerContent.length > 60) {
-      errors.push('Header text exceeds 60 characters');
-    }
-
-    if (input.footerText && input.footerText.length > 60) {
-      errors.push('Footer text exceeds 60 characters');
-    }
-
-    if (input.buttons && input.buttons.length > 3) {
-      errors.push('Maximum 3 buttons allowed');
-    }
-
-    const varsInBody = extractVariables(input.bodyText);
-    for (let i = 0; i < varsInBody.length; i++) {
-      if (varsInBody[i] !== i + 1) {
-        errors.push(`Variables must be sequential starting from 1. Found gap at {{${i + 1}}}`);
-        break;
+      if (local) {
+        await prisma.template.update({
+          where: { id: local.id },
+          data: { metaTemplateId: metaId, status: mappedStatus, rejectionReason: mt.rejected_reason || null },
+        });
+      } else {
+        await prisma.template.create({
+          data: {
+            organizationId,
+            name: metaName,
+            language: metaLang,
+            category: (String(mt.category || 'UTILITY').toUpperCase()) as any,
+            bodyText: mt.components?.find((c: any) => c.type === 'BODY')?.text || 'Imported from Meta',
+            status: mappedStatus,
+            metaTemplateId: metaId,
+            buttons: toJsonValue([]),
+            variables: toJsonValue([]),
+          },
+        });
       }
+
+      synced++;
     }
 
-    return {
-      valid: errors.length === 0,
-      errors,
-    };
+    return { message: 'Templates synced from Meta', synced };
   }
 }
 
-// Export singleton instance
 export const templatesService = new TemplatesService();
