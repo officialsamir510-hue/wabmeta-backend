@@ -1,3 +1,5 @@
+// src/modules/whatsapp/whatsapp.service.ts
+
 import prisma from "../../config/database";
 import { config } from "../../config";
 import { AppError } from "../../middleware/errorHandler";
@@ -14,12 +16,14 @@ export class WhatsAppService {
       throw new AppError("Meta app credentials missing on server", 500);
     }
 
+    // Step 1: Exchange code for short-lived token
     const shortTokenRes = await whatsappApi.exchangeCodeForToken(code, redirectUri);
     const shortToken = shortTokenRes.access_token;
 
     let accessToken = shortToken;
     let tokenExpiresAt: Date | null = null;
 
+    // Step 2: Try to get long-lived token
     try {
       const longTokenRes = await whatsappApi.exchangeForLongLivedToken(shortToken);
       accessToken = longTokenRes.access_token;
@@ -32,36 +36,100 @@ export class WhatsAppService {
       }
     }
 
+    // ✅ Step 3: Debug token and verify permissions
+    try {
+      const me = await whatsappApi.getMe(accessToken);
+      const debug = await whatsappApi.debugToken(accessToken);
+
+      console.log("✅ META /me:", me);
+      console.log("✅ META debug_token:", {
+        is_valid: debug?.data?.is_valid,
+        user_id: debug?.data?.user_id,
+        scopes: debug?.data?.scopes,
+        expires_at: debug?.data?.expires_at,
+      });
+
+      const scopes: string[] = debug?.data?.scopes || [];
+      
+      // Check required permissions
+      const requiredScopes = ["business_management", "whatsapp_business_management"];
+      const hasRequiredScope = requiredScopes.some(scope => scopes.includes(scope));
+      
+      if (!hasRequiredScope) {
+        console.error("❌ Missing required scopes. Current scopes:", scopes);
+        throw new AppError(
+          "Meta token missing permission: business_management or whatsapp_business_management. " +
+          "Ensure user is admin/tester and app has advanced access.",
+          400
+        );
+      }
+
+      console.log("✅ Token permissions verified:", scopes);
+    } catch (e: any) {
+      console.error("❌ META token debug failed:", e?.message || e);
+      
+      // Re-throw AppError as-is, wrap others
+      if (e instanceof AppError) {
+        throw e;
+      }
+      throw new AppError(
+        `Token validation failed: ${e?.message || 'Unknown error'}`,
+        400
+      );
+    }
+
+    // Step 4: Fetch businesses and WABAs
     const businesses = await whatsappApi.getUserBusinesses(accessToken);
-    if (!businesses.length) throw new AppError("No Meta Business found for this user", 400);
+    if (!businesses.length) {
+      throw new AppError("No Meta Business found for this user", 400);
+    }
+
+    console.log("✅ Found businesses:", businesses.map((b: { id: any; name: any; }) => ({ id: b.id, name: b.name })));
 
     let waba: any = null;
     let phone: any = null;
 
     for (const b of businesses) {
+      console.log(`🔍 Checking business: ${b.name} (${b.id})`);
+      
       const wabas = await whatsappApi.getOwnedWabas(b.id, accessToken);
+      console.log(`   Found ${wabas.length} WABAs`);
+      
       if (!wabas.length) continue;
 
       for (const w of wabas) {
+        console.log(`   🔍 Checking WABA: ${w.name} (${w.id})`);
+        
         const phones = await whatsappApi.getWabaPhoneNumbers(w.id, accessToken);
+        console.log(`      Found ${phones.length} phone numbers`);
+        
         if (phones.length) {
           waba = w;
           phone = phones[0];
+          console.log(`   ✅ Selected phone: ${phone.display_phone_number || phone.id}`);
           break;
         }
       }
       if (waba && phone) break;
     }
 
-    if (!waba) throw new AppError("No WhatsApp Business Account (WABA) found", 400);
-    if (!phone) throw new AppError("No WhatsApp phone number found under WABA", 400);
-
-    try {
-      await whatsappApi.subscribeAppToWaba(waba.id, accessToken);
-    } catch (e) {
-      console.error("Failed to subscribe app to WABA:", e);
+    if (!waba) {
+      throw new AppError("No WhatsApp Business Account (WABA) found", 400);
+    }
+    if (!phone) {
+      throw new AppError("No WhatsApp phone number found under WABA", 400);
     }
 
+    // Step 5: Subscribe app to WABA webhooks
+    try {
+      await whatsappApi.subscribeAppToWaba(waba.id, accessToken);
+      console.log("✅ App subscribed to WABA webhooks");
+    } catch (e: any) {
+      console.error("⚠️ Failed to subscribe app to WABA:", e?.message || e);
+      // Don't throw - this is non-blocking
+    }
+
+    // Step 6: Upsert account in database
     const account = await prisma.whatsAppAccount.upsert({
       where: { phoneNumberId: String(phone.id) },
       update: {
@@ -85,6 +153,12 @@ export class WhatsAppService {
         status: "CONNECTED",
         isDefault: true,
       },
+    });
+
+    console.log("✅ WhatsApp account connected:", {
+      id: account.id,
+      phone: account.phoneNumber,
+      waba: account.wabaId,
     });
 
     return account;

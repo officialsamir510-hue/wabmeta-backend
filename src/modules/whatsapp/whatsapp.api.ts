@@ -92,5 +92,24 @@ async listMessageTemplates(wabaId: string, accessToken: string) {
     params: { access_token: accessToken, limit: 200 },
   });
   return res.data?.data || [];
+},
+
+// ✅ Check token validity + scopes
+async debugToken(inputToken: string) {
+  const appAccessToken = `${config.meta.appId}|${config.meta.appSecret}`;
+  const res = await graph.get(`/debug_token`, {
+    params: {
+      input_token: inputToken,
+      access_token: appAccessToken,
+    },
+  });
+  return res.data;
+},
+
+async getMe(accessToken: string) {
+  const res = await graph.get(`/me`, {
+    params: { access_token: accessToken, fields: "id,name" },
+  });
+  return res.data;
 }
 };
