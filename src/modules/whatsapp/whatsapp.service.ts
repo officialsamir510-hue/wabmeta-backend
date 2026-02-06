@@ -3,24 +3,7 @@ import { config } from "../../config";
 import { AppError } from "../../middleware/errorHandler";
 import { whatsappApi } from "./whatsapp.api";
 
-type SendTextInput =
-  | { whatsappAccountId: string; to: string; message: string; previewUrl?: boolean }
-  | [string, string, string]; // (whatsappAccountId, to, message)
-
-type SendMediaInput =
-  | {
-      whatsappAccountId: string;
-      to: string;
-      mediaType: "image" | "video" | "audio" | "document";
-      mediaUrl: string;
-      caption?: string;
-      filename?: string;
-    }
-  | [string, string, string, string]; // (whatsappAccountId, to, mediaType, mediaUrl)
-
-type SendInteractiveInput =
-  | { whatsappAccountId: string; to: string; interactive: any }
-  | [string, string, any]; // (whatsappAccountId, to, interactive)
+type MediaType = "image" | "video" | "audio" | "document";
 
 export class WhatsAppService {
   // -----------------------------
@@ -40,9 +23,13 @@ export class WhatsAppService {
     try {
       const longTokenRes = await whatsappApi.exchangeForLongLivedToken(shortToken);
       accessToken = longTokenRes.access_token;
-      if (longTokenRes.expires_in) tokenExpiresAt = new Date(Date.now() + longTokenRes.expires_in * 1000);
+      if (longTokenRes.expires_in) {
+        tokenExpiresAt = new Date(Date.now() + longTokenRes.expires_in * 1000);
+      }
     } catch {
-      if (shortTokenRes.expires_in) tokenExpiresAt = new Date(Date.now() + shortTokenRes.expires_in * 1000);
+      if (shortTokenRes.expires_in) {
+        tokenExpiresAt = new Date(Date.now() + shortTokenRes.expires_in * 1000);
+      }
     }
 
     const businesses = await whatsappApi.getUserBusinesses(accessToken);
@@ -121,112 +108,145 @@ export class WhatsAppService {
   }
 
   // -----------------------------
-  // INTERNAL HELPER: get account
+  // INTERNAL: get account by org + id
   // -----------------------------
-  private async getAccountById(whatsappAccountId: string) {
-    const account = await prisma.whatsAppAccount.findUnique({
-      where: { id: whatsappAccountId },
+  private async getAccount(organizationId: string, whatsappAccountId: string) {
+    const account = await prisma.whatsAppAccount.findFirst({
+      where: {
+        id: whatsappAccountId,
+        organizationId,
+      },
     });
 
     if (!account) throw new AppError("WhatsApp account not found", 404);
     if (!account.accessToken) throw new AppError("WhatsApp account token missing", 400);
+    if (!account.phoneNumberId) throw new AppError("WhatsApp phoneNumberId missing", 400);
 
     return account;
   }
 
-  // -----------------------------
-  // SEND TEXT MESSAGE ✅ (needed by inbox.service)
-  // -----------------------------
-  async sendTextMessage(input: any, toMaybe?: any, messageMaybe?: any) {
-    // Support both signatures:
-    // (whatsappAccountId, to, message)
-    // ({ whatsappAccountId, to, message, previewUrl })
-    const data: any =
-      typeof input === "string"
-        ? { whatsappAccountId: input, to: toMaybe, message: messageMaybe }
-        : input;
+  // =========================================================
+  // ✅ METHODS USED BY inbox.service.ts (EXACT SIGNATURE MATCH)
+  // =========================================================
 
-    const { whatsappAccountId, to, message, previewUrl } = data as any;
+  /**
+   * inbox.service.ts calling:
+   * sendTextMessage(organizationId, waAccount.id, toPhone, content, replyToMessageId)
+   */
+  async sendTextMessage(
+    organizationId: string,
+    whatsappAccountId: string,
+    to: string,
+    message: string,
+    replyToMessageId?: string
+  ) {
+    if (!message) throw new AppError("Content is required for text messages", 400);
 
-    if (!whatsappAccountId || !to || !message) {
-      throw new AppError("whatsappAccountId, to and message are required", 400);
-    }
+    const account = await this.getAccount(organizationId, whatsappAccountId);
 
-    const account = await this.getAccountById(whatsappAccountId);
-
-    const payload = {
+    const payload: any = {
       messaging_product: "whatsapp",
       to,
       type: "text",
       text: {
         body: message,
-        preview_url: Boolean(previewUrl),
+        preview_url: false,
       },
     };
+
+    if (replyToMessageId) {
+      payload.context = { message_id: replyToMessageId };
+    }
 
     return whatsappApi.sendMessage(account.phoneNumberId, account.accessToken, payload);
   }
 
-  // -----------------------------
-  // SEND MEDIA MESSAGE ✅ (needed by inbox.service)
-  // -----------------------------
-  async sendMediaMessage(input: any, toMaybe?: any, mediaTypeMaybe?: any, mediaUrlMaybe?: any) {
-    // Support both:
-    // (whatsappAccountId, to, mediaType, mediaUrl)
-    // ({ whatsappAccountId, to, mediaType, mediaUrl, caption, filename })
-    const data: any =
-      typeof input === "string"
-        ? {
-            whatsappAccountId: input,
-            to: toMaybe,
-            mediaType: mediaTypeMaybe,
-            mediaUrl: mediaUrlMaybe,
-          }
-        : input;
+  /**
+   * inbox.service.ts calling:
+   * sendMediaMessage(organizationId, waAccount.id, toPhone, type, mediaUrl, content, filename)
+   */
+  async sendMediaMessage(
+    organizationId: string,
+    whatsappAccountId: string,
+    to: string,
+    mediaType: MediaType,
+    mediaUrl: string,
+    caption?: string,
+    filename?: string
+  ) {
+    if (!mediaUrl) throw new AppError("Media URL is required", 400);
 
-    const { whatsappAccountId, to, mediaType, mediaUrl, caption, filename } = data as any;
-
-    if (!whatsappAccountId || !to || !mediaType || !mediaUrl) {
-      throw new AppError("whatsappAccountId, to, mediaType and mediaUrl are required", 400);
-    }
-
-    const account = await this.getAccountById(whatsappAccountId);
+    const account = await this.getAccount(organizationId, whatsappAccountId);
 
     const mediaObj: any = { link: mediaUrl };
     if (caption) mediaObj.caption = caption;
-    if (filename) mediaObj.filename = filename;
+    if (filename && mediaType === "document") mediaObj.filename = filename;
 
-    const payload = {
+    const payload: any = {
       messaging_product: "whatsapp",
       to,
-      type: mediaType, // image|video|audio|document
+      type: mediaType,
       [mediaType]: mediaObj,
     };
 
     return whatsappApi.sendMessage(account.phoneNumberId, account.accessToken, payload);
   }
 
-  // -----------------------------
-  // SEND INTERACTIVE MESSAGE ✅ (needed by inbox.service)
-  // -----------------------------
-  async sendInteractiveMessage(input: any, toMaybe?: any, interactiveMaybe?: any) {
-    // Support both:
-    // (whatsappAccountId, to, interactive)
-    // ({ whatsappAccountId, to, interactive })
-    const data: any =
-      typeof input === "string"
-        ? { whatsappAccountId: input, to: toMaybe, interactive: interactiveMaybe }
-        : input;
+  /**
+   * inbox.service.ts calling:
+   * sendInteractiveMessage(organizationId, waAccount.id, toPhone, interactive.type, content, {...})
+   */
+  async sendInteractiveMessage(
+    organizationId: string,
+    whatsappAccountId: string,
+    to: string,
+    interactiveType: string,
+    bodyText: string,
+    configObj: {
+      buttons?: Array<{ id?: string; title?: string; text?: string }>;
+      sections?: any[];
+      buttonText?: string;
+    }
+  ) {
+    if (!bodyText) throw new AppError("Body text required for interactive messages", 400);
 
-    const { whatsappAccountId, to, interactive } = data as any;
+    const account = await this.getAccount(organizationId, whatsappAccountId);
 
-    if (!whatsappAccountId || !to || !interactive) {
-      throw new AppError("whatsappAccountId, to and interactive are required", 400);
+    const type = String(interactiveType || "").toLowerCase();
+
+    let interactive: any;
+
+    // Buttons
+    if (type.includes("button") || (configObj?.buttons && configObj.buttons.length > 0)) {
+      const buttons = (configObj.buttons || []).slice(0, 3).map((b, idx) => ({
+        type: "reply",
+        reply: {
+          id: b.id || `btn_${idx + 1}`,
+          title: b.title || b.text || `Button ${idx + 1}`,
+        },
+      }));
+
+      interactive = {
+        type: "button",
+        body: { text: bodyText },
+        action: { buttons },
+      };
+    }
+    // List
+    else if (type.includes("list") || (configObj?.sections && configObj.sections.length > 0)) {
+      interactive = {
+        type: "list",
+        body: { text: bodyText },
+        action: {
+          button: configObj.buttonText || "Select",
+          sections: configObj.sections || [],
+        },
+      };
+    } else {
+      throw new AppError("Invalid interactive payload", 400);
     }
 
-    const account = await this.getAccountById(whatsappAccountId);
-
-    const payload = {
+    const payload: any = {
       messaging_product: "whatsapp",
       to,
       type: "interactive",
