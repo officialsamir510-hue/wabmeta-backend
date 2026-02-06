@@ -390,7 +390,7 @@ export class WhatsAppService {
 
     console.log("📤 Sending text message:", { to, messageLength: message.length });
 
-    const result = await whatsappApi.sendMessage(account.phoneNumberId, account.accessToken, payload);
+    const result = await whatsappApi.sendMessage(account.phoneNumberId, account.accessToken || '', payload);
 
     console.log("✅ Message sent:", result?.messages?.[0]?.id);
 
@@ -428,7 +428,7 @@ export class WhatsAppService {
 
     console.log("📤 Sending media message:", { to, mediaType, mediaUrl });
 
-    const result = await whatsappApi.sendMessage(account.phoneNumberId, account.accessToken, payload);
+    const result = await whatsappApi.sendMessage(account.phoneNumberId, account.accessToken || '', payload);
 
     console.log("✅ Media message sent:", result?.messages?.[0]?.id);
 
@@ -515,7 +515,7 @@ export class WhatsAppService {
 
     console.log("📤 Sending interactive message:", { to, type: interactive.type });
 
-    const result = await whatsappApi.sendMessage(account.phoneNumberId, account.accessToken, payload);
+    const result = await whatsappApi.sendMessage(account.phoneNumberId, account.accessToken || '', payload);
 
     console.log("✅ Interactive message sent:", result?.messages?.[0]?.id);
 
@@ -555,7 +555,7 @@ export class WhatsAppService {
 
     console.log("📤 Sending template message:", { to, templateName, languageCode });
 
-    const result = await whatsappApi.sendMessage(account.phoneNumberId, account.accessToken, payload);
+    const result = await whatsappApi.sendMessage(account.phoneNumberId, account.accessToken || '', payload);
 
     console.log("✅ Template message sent:", result?.messages?.[0]?.id);
 
@@ -574,7 +574,7 @@ export class WhatsAppService {
 
     const result = await whatsappApi.markAsRead(
       account.phoneNumberId,
-      account.accessToken,
+      account.accessToken || '',
       messageId
     );
 

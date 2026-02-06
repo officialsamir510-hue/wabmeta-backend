@@ -31,10 +31,12 @@
     "@types/morgan": "^1.9.9",
     "@types/node": "^22.7.5",
     "@types/nodemailer": "^6.4.16",
+    "axios": "^1.13.4",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.4",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
+    "crypto-js": "^4.2.0",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
     "google-auth-library": "^10.5.0",
@@ -48,6 +50,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/crypto-js": "^4.2.2",
     "nodemon": "^3.1.7",
     "prisma": "^5.22.0",
     "ts-node": "^10.9.2",

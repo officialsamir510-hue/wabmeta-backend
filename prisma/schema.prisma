@@ -124,45 +124,55 @@ enum NotificationType {
   ALERT
 }
 
+// ✅ NEW ENUMS
+enum ConnectionStatus {
+  PENDING
+  CONNECTED
+  DISCONNECTED
+  ERROR
+  TOKEN_EXPIRED
+}
+
+enum WebhookStatus {
+  PENDING
+  PROCESSING
+  SUCCESS
+  FAILED
+}
+
 // ============================================
 // USER & ORGANIZATION
 // ============================================
 
 model User {
-  id                   String    @id @default(cuid())
-  email                String    @unique
-  password             String?   // Null for OAuth users
+  id                   String     @id @default(cuid())
+  email                String     @unique
+  password             String?
   firstName            String
   lastName             String?
   phone                String?
   avatar               String?
   status               UserStatus @default(PENDING_VERIFICATION)
   
-  // Email verification
-  emailVerified        Boolean   @default(false)
+  emailVerified        Boolean    @default(false)
   emailVerifyToken     String?
   emailVerifyExpires   DateTime?
   
-  // Password reset
   passwordResetToken   String?
   passwordResetExpires DateTime?
   
-  // OAuth
-  googleId             String?   @unique
+  googleId             String?    @unique
   
-  // OTP for 2FA
   otpSecret            String?
-  otpEnabled           Boolean   @default(false)
+  otpEnabled           Boolean    @default(false)
   
-  // Session management
   lastLoginAt          DateTime?
   lastLoginIp          String?
   
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
   
-  // Relations
-  ownedOrganizations   Organization[]  @relation("OrganizationOwner")
+  ownedOrganizations   Organization[]       @relation("OrganizationOwner")
   memberships          OrganizationMember[]
   refreshTokens        RefreshToken[]
   activityLogs         ActivityLog[]
@@ -195,11 +205,9 @@ model Organization {
   industry    String?
   timezone    String   @default("UTC")
   
-  // Owner
   ownerId     String
   owner       User     @relation("OrganizationOwner", fields: [ownerId], references: [id])
   
-  // Subscription
   planType    PlanType @default(FREE)
   
   createdAt   DateTime @default(now())
@@ -220,6 +228,10 @@ model Organization {
   webhooks          Webhook[]
   activityLogs      ActivityLog[]
   notifications     Notification[]
+  
+  // ✅ NEW RELATIONS
+  metaConnection    MetaConnection?
+  webhookLogs       WebhookLog[]
   
   @@index([slug])
   @@index([ownerId])
@@ -250,19 +262,16 @@ model Plan {
   type            PlanType @unique
   description     String?
   
-  // Pricing
   monthlyPrice    Decimal  @db.Decimal(10, 2)
   yearlyPrice     Decimal  @db.Decimal(10, 2)
   
-  // Limits
   maxContacts     Int
-  maxMessages     Int      // per month
+  maxMessages     Int
   maxTeamMembers  Int
-  maxCampaigns    Int      // per month
+  maxCampaigns    Int
   maxChatbots     Int
   maxTemplates    Int
   
-  // Features (JSON)
   features        Json     @default("[]")
   
   isActive        Boolean  @default(true)
@@ -281,16 +290,13 @@ model Subscription {
   
   status             SubscriptionStatus @default(ACTIVE)
   
-  // Billing cycle
-  billingCycle       String             @default("monthly") // monthly, yearly
+  billingCycle       String             @default("monthly")
   currentPeriodStart DateTime
   currentPeriodEnd   DateTime
   
-  // Usage tracking
   messagesUsed       Int                @default(0)
   contactsUsed       Int                @default(0)
   
-  // Payment info
   paymentMethod      String?
   lastPaymentAt      DateTime?
   nextPaymentAt      DateTime?
@@ -311,32 +317,116 @@ model WhatsAppAccount {
   organizationId   String
   organization     Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   
-  // Meta/WhatsApp details
   phoneNumberId    String                @unique
-  wabaId           String                // WhatsApp Business Account ID
+  wabaId           String
   phoneNumber      String
   displayName      String
   qualityRating    String?
   
-  // Access tokens
-  accessToken      String                // Encrypted
+  accessToken      String?               @db.Text
   tokenExpiresAt   DateTime?
   
   status           WhatsAppAccountStatus @default(PENDING)
   
-  // Webhook
   webhookSecret    String?
   
   isDefault        Boolean               @default(false)
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
   
-  // Relations
   messages         Message[]
   campaigns        Campaign[]
   
   @@index([organizationId])
   @@index([phoneNumberId])
+}
+
+// ============================================
+// ✅ META CONNECTION (NEW)
+// ============================================
+
+model MetaConnection {
+  id                    String           @id @default(cuid())
+  
+  organizationId        String           @unique
+  organization          Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  accessToken           String           @db.Text
+  accessTokenExpiresAt  DateTime?
+  
+  wabaId                String
+  wabaName              String?
+  businessId            String?
+  
+  phoneNumbers          PhoneNumber[]
+  
+  status                ConnectionStatus @default(PENDING)
+  lastSyncedAt          DateTime?
+  errorMessage          String?
+  
+  webhookVerified       Boolean          @default(false)
+  
+  messagingLimit        String?
+  qualityRating         String?
+  
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  
+  @@index([organizationId])
+}
+
+model PhoneNumber {
+  id                    String         @id @default(cuid())
+  
+  metaConnectionId      String
+  metaConnection        MetaConnection @relation(fields: [metaConnectionId], references: [id], onDelete: Cascade)
+  
+  phoneNumberId         String         @unique
+  phoneNumber           String
+  displayName           String?
+  qualityRating         String?
+  verifiedName          String?
+  
+  isActive              Boolean        @default(true)
+  isPrimary             Boolean        @default(false)
+  
+  messagesLimit         Int?
+  messagesUsed          Int            @default(0)
+  lastResetAt           DateTime       @default(now())
+  
+  conversations         Conversation[]
+  
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  
+  @@index([phoneNumberId])
+  @@index([metaConnectionId])
+}
+
+// ============================================
+// ✅ WEBHOOK LOG (NEW)
+// ============================================
+
+model WebhookLog {
+  id                String        @id @default(cuid())
+  
+  organizationId    String?
+  organization      Organization? @relation(fields: [organizationId], references: [id])
+  
+  source            String
+  eventType         String
+  payload           Json
+  
+  status            WebhookStatus @default(PENDING)
+  processedAt       DateTime?
+  responseTime      Int?
+  errorMessage      String?
+  
+  createdAt         DateTime      @default(now())
+  
+  @@index([organizationId])
+  @@index([eventType])
+  @@index([createdAt])
 }
 
 // ============================================
@@ -355,20 +445,16 @@ model Contact {
   email          String?
   avatar         String?
   
-  // Custom fields (JSON)
   customFields   Json          @default("{}")
   
-  // Tags
   tags           String[]      @default([])
   
   status         ContactStatus @default(ACTIVE)
   
-  // Engagement metrics
   lastMessageAt  DateTime?
   messageCount   Int           @default(0)
   
-  // Source tracking
-  source         String?       // import, manual, api, chatbot
+  source         String?
   
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
@@ -385,16 +471,16 @@ model Contact {
 }
 
 model ContactGroup {
-  id             String        @id @default(cuid())
+  id             String       @id @default(cuid())
   organizationId String
-  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   
   name           String
   description    String?
-  color          String?       @default("#25D366")
+  color          String?      @default("#25D366")
   
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
   
   members        ContactGroupMember[]
   campaigns      Campaign[]
@@ -427,20 +513,25 @@ model Conversation {
   contactId          String
   contact            Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
   
-  // Last message preview
+  // ✅ NEW: Phone Number relation
+  phoneNumberId      String?
+  phoneNumber        PhoneNumber?  @relation(fields: [phoneNumberId], references: [id])
+  
   lastMessageAt      DateTime?
   lastMessagePreview String?
   
-  // Status
   isArchived         Boolean       @default(false)
   isRead             Boolean       @default(true)
   unreadCount        Int           @default(0)
   
-  // Assignment
-  assignedTo         String?       // User ID
+  assignedTo         String?
   
-  // Labels
   labels             String[]      @default([])
+  
+  // ✅ NEW: Window tracking
+  lastCustomerMessageAt DateTime?
+  windowExpiresAt       DateTime?
+  isWindowOpen          Boolean   @default(true)
   
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
@@ -451,6 +542,7 @@ model Conversation {
   @@index([organizationId])
   @@index([contactId])
   @@index([lastMessageAt])
+  @@index([phoneNumberId])
 }
 
 model Message {
@@ -461,24 +553,23 @@ model Message {
   whatsappAccountId String?
   whatsappAccount   WhatsAppAccount? @relation(fields: [whatsappAccountId], references: [id])
   
-  // WhatsApp message ID
   waMessageId       String?          @unique
+  
+  // ✅ NEW: Additional WhatsApp Message ID field
+  wamId             String?          @unique
   
   direction         MessageDirection
   type              MessageType      @default(TEXT)
   
-  // Content
-  content           String?          // Text content
+  content           String?
   mediaUrl          String?
   mediaType         String?
   mediaMimeType     String?
   
-  // Template info
   templateId        String?
   templateName      String?
   templateParams    Json?
   
-  // Status tracking
   status            MessageStatus    @default(PENDING)
   sentAt            DateTime?
   deliveredAt       DateTime?
@@ -486,10 +577,12 @@ model Message {
   failedAt          DateTime?
   failureReason     String?
   
-  // Context (reply to)
+  // ✅ NEW: Status tracking & retry
+  statusUpdatedAt   DateTime?
+  retryCount        Int              @default(0)
+  
   replyToMessageId  String?
   
-  // Metadata
   metadata          Json?
   
   createdAt         DateTime         @default(now())
@@ -497,6 +590,7 @@ model Message {
   
   @@index([conversationId])
   @@index([waMessageId])
+  @@index([wamId])
   @@index([createdAt])
 }
 
@@ -509,22 +603,18 @@ model Template {
   organizationId  String
   organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   
-  // Meta template info
   metaTemplateId  String?
   name            String
   language        String           @default("en")
   category        TemplateCategory @default(MARKETING)
   
-  // Content
-  headerType      String?          // text, image, video, document
+  headerType      String?
   headerContent   String?
   bodyText        String
   footerText      String?
   
-  // Buttons (JSON array)
   buttons         Json             @default("[]")
   
-  // Variables
   variables       Json             @default("[]")
   
   status          TemplateStatus   @default(PENDING)
@@ -545,43 +635,37 @@ model Template {
 // ============================================
 
 model Campaign {
-  id                String         @id @default(cuid())
+  id                String          @id @default(cuid())
   organizationId    String
-  organization      Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization      Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   
   name              String
   description       String?
   
-  // Template
   templateId        String
-  template          Template       @relation(fields: [templateId], references: [id])
+  template          Template        @relation(fields: [templateId], references: [id])
   
-  // WhatsApp Account
   whatsappAccountId String
   whatsappAccount   WhatsAppAccount @relation(fields: [whatsappAccountId], references: [id])
   
-  // Target audience
   contactGroupId    String?
-  contactGroup      ContactGroup?  @relation(fields: [contactGroupId], references: [id])
+  contactGroup      ContactGroup?   @relation(fields: [contactGroupId], references: [id])
   
-  // Filter criteria (JSON)
   audienceFilter    Json?
   
-  // Scheduling
-  status            CampaignStatus @default(DRAFT)
+  status            CampaignStatus  @default(DRAFT)
   scheduledAt       DateTime?
   startedAt         DateTime?
   completedAt       DateTime?
   
-  // Stats
-  totalContacts     Int            @default(0)
-  sentCount         Int            @default(0)
-  deliveredCount    Int            @default(0)
-  readCount         Int            @default(0)
-  failedCount       Int            @default(0)
+  totalContacts     Int             @default(0)
+  sentCount         Int             @default(0)
+  deliveredCount    Int             @default(0)
+  readCount         Int             @default(0)
+  failedCount       Int             @default(0)
   
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
   
   contacts          CampaignContact[]
   
@@ -597,7 +681,6 @@ model CampaignContact {
   contactId     String
   contact       Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
   
-  // Status
   status        MessageStatus @default(PENDING)
   waMessageId   String?
   
@@ -607,7 +690,6 @@ model CampaignContact {
   failedAt      DateTime?
   failureReason String?
   
-  // Retry tracking
   retryCount    Int           @default(0)
   nextRetryAt   DateTime?
   
@@ -632,13 +714,10 @@ model Chatbot {
   name            String
   description     String?
   
-  // Flow data (ReactFlow JSON)
   flowData        Json          @default("{}")
   
-  // Trigger keywords
   triggerKeywords String[]      @default([])
   
-  // Settings
   isDefault       Boolean       @default(false)
   welcomeMessage  String?
   fallbackMessage String?
@@ -664,17 +743,13 @@ model Automation {
   name           String
   description    String?
   
-  // Trigger
   trigger        AutomationTrigger
   triggerConfig  Json              @default("{}")
   
-  // Actions (JSON array of actions)
   actions        Json              @default("[]")
   
-  // Status
   isActive       Boolean           @default(false)
   
-  // Stats
   executionCount Int               @default(0)
   lastExecutedAt DateTime?
   
@@ -696,15 +771,12 @@ model ApiKey {
   
   name           String
   key            String       @unique
-  secret         String       // Hashed
+  secret         String
   
-  // Permissions
   permissions    String[]     @default([])
   
-  // Rate limiting
-  rateLimit      Int          @default(100) // per minute
+  rateLimit      Int          @default(100)
   
-  // Usage
   lastUsedAt     DateTime?
   usageCount     Int          @default(0)
   
@@ -726,12 +798,10 @@ model Webhook {
   url             String
   secret          String?
   
-  // Events to listen
   events          String[]     @default([])
   
   isActive        Boolean      @default(true)
   
-  // Stats
   lastTriggeredAt DateTime?
   successCount    Int          @default(0)
   failureCount    Int          @default(0)
@@ -747,30 +817,25 @@ model Webhook {
 // ============================================
 
 model Notification {
-  id             String       @id @default(cuid())
+  id             String        @id @default(cuid())
   
-  // User relation
   userId         String
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   
-  // Organization relation (optional)
   organizationId String?
   organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   
-  // Notification content
-  type           String       @default("system") // message, campaign, team, billing, system, alert
+  type           String        @default("system")
   title          String
   description    String
   actionUrl      String?
   
-  // Metadata (JSON)
-  metadata       Json         @default("{}")
+  metadata       Json          @default("{}")
   
-  // Status
-  read           Boolean      @default(false)
+  read           Boolean       @default(false)
   readAt         DateTime?
   
-  createdAt      DateTime     @default(now())
+  createdAt      DateTime      @default(now())
   
   @@index([userId])
   @@index([userId, read])
@@ -789,11 +854,10 @@ model ActivityLog {
   userId         String?
   user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   
-  action         String        // e.g., "user.login", "contact.created"
-  entity         String?       // e.g., "contact", "campaign"
+  action         String
+  entity         String?
   entityId       String?
   
-  // Details
   metadata       Json          @default("{}")
   
   ipAddress      String?
@@ -816,7 +880,7 @@ model AdminUser {
   email       String   @unique
   password    String
   name        String
-  role        String   @default("admin") // admin, super_admin
+  role        String   @default("admin")
   
   isActive    Boolean  @default(true)
   lastLoginAt DateTime?

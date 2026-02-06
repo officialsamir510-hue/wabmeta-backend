@@ -24,6 +24,9 @@ import adminRoutes from './modules/admin/admin.routes';
 import billingRoutes from './modules/billing/billing.routes';
 import razorpayRoutes from './modules/billing/razorpay.routes';
 
+// ✅ Import Meta routes
+import metaRoutes from './modules/meta/meta.routes';
+
 const app: Express = express();
 
 // ============================================
@@ -201,6 +204,46 @@ app.post('/api/debug/cors-test', (req: Request, res: Response) => {
 });
 
 // ============================================
+// ✅ META WEBHOOKS (Before API prefix)
+// ============================================
+
+// Meta webhook verification (GET)
+app.get('/webhooks/meta', (req: Request, res: Response) => {
+  const mode = req.query['hub.mode'] as string | undefined;
+  const token = req.query['hub.verify_token'] as string | undefined;
+  const challenge = req.query['hub.challenge'] as string | undefined;
+
+  // ✅ FIXED: Type-safe token slicing
+  const tokenPreview = token ? token.slice(0, 10) + '...' : 'undefined';
+  console.log('🔍 Meta webhook verification:', { mode, token: tokenPreview });
+
+  if (mode === 'subscribe' && token === config.meta.webhookVerifyToken) {
+    console.log('✅ Meta webhook verified');
+    return res.status(200).send(challenge);
+  }
+
+  console.error('❌ Meta webhook verification failed');
+  res.sendStatus(403);
+});
+
+// Meta webhook events (POST)
+app.post('/webhooks/meta', express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
+  try {
+    console.log('📥 Meta webhook received');
+    
+    // Process webhook asynchronously (don't block response)
+    // You can import and call your webhook handler here
+    // Example: void webhookService.processMetaWebhook(req.body);
+    
+    // Always respond quickly to Meta
+    res.sendStatus(200);
+  } catch (error) {
+    console.error('❌ Meta webhook error:', error);
+    res.sendStatus(200); // Still return 200 to prevent retries
+  }
+});
+
+// ============================================
 // API ROUTES
 // ============================================
 
@@ -218,6 +261,9 @@ app.use(`${apiPrefix}/chatbot`, chatbotRoutes);
 app.use(`${apiPrefix}/admin`, adminRoutes);
 app.use(`${apiPrefix}/billing`, billingRoutes);
 app.use(`${apiPrefix}/billing/razorpay`, razorpayRoutes);
+
+// ✅ Add Meta routes
+app.use(`${apiPrefix}/meta`, metaRoutes);
 
 // ============================================
 // 404 HANDLER

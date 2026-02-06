@@ -248,7 +248,7 @@ export class TemplatesService {
         buttons: (buttons || []) as any,
       });
 
-      const metaRes = await whatsappApi.createMessageTemplate(wa.wabaId, wa.accessToken, metaPayload);
+      const metaRes = await whatsappApi.createMessageTemplate(wa.wabaId, wa.accessToken || '', metaPayload);
       const metaTemplateId = metaRes?.id || metaRes?.template_id;
 
       await prisma.template.update({
@@ -492,7 +492,7 @@ export class TemplatesService {
       buttons: (template.buttons as any) || [],
     });
 
-    const metaRes = await whatsappApi.createMessageTemplate(wa.wabaId, wa.accessToken, metaPayload);
+    const metaRes = await whatsappApi.createMessageTemplate(wa.wabaId, wa.accessToken || '', metaPayload);
     const metaTemplateId = metaRes?.id || metaRes?.template_id;
 
     await prisma.template.update({
@@ -518,8 +518,7 @@ export class TemplatesService {
   ): Promise<{ message: string; synced: number }> {
     const wa = await getConnectedWaAccount(organizationId, whatsappAccountId);
 
-    const metaTemplates = await whatsappApi.listMessageTemplates(wa.wabaId, wa.accessToken);
-
+   const metaTemplates = await whatsappApi.listMessageTemplates(wa.wabaId, wa.accessToken || '');
     let synced = 0;
     for (const mt of metaTemplates) {
       const metaId = String(mt.id);
