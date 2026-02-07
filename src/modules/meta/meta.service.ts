@@ -1,281 +1,160 @@
 // src/modules/meta/meta.service.ts
 
-import { PrismaClient } from '@prisma/client';
-import { MetaGraphAPI } from './meta.api';
-import { EncryptionUtil } from '../../utils/encryption';
+static async handleOAuthCallback(code: string, state: string) {
+  try {
+    // Decode state
+    const stateData = JSON.parse(Buffer.from(state, 'base64').toString());
+    const { organizationId, userId } = stateData;
 
-const prisma = new PrismaClient();
+    console.log('OAuth callback for org:', organizationId);
 
-export class MetaService {
-  /**
-   * Generate OAuth authorization URL
-   */
-  static getAuthorizationUrl(organizationId: string, userId: string): string {
-    const configId = process.env.META_CONFIG_ID;
-    
-    if (!configId) {
-      throw new Error('META_CONFIG_ID not configured');
-    }
-
-    const state = Buffer.from(JSON.stringify({ 
-      organizationId, 
-      userId,
-      timestamp: Date.now() 
-    })).toString('base64');
-
-    const params = new URLSearchParams({
-      client_id: process.env.META_APP_ID!,
-      config_id: configId,
-      response_type: 'code',
-      override_default_response_type: 'true',
-      state: state,
-      redirect_uri: process.env.META_REDIRECT_URI!,
+    // Verify organization exists
+    const organization = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      include: { metaConnection: true }
     });
 
-    return `https://www.facebook.com/v21.0/dialog/oauth?${params.toString()}`;
-  }
+    if (!organization) {
+      throw new Error('Organization not found');
+    }
 
-  /**
-   * Handle OAuth callback and store connection
-   */
-  static async handleOAuthCallback(code: string, state: string) {
-    try {
-      // Decode state
-      const stateData = JSON.parse(Buffer.from(state, 'base64').toString());
-      const { organizationId, userId } = stateData;
+    // Exchange code for token
+    const api = new MetaGraphAPI();
+    const tokenResponse = await api.exchangeCodeForToken(code);
 
-      // Verify organization exists
-      const organization = await prisma.organization.findUnique({
-        where: { id: organizationId },
-        include: { metaConnection: true }
-      });
+    console.log('Token exchanged successfully');
 
-      if (!organization) {
-        throw new Error('Organization not found');
+    // Get long-lived token (60 days)
+    const longLivedToken = await api.getLongLivedToken(tokenResponse.access_token);
+
+    // Get accessible WABAs for this user
+    const wabas = await api.getAccessibleWABAs(longLivedToken.access_token);
+
+    if (!wabas || wabas.length === 0) {
+      throw new Error('No WhatsApp Business Account found. Please create one in Meta Business Suite first.');
+    }
+
+    console.log(`Found ${wabas.length} WABAs`);
+
+    // If multiple WABAs, use first one (or implement selection UI)
+    const selectedWaba = wabas[0];
+
+    // Get phone numbers for selected WABA
+    const phoneNumbers = await api.getPhoneNumbers(selectedWaba.id, longLivedToken.access_token);
+
+    if (!phoneNumbers || phoneNumbers.length === 0) {
+      throw new Error('No phone numbers found. Please add a phone number to your WhatsApp Business Account.');
+    }
+
+    console.log(`Found ${phoneNumbers.length} phone numbers`);
+
+    // Encrypt access token before storing
+    const encryptedToken = EncryptionUtil.encrypt(longLivedToken.access_token);
+
+    // Calculate token expiry (60 days for long-lived token)
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 60);
+
+    // Store or update MetaConnection for this organization
+    const metaConnection = await prisma.metaConnection.upsert({
+      where: { organizationId },
+      create: {
+        organizationId,
+        accessToken: encryptedToken,
+        accessTokenExpiresAt: expiresAt,
+        wabaId: selectedWaba.id,
+        wabaName: selectedWaba.name,
+        status: 'CONNECTED',
+        lastSyncedAt: new Date(),
+        messagingLimit: phoneNumbers[0]?.messaging_limit_tier || 'TIER_1'
+      },
+      update: {
+        accessToken: encryptedToken,
+        accessTokenExpiresAt: expiresAt,
+        wabaId: selectedWaba.id,
+        wabaName: selectedWaba.name,
+        status: 'CONNECTED',
+        lastSyncedAt: new Date(),
+        errorMessage: null,
+        messagingLimit: phoneNumbers[0]?.messaging_limit_tier || 'TIER_1'
       }
+    });
 
-      // Exchange code for token
-      const api = new MetaGraphAPI();
-      const tokenResponse = await api.exchangeCodeForToken(code);
-
-      // Get long-lived token (60 days)
-      const longLivedToken = await api.getLongLivedToken(tokenResponse.access_token);
-
-      // Initialize API with new token
-      const authenticatedAPI = new MetaGraphAPI(longLivedToken.access_token);
-
-      // Get user's WhatsApp Business Accounts
-      const wabas = await authenticatedAPI.getWhatsAppBusinessAccounts(userId);
-
-      if (!wabas || wabas.length === 0) {
-        throw new Error('No WhatsApp Business Account found. Please create one first.');
-      }
-
-      // Use first WABA (can be extended for multi-WABA selection)
-      const waba = wabas[0];
-
-      // Get phone numbers for this WABA
-      const phoneNumbers = await authenticatedAPI.getPhoneNumbers(waba.id);
-
-      if (!phoneNumbers || phoneNumbers.length === 0) {
-        throw new Error('No phone numbers found for this WhatsApp Business Account');
-      }
-
-      // Encrypt access token before storing
-      const encryptedToken = EncryptionUtil.encrypt(longLivedToken.access_token);
-
-      // Calculate token expiry (60 days for long-lived token)
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 60);
-
-      // Store or update MetaConnection
-      const metaConnection = await prisma.metaConnection.upsert({
-        where: { organizationId },
+    // Store phone numbers for this organization
+    for (const phone of phoneNumbers) {
+      await prisma.phoneNumber.upsert({
+        where: { phoneNumberId: phone.id },
         create: {
-          organizationId,
-          accessToken: encryptedToken,
-          accessTokenExpiresAt: expiresAt,
-          wabaId: waba.id,
-          wabaName: waba.name,
-          status: 'CONNECTED',
-          lastSyncedAt: new Date()
+          metaConnectionId: metaConnection.id,
+          phoneNumberId: phone.id,
+          phoneNumber: phone.display_phone_number,
+          displayName: phone.display_phone_number,
+          verifiedName: phone.verified_name,
+          qualityRating: phone.quality_rating || 'UNKNOWN',
+          isActive: true,
+          isPrimary: phoneNumbers.indexOf(phone) === 0
         },
         update: {
-          accessToken: encryptedToken,
-          accessTokenExpiresAt: expiresAt,
-          wabaId: waba.id,
-          wabaName: waba.name,
-          status: 'CONNECTED',
-          lastSyncedAt: new Date(),
-          errorMessage: null
+          phoneNumber: phone.display_phone_number,
+          verifiedName: phone.verified_name,
+          qualityRating: phone.quality_rating || 'UNKNOWN',
+          isActive: true
         }
       });
+    }
 
-      // Store phone numbers
-      for (const phone of phoneNumbers) {
-        await prisma.phoneNumber.upsert({
-          where: { phoneNumberId: phone.id },
-          create: {
-            metaConnectionId: metaConnection.id,
-            phoneNumberId: phone.id,
-            phoneNumber: phone.display_phone_number,
-            displayName: phone.display_phone_number,
-            verifiedName: phone.verified_name,
-            qualityRating: phone.quality_rating,
-            isActive: true,
-            isPrimary: phoneNumbers.indexOf(phone) === 0
-          },
-          update: {
-            phoneNumber: phone.display_phone_number,
-            verifiedName: phone.verified_name,
-            qualityRating: phone.quality_rating,
-            isActive: true
-          }
-        });
+    // Log activity
+    await prisma.activityLog.create({
+      data: {
+        organizationId,
+        userId,
+        action: 'META_CONNECTED',
+        entity: 'MetaConnection',
+        entityId: metaConnection.id,
+        metadata: {
+          wabaName: selectedWaba.name,
+          wabaId: selectedWaba.id,
+          phoneNumbers: phoneNumbers.map(p => p.display_phone_number),
+          messagingTier: phoneNumbers[0]?.messaging_limit_tier
+        }
       }
+    });
 
-      // Log activity (✅ FIXED - no description field)
+    console.log('✅ Meta connection established for org:', organization.name);
+
+    return {
+      success: true,
+      connection: {
+        id: metaConnection.id,
+        wabaName: selectedWaba.name,
+        status: 'CONNECTED'
+      },
+      phoneNumbers: phoneNumbers.map(p => ({
+        id: p.id,
+        number: p.display_phone_number,
+        verified: p.verified_name,
+        quality: p.quality_rating
+      }))
+    };
+
+  } catch (error: any) {
+    console.error('OAuth callback error:', error);
+    
+    // Log failed attempt
+    if (organizationId && userId) {
       await prisma.activityLog.create({
         data: {
           organizationId,
           userId,
-          action: 'META_CONNECTED',
+          action: 'META_CONNECTION_FAILED',
           entity: 'MetaConnection',
-          entityId: metaConnection.id,
           metadata: {
-            wabaName: waba.name,
-            wabaId: waba.id,
-            phoneNumbers: phoneNumbers.map(p => p.display_phone_number)
+            error: error.message
           }
         }
       });
-
-      return {
-        success: true,
-        connection: metaConnection,
-        phoneNumbers: phoneNumbers.map(p => ({
-          id: p.id,
-          number: p.display_phone_number,
-          verified: p.verified_name
-        }))
-      };
-
-    } catch (error: any) {
-      console.error('OAuth callback error:', error);
-      throw new Error(error.message || 'Failed to connect WhatsApp account');
-    }
-  }
-
-  /**
-   * Get connection status for organization
-   */
-  static async getConnectionStatus(organizationId: string) {
-    const connection = await prisma.metaConnection.findUnique({
-      where: { organizationId },
-      include: {
-        phoneNumbers: {
-          where: { isActive: true }
-        }
-      }
-    });
-
-    if (!connection) {
-      return {
-        connected: false,
-        status: 'NOT_CONNECTED'
-      };
     }
 
-    // Check if token expired
-    const isExpired = connection.accessTokenExpiresAt && 
-                     new Date() > connection.accessTokenExpiresAt;
-
-    if (isExpired) {
-      await prisma.metaConnection.update({
-        where: { id: connection.id },
-        data: { status: 'TOKEN_EXPIRED' }
-      });
-
-      return {
-        connected: false,
-        status: 'TOKEN_EXPIRED',
-        expiresAt: connection.accessTokenExpiresAt
-      };
-    }
-
-    return {
-      connected: true,
-      status: connection.status,
-      waba: {
-        id: connection.wabaId,
-        name: connection.wabaName
-      },
-      phoneNumbers: connection.phoneNumbers.map((p: any) => ({
-        id: p.phoneNumberId,
-        number: p.phoneNumber,
-        verifiedName: p.verifiedName,
-        quality: p.qualityRating,
-        isPrimary: p.isPrimary
-      })),
-      lastSynced: connection.lastSyncedAt
-    };
-  }
-
-  /**
-   * Disconnect WhatsApp account
-   */
-  static async disconnect(organizationId: string) {
-    try {
-      const connection = await prisma.metaConnection.findUnique({
-        where: { organizationId }
-      });
-
-      if (!connection) {
-        throw new Error('No connection found');
-      }
-
-      // Update status to disconnected
-      await prisma.metaConnection.update({
-        where: { organizationId },
-        data: {
-          status: 'DISCONNECTED',
-          errorMessage: 'Manually disconnected by user'
-        }
-      });
-
-      // Deactivate phone numbers
-      await prisma.phoneNumber.updateMany({
-        where: { metaConnectionId: connection.id },
-        data: { isActive: false }
-      });
-
-      return { success: true };
-    } catch (error: any) {
-      throw new Error(error.message || 'Failed to disconnect');
-    }
-  }
-
-  /**
-   * Get decrypted access token for API calls
-   */
-  static async getAccessToken(organizationId: string): Promise<string> {
-    const connection = await prisma.metaConnection.findUnique({
-      where: { organizationId }
-    });
-
-    if (!connection) {
-      throw new Error('WhatsApp not connected');
-    }
-
-    if (connection.status !== 'CONNECTED') {
-      throw new Error(`Connection status: ${connection.status}`);
-    }
-
-    // Check expiry
-    if (connection.accessTokenExpiresAt && new Date() > connection.accessTokenExpiresAt) {
-      throw new Error('Access token expired. Please reconnect.');
-    }
-
-    return EncryptionUtil.decrypt(connection.accessToken);
+    throw new Error(error.message || 'Failed to connect WhatsApp account');
   }
 }
