@@ -67,77 +67,155 @@ export class MetaGraphAPI {
   }
 
   /**
-   * Get accessible WABAs for user
+   * Get accessible WABAs for user (IMPROVED VERSION)
    */
   async getAccessibleWABAs(userAccessToken: string) {
     try {
-      // Debug token to get user ID
-      const debugResponse = await this.client.get('/debug_token', {
-        params: {
-          input_token: userAccessToken,
-          access_token: `${process.env.META_APP_ID}|${process.env.META_APP_SECRET}`
-        }
-      });
+      console.log('🔍 Fetching accessible WABAs...');
 
-      const userId = debugResponse.data.data.user_id;
-
-      // Get businesses
-      const businessResponse = await this.client.get(`/${userId}/businesses`, {
-        headers: {
-          'Authorization': `Bearer ${userAccessToken}`
-        },
-        params: {
-          fields: 'id,name'
-        }
-      });
-
-      const businesses = businessResponse.data.data || [];
-      const wabas: any[] = [];
-
-      // Get WABAs for each business
-      for (const business of businesses) {
-        try {
-          const wabaResponse = await this.client.get(`/${business.id}/owned_whatsapp_business_accounts`, {
-            headers: {
-              'Authorization': `Bearer ${userAccessToken}`
-            },
-            params: {
-              fields: 'id,name,timezone_id,message_template_namespace'
-            }
-          });
-
-          if (wabaResponse.data.data) {
-            wabas.push(...wabaResponse.data.data);
+      // Method 1: Try direct WABA access FIRST (most common for Embedded Signup)
+      try {
+        const directResponse = await this.client.get('/me/owned_whatsapp_business_accounts', {
+          headers: {
+            'Authorization': `Bearer ${userAccessToken}`
+          },
+          params: {
+            fields: 'id,name,timezone_id,message_template_namespace,owner_business_info'
           }
-        } catch (err) {
-          console.error(`Error fetching WABAs for business ${business.id}`);
+        });
+
+        if (directResponse.data?.data && directResponse.data.data.length > 0) {
+          console.log(`✅ Found ${directResponse.data.data.length} WABAs via direct access`);
+          return directResponse.data.data;
         }
+      } catch (directError: any) {
+        console.log('Direct WABA access failed:', directError.response?.data?.error?.message || 'Unknown error');
       }
 
-      // If no WABAs from businesses, try direct WABA access
-      if (wabas.length === 0) {
-        try {
-          const directWabaResponse = await this.client.get('/me/whatsapp_business_accounts', {
-            headers: {
-              'Authorization': `Bearer ${userAccessToken}`
-            },
-            params: {
-              fields: 'id,name'
-            }
-          });
-
-          if (directWabaResponse.data.data) {
-            wabas.push(...directWabaResponse.data.data);
+      // Method 2: Try shared WABAs
+      try {
+        const sharedResponse = await this.client.get('/me/client_whatsapp_business_accounts', {
+          headers: {
+            'Authorization': `Bearer ${userAccessToken}`
+          },
+          params: {
+            fields: 'id,name,timezone_id,message_template_namespace'
           }
-        } catch (err) {
-          console.error('Error fetching direct WABAs');
+        });
+
+        if (sharedResponse.data?.data && sharedResponse.data.data.length > 0) {
+          console.log(`✅ Found ${sharedResponse.data.data.length} shared WABAs`);
+          return sharedResponse.data.data;
         }
+      } catch (sharedError: any) {
+        console.log('Shared WABA access failed:', sharedError.response?.data?.error?.message || 'Unknown error');
       }
 
-      return wabas;
+      // Method 3: Try via businesses
+      try {
+        // Debug token to get user ID
+        const debugResponse = await this.client.get('/debug_token', {
+          params: {
+            input_token: userAccessToken,
+            access_token: `${process.env.META_APP_ID}|${process.env.META_APP_SECRET}`
+          }
+        });
+
+        const userId = debugResponse.data.data.user_id;
+        console.log('User ID:', userId);
+
+        // Check permissions
+        const permissionsResponse = await this.client.get(`/${userId}/permissions`, {
+          headers: {
+            'Authorization': `Bearer ${userAccessToken}`
+          }
+        });
+
+        console.log('User permissions:', permissionsResponse.data);
+
+        // Get businesses
+        const businessResponse = await this.client.get(`/${userId}/businesses`, {
+          headers: {
+            'Authorization': `Bearer ${userAccessToken}`
+          },
+          params: {
+            fields: 'id,name,verification_status'
+          }
+        });
+
+        const businesses = businessResponse.data?.data || [];
+        console.log(`Found ${businesses.length} businesses`);
+
+        if (businesses.length === 0) {
+          // User might need to create business account first
+          throw new Error('No Meta Business Account found. Please create a business account at business.facebook.com first.');
+        }
+
+        const wabas: any[] = [];
+
+        // Get WABAs for each business
+        for (const business of businesses) {
+          try {
+            const wabaResponse = await this.client.get(`/${business.id}/owned_whatsapp_business_accounts`, {
+              headers: {
+                'Authorization': `Bearer ${userAccessToken}`
+              },
+              params: {
+                fields: 'id,name,timezone_id,message_template_namespace,owner_business_info'
+              }
+            });
+
+            if (wabaResponse.data?.data && wabaResponse.data.data.length > 0) {
+              console.log(`✅ Found ${wabaResponse.data.data.length} WABAs for business "${business.name}"`);
+              wabas.push(...wabaResponse.data.data);
+            }
+          } catch (businessError: any) {
+            console.error(`Failed to fetch WABAs for business ${business.id}:`, 
+              businessError.response?.data?.error?.message || 'Unknown error');
+          }
+
+          // Also try client WABAs for each business
+          try {
+            const clientWabaResponse = await this.client.get(`/${business.id}/client_whatsapp_business_accounts`, {
+              headers: {
+                'Authorization': `Bearer ${userAccessToken}`
+              },
+              params: {
+                fields: 'id,name,timezone_id,message_template_namespace'
+              }
+            });
+
+            if (clientWabaResponse.data?.data && clientWabaResponse.data.data.length > 0) {
+              console.log(`✅ Found ${clientWabaResponse.data.data.length} client WABAs for business "${business.name}"`);
+              wabas.push(...clientWabaResponse.data.data);
+            }
+          } catch (clientError: any) {
+            console.error(`Failed to fetch client WABAs for business ${business.id}:`, 
+              clientError.response?.data?.error?.message || 'Unknown error');
+          }
+        }
+
+        if (wabas.length > 0) {
+          return wabas;
+        }
+
+      } catch (businessError: any) {
+        console.error('Business access error:', businessError.response?.data || businessError.message);
+      }
+
+      // If all methods fail, provide helpful error message
+      throw new Error(
+        'No WhatsApp Business Accounts found. Please ensure:\n' +
+        '1. You have a Meta Business Account (create at business.facebook.com)\n' +
+        '2. WhatsApp Business Account is created and verified\n' +
+        '3. You have admin access to the WhatsApp Business Account\n' +
+        '4. The app has necessary permissions (whatsapp_business_management)\n\n' +
+        'If you just created a WABA, it may take a few minutes to appear.'
+      );
+
     } catch (error: any) {
-      console.error('Get WABAs error:', error.response?.data || error.message);
-      throw new Error('Failed to fetch WhatsApp Business Accounts');
+      console.error('Get WABAs final error:', error.response?.data || error.message);
+      throw new Error(error.message || 'Failed to fetch WhatsApp Business Accounts');
     }
   }
 
@@ -151,14 +229,14 @@ export class MetaGraphAPI {
           'Authorization': `Bearer ${accessToken}`
         },
         params: {
-          fields: 'id,display_phone_number,verified_name,quality_rating,code_verification_status,messaging_limit_tier'
+          fields: 'id,display_phone_number,verified_name,quality_rating,code_verification_status,messaging_limit_tier,name_status'
         }
       });
 
-      return response.data.data || [];
+      return response.data?.data || [];
     } catch (error: any) {
       console.error('Get phone numbers error:', error.response?.data || error.message);
-      throw new Error('Failed to fetch phone numbers');
+      throw new Error('Failed to fetch phone numbers. Please ensure a phone number is added to your WhatsApp Business Account.');
     }
   }
 

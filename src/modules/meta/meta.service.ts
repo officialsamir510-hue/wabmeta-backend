@@ -1,6 +1,6 @@
 // src/modules/meta/meta.service.ts
 
-import { MetaConnection, PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import { MetaGraphAPI } from './meta.api';
 import { EncryptionUtil } from '../../utils/encryption';
 
@@ -14,6 +14,7 @@ export class MetaService {
     const configId = process.env.META_CONFIG_ID;
     const appId = process.env.META_APP_ID;
     const redirectUri = process.env.META_REDIRECT_URI;
+    const version = process.env.META_GRAPH_API_VERSION || 'v21.0';
 
     if (!configId || !appId || !redirectUri) {
       console.error('Missing Meta configuration:', {
@@ -37,9 +38,11 @@ export class MetaService {
       override_default_response_type: 'true',
       state: state,
       redirect_uri: redirectUri,
+      // Add explicit scopes for permissions
+      scope: 'business_management,whatsapp_business_management,whatsapp_business_messaging'
     });
 
-    const authUrl = `https://www.facebook.com/v21.0/dialog/oauth?${params.toString()}`;
+    const authUrl = `https://www.facebook.com/${version}/dialog/oauth?${params.toString()}`;
 
     console.log('Generated auth URL for org:', organizationId);
 
@@ -59,6 +62,10 @@ export class MetaService {
       organizationId = stateData.organizationId;
       userId = stateData.userId;
 
+      if (!organizationId) {
+        throw new Error('Organization ID not found in state');
+      }
+
       console.log('OAuth callback for org:', organizationId);
 
       // Verify organization exists
@@ -77,31 +84,47 @@ export class MetaService {
 
       console.log('Token exchanged successfully');
 
-      // Get long-lived token (60 days) - use access_token
+      // Get long-lived token (60 days)
       const longLivedToken = await api.getLongLivedToken(tokenResponse.access_token);
 
-      // Get accessible WABAs for this user - use access_token
+      // Get accessible WABAs for this user
       const wabas = await api.getAccessibleWABAs(longLivedToken.access_token);
 
       if (!wabas || wabas.length === 0) {
-        throw new Error('No WhatsApp Business Account found. Please create one in Meta Business Suite first.');
+        throw new Error(
+          'No WhatsApp Business Account found.\n\n' +
+          'Please ensure:\n' +
+          '1. You have a Meta Business Account\n' +
+          '2. WhatsApp Business Account is created\n' +
+          '3. You are an admin of the WABA\n' +
+          '4. Try logging in at business.facebook.com first'
+        );
       }
 
       console.log(`Found ${wabas.length} WABAs`);
 
-      // If multiple WABAs, use first one
+      // If multiple WABAs, use first one (later can add selection UI)
       const selectedWaba = wabas[0];
+      console.log(`Selected WABA: ${selectedWaba.name} (${selectedWaba.id})`);
 
-      // Get phone numbers for selected WABA - use access_token
+      // Get phone numbers for selected WABA
       const phoneNumbers = await api.getPhoneNumbers(selectedWaba.id, longLivedToken.access_token);
 
       if (!phoneNumbers || phoneNumbers.length === 0) {
-        throw new Error('No phone numbers found. Please add a phone number to your WhatsApp Business Account.');
+        throw new Error(
+          'No phone numbers found in your WhatsApp Business Account.\n\n' +
+          'Please add a phone number in Meta Business Suite:\n' +
+          '1. Go to business.facebook.com\n' +
+          '2. Select your WhatsApp Business Account\n' +
+          '3. Add a phone number\n' +
+          '4. Verify the number\n' +
+          '5. Try connecting again'
+        );
       }
 
       console.log(`Found ${phoneNumbers.length} phone numbers`);
 
-      // Encrypt access token before storing - use access_token
+      // Encrypt access token before storing
       const encryptedToken = EncryptionUtil.encrypt(longLivedToken.access_token);
 
       // Calculate token expiry (60 days for long-lived token)
@@ -110,26 +133,28 @@ export class MetaService {
 
       // Store or update MetaConnection for this organization
       const metaConnection = await prisma.metaConnection.upsert({
-        where: { organizationId: organizationId! },
+        where: { organizationId },
         create: {
-          organizationId: organizationId!,
+          organizationId,
           accessToken: encryptedToken,
           accessTokenExpiresAt: expiresAt,
           wabaId: selectedWaba.id,
-          wabaName: selectedWaba.name,
+          wabaName: selectedWaba.name || 'WhatsApp Business Account',
           status: 'CONNECTED',
           lastSyncedAt: new Date(),
-          messagingLimit: phoneNumbers[0]?.messaging_limit_tier || 'TIER_1'
+          messagingLimit: phoneNumbers[0]?.messaging_limit_tier || 'TIER_1',
+          qualityRating: phoneNumbers[0]?.quality_rating || 'UNKNOWN'
         },
         update: {
           accessToken: encryptedToken,
           accessTokenExpiresAt: expiresAt,
           wabaId: selectedWaba.id,
-          wabaName: selectedWaba.name,
+          wabaName: selectedWaba.name || 'WhatsApp Business Account',
           status: 'CONNECTED',
           lastSyncedAt: new Date(),
           errorMessage: null,
-          messagingLimit: phoneNumbers[0]?.messaging_limit_tier || 'TIER_1'
+          messagingLimit: phoneNumbers[0]?.messaging_limit_tier || 'TIER_1',
+          qualityRating: phoneNumbers[0]?.quality_rating || 'UNKNOWN'
         }
       });
 
@@ -142,14 +167,14 @@ export class MetaService {
             phoneNumberId: phone.id,
             phoneNumber: phone.display_phone_number,
             displayName: phone.display_phone_number,
-            verifiedName: phone.verified_name || '',
+            verifiedName: phone.verified_name || phone.display_phone_number,
             qualityRating: phone.quality_rating || 'UNKNOWN',
             isActive: true,
             isPrimary: phoneNumbers.indexOf(phone) === 0
           },
           update: {
             phoneNumber: phone.display_phone_number,
-            verifiedName: phone.verified_name || '',
+            verifiedName: phone.verified_name || phone.display_phone_number,
             qualityRating: phone.quality_rating || 'UNKNOWN',
             isActive: true
           }
@@ -167,7 +192,11 @@ export class MetaService {
           metadata: {
             wabaName: selectedWaba.name,
             wabaId: selectedWaba.id,
-            phoneNumbers: phoneNumbers.map((p: any) => p.display_phone_number),
+            phoneNumbers: phoneNumbers.map((p: any) => ({
+              number: p.display_phone_number,
+              verified: p.verified_name,
+              quality: p.quality_rating
+            })),
             messagingTier: phoneNumbers[0]?.messaging_limit_tier
           }
         }
@@ -179,7 +208,7 @@ export class MetaService {
         success: true,
         connection: {
           id: metaConnection.id,
-          wabaName: selectedWaba.name,
+          wabaName: selectedWaba.name || 'WhatsApp Business Account',
           status: 'CONNECTED'
         },
         phoneNumbers: phoneNumbers.map((p: any) => ({
@@ -203,7 +232,8 @@ export class MetaService {
               action: 'META_CONNECTION_FAILED',
               entity: 'MetaConnection',
               metadata: {
-                error: error.message
+                error: error.message,
+                timestamp: new Date().toISOString()
               }
             }
           });
@@ -267,6 +297,8 @@ export class MetaService {
         quality: p.qualityRating,
         isPrimary: p.isPrimary
       })),
+      messagingLimit: connection.messagingLimit,
+      qualityRating: connection.qualityRating,
       lastSynced: connection.lastSyncedAt
     };
   }
@@ -327,29 +359,5 @@ export class MetaService {
     }
 
     return EncryptionUtil.decrypt(connection.accessToken);
-  }
-
-  /**
-   * Create a new MetaConnection
-   */
-  static async createMetaConnection(organizationId: string, accessToken: string, wabaId: string, wabaName: string, messagingLimit: string): Promise<MetaConnection> {
-    if (!organizationId) {
-      throw new Error("organizationId is required");
-    }
-
-    const metaConnection = await prisma.metaConnection.create({
-      data: {
-        organizationId,
-        accessToken,
-        accessTokenExpiresAt: new Date(),
-        wabaId,
-        wabaName,
-        status: "CONNECTED",
-        lastSyncedAt: new Date(),
-        messagingLimit,
-      },
-    });
-
-    return metaConnection;
   }
 }
