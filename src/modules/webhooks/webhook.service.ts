@@ -25,8 +25,17 @@ export class WebhookService {
     try {
       const { entry } = payload;
 
+      if (!entry || !Array.isArray(entry)) {
+        console.log('Invalid webhook payload structure');
+        return;
+      }
+
       for (const entryItem of entry) {
         const { id: wabaId, changes } = entryItem;
+
+        if (!changes || !Array.isArray(changes)) {
+          continue;
+        }
 
         // Find organization by WABA ID
         const metaConnection = await prisma.metaConnection.findFirst({
@@ -101,78 +110,92 @@ export class WebhookService {
    * Handle incoming message for specific organization
    */
   static async handleIncomingMessage(organizationId: string, messageData: any) {
-    const { messages, contacts } = messageData;
+    try {
+      const { messages, contacts } = messageData;
 
-    for (const message of messages) {
-      const { id: wamId, from, type, text, timestamp } = message;
-
-      // Find or create contact
-      let contact = await prisma.contact.findFirst({
-        where: {
-          organizationId,
-          phone: from
-        }
-      });
-
-      if (!contact) {
-        contact = await prisma.contact.create({
-          data: {
-            organizationId,
-            phone: from,
-            firstName: contacts?.[0]?.profile?.name || 'Unknown'
-          }
-        });
+      if (!messages || !Array.isArray(messages) || messages.length === 0) {
+        return;
       }
 
-      // Find or create conversation
-      const phoneNumber = await prisma.phoneNumber.findFirst({
-        where: {
-          metaConnection: { organizationId }
-        }
-      });
+      for (const message of messages) {
+        const { id: wamId, from, type, text, timestamp } = message;
 
-      let conversation = await prisma.conversation.findFirst({
-        where: {
-          organizationId,
-          contactId: contact.id
-        }
-      });
-
-      if (!conversation) {
-        conversation = await prisma.conversation.create({
-          data: {
+        // Find or create contact
+        let contact = await prisma.contact.findFirst({
+          where: {
             organizationId,
-            contactId: contact.id,
-            phoneNumberId: phoneNumber?.id
+            phone: from
           }
         });
+
+        if (!contact) {
+          contact = await prisma.contact.create({
+            data: {
+              organizationId,
+              phone: from,
+              firstName: contacts?.[0]?.profile?.name || 'Unknown',
+              countryCode: from.startsWith('+91') ? '+91' : '+1'
+            }
+          });
+        }
+
+        // Find phone number
+        const phoneNumber = await prisma.phoneNumber.findFirst({
+          where: {
+            metaConnection: { organizationId },
+            isActive: true,
+            isPrimary: true
+          }
+        });
+
+        // Find or create conversation
+        let conversation = await prisma.conversation.findFirst({
+          where: {
+            organizationId,
+            contactId: contact.id
+          }
+        });
+
+        if (!conversation) {
+          conversation = await prisma.conversation.create({
+            data: {
+              organizationId,
+              contactId: contact.id,
+              phoneNumberId: phoneNumber?.id
+            }
+          });
+        }
+
+        // Create message
+        await prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            wamId,
+            direction: 'INBOUND',
+            type: type.toUpperCase() as any,
+            content: text?.body || '',
+            status: 'DELIVERED',
+            sentAt: new Date(parseInt(timestamp) * 1000)
+          }
+        });
+
+        // Update conversation
+        await prisma.conversation.update({
+          where: { id: conversation.id },
+          data: {
+            lastMessageAt: new Date(),
+            lastMessagePreview: text?.body?.substring(0, 100) || 'Media message',
+            unreadCount: { increment: 1 },
+            lastCustomerMessageAt: new Date(),
+            windowExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+            isWindowOpen: true
+          }
+        });
+
+        console.log(`✅ Message received for org ${organizationId} from ${from}`);
       }
-
-      // Create message
-      await prisma.message.create({
-        data: {
-          conversationId: conversation.id,
-          wamId,
-          direction: 'INBOUND',
-          type: type.toUpperCase(),
-          text: text?.body,
-          status: 'DELIVERED',
-          sentAt: new Date(parseInt(timestamp) * 1000)
-        }
-      });
-
-      // Update conversation
-      await prisma.conversation.update({
-        where: { id: conversation.id },
-        data: {
-          lastMessageAt: new Date(),
-          unreadCount: { increment: 1 },
-          lastCustomerMessageAt: new Date(),
-          windowExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
-        }
-      });
-
-      console.log(`✅ Message received for org ${organizationId} from ${from}`);
+    } catch (error: any) {
+      console.error('Error handling incoming message:', error);
     }
   }
 
@@ -180,16 +203,25 @@ export class WebhookService {
    * Handle message status update
    */
   static async handleMessageStatus(organizationId: string, statusData: any) {
-    const { statuses } = statusData;
+    try {
+      const { statuses } = statusData;
 
-    for (const status of statuses) {
-      const { id: wamId, status: messageStatus, timestamp } = status;
+      if (!statuses || !Array.isArray(statuses)) {
+        return;
+      }
 
-      const message = await prisma.message.findUnique({
-        where: { wamId }
-      });
+      for (const status of statuses) {
+        const { id: wamId, status: messageStatus, timestamp, errors } = status;
 
-      if (message) {
+        const message = await prisma.message.findUnique({
+          where: { wamId }
+        });
+
+        if (!message) {
+          console.log(`Message not found for wamId: ${wamId}`);
+          continue;
+        }
+
         const updateData: any = {
           status: messageStatus.toUpperCase(),
           statusUpdatedAt: new Date(parseInt(timestamp) * 1000)
@@ -201,6 +233,7 @@ export class WebhookService {
           updateData.readAt = new Date(parseInt(timestamp) * 1000);
         } else if (messageStatus === 'failed') {
           updateData.failedAt = new Date(parseInt(timestamp) * 1000);
+          updateData.failureReason = errors?.[0]?.message || 'Unknown error';
         }
 
         await prisma.message.update({
@@ -210,6 +243,8 @@ export class WebhookService {
 
         console.log(`✅ Message ${wamId} status updated to ${messageStatus}`);
       }
+    } catch (error: any) {
+      console.error('Error handling message status:', error);
     }
   }
 
@@ -217,15 +252,81 @@ export class WebhookService {
    * Handle template status update
    */
   static async handleTemplateStatusUpdate(organizationId: string, templateData: any) {
-    console.log('Template status update for org:', organizationId, templateData);
-    // Implement template status update logic
+    try {
+      console.log('Template status update for org:', organizationId, templateData);
+      
+      const { message_template_id, message_template_name, message_template_language, event, reason } = templateData;
+
+      if (event === 'APPROVED') {
+        // Update template status to approved
+        await prisma.template.updateMany({
+          where: {
+            organizationId,
+            metaTemplateId: message_template_id
+          },
+          data: {
+            status: 'APPROVED'
+          }
+        });
+        console.log(`✅ Template ${message_template_name} approved`);
+      } else if (event === 'REJECTED') {
+        // Update template status to rejected
+        await prisma.template.updateMany({
+          where: {
+            organizationId,
+            metaTemplateId: message_template_id
+          },
+          data: {
+            status: 'REJECTED',
+            rejectionReason: reason || 'Rejected by Meta'
+          }
+        });
+        console.log(`❌ Template ${message_template_name} rejected: ${reason}`);
+      }
+    } catch (error: any) {
+      console.error('Error handling template status update:', error);
+    }
   }
 
   /**
    * Handle account alerts
    */
   static async handleAccountAlert(organizationId: string, alertData: any) {
-    console.log('Account alert for org:', organizationId, alertData);
-    // Implement alert handling logic
+    try {
+      console.log('Account alert for org:', organizationId, alertData);
+      
+      // Log the alert
+      await prisma.activityLog.create({
+        data: {
+          organizationId,
+          action: 'ACCOUNT_ALERT',
+          entity: 'MetaConnection',
+          metadata: alertData
+        }
+      });
+
+      // Handle specific alert types
+      if (alertData.current_limit) {
+        // Messaging limit changed
+        await prisma.metaConnection.update({
+          where: { organizationId },
+          data: {
+            messagingLimit: alertData.current_limit
+          }
+        });
+      }
+
+      if (alertData.current_quality_rating) {
+        // Quality rating changed
+        await prisma.metaConnection.update({
+          where: { organizationId },
+          data: {
+            qualityRating: alertData.current_quality_rating
+          }
+        });
+      }
+    } catch (error: any) {
+      console.error('Error handling account alert:', error);
+    }
   }
 }

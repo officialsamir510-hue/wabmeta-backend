@@ -1,6 +1,6 @@
 // src/modules/meta/meta.service.ts
 
-import { PrismaClient } from '@prisma/client';
+import { MetaConnection, PrismaClient } from '@prisma/client';
 import { MetaGraphAPI } from './meta.api';
 import { EncryptionUtil } from '../../utils/encryption';
 
@@ -77,10 +77,10 @@ export class MetaService {
 
       console.log('Token exchanged successfully');
 
-      // Get long-lived token (60 days)
-      const longLivedToken = await api.getLongLivedToken(tokenResponse.accessToken);
+      // Get long-lived token (60 days) - use access_token
+      const longLivedToken = await api.getLongLivedToken(tokenResponse.access_token);
 
-      // Get accessible WABAs for this user
+      // Get accessible WABAs for this user - use access_token
       const wabas = await api.getAccessibleWABAs(longLivedToken.access_token);
 
       if (!wabas || wabas.length === 0) {
@@ -92,7 +92,7 @@ export class MetaService {
       // If multiple WABAs, use first one
       const selectedWaba = wabas[0];
 
-      // Get phone numbers for selected WABA
+      // Get phone numbers for selected WABA - use access_token
       const phoneNumbers = await api.getPhoneNumbers(selectedWaba.id, longLivedToken.access_token);
 
       if (!phoneNumbers || phoneNumbers.length === 0) {
@@ -101,7 +101,7 @@ export class MetaService {
 
       console.log(`Found ${phoneNumbers.length} phone numbers`);
 
-      // Encrypt access token before storing
+      // Encrypt access token before storing - use access_token
       const encryptedToken = EncryptionUtil.encrypt(longLivedToken.access_token);
 
       // Calculate token expiry (60 days for long-lived token)
@@ -109,14 +109,10 @@ export class MetaService {
       expiresAt.setDate(expiresAt.getDate() + 60);
 
       // Store or update MetaConnection for this organization
-      if (!organizationId) {
-        throw new Error('Organization ID is required');
-      }
-
       const metaConnection = await prisma.metaConnection.upsert({
-        where: { organizationId },
+        where: { organizationId: organizationId! },
         create: {
-          organizationId,
+          organizationId: organizationId!,
           accessToken: encryptedToken,
           accessTokenExpiresAt: expiresAt,
           wabaId: selectedWaba.id,
@@ -197,19 +193,23 @@ export class MetaService {
     } catch (error: any) {
       console.error('OAuth callback error:', error);
 
-      // Log failed attempt
+      // Log failed attempt if we have organizationId and userId
       if (organizationId && userId) {
-        await prisma.activityLog.create({
-          data: {
-            organizationId,
-            userId,
-            action: 'META_CONNECTION_FAILED',
-            entity: 'MetaConnection',
-            metadata: {
-              error: error.message
+        try {
+          await prisma.activityLog.create({
+            data: {
+              organizationId,
+              userId,
+              action: 'META_CONNECTION_FAILED',
+              entity: 'MetaConnection',
+              metadata: {
+                error: error.message
+              }
             }
-          }
-        });
+          });
+        } catch (logError) {
+          console.error('Failed to log activity:', logError);
+        }
       }
 
       throw new Error(error.message || 'Failed to connect WhatsApp account');
@@ -327,5 +327,29 @@ export class MetaService {
     }
 
     return EncryptionUtil.decrypt(connection.accessToken);
+  }
+
+  /**
+   * Create a new MetaConnection
+   */
+  static async createMetaConnection(organizationId: string, accessToken: string, wabaId: string, wabaName: string, messagingLimit: string): Promise<MetaConnection> {
+    if (!organizationId) {
+      throw new Error("organizationId is required");
+    }
+
+    const metaConnection = await prisma.metaConnection.create({
+      data: {
+        organizationId,
+        accessToken,
+        accessTokenExpiresAt: new Date(),
+        wabaId,
+        wabaName,
+        status: "CONNECTED",
+        lastSyncedAt: new Date(),
+        messagingLimit,
+      },
+    });
+
+    return metaConnection;
   }
 }
