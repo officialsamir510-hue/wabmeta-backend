@@ -335,13 +335,37 @@ export class ContactsService {
   }
 
   // ==========================================
-  // IMPORT CONTACTS
+  // ✅ OPTIMIZED IMPORT CONTACTS
   // ==========================================
+  /**
+   * Import contacts in bulk (single DB query + optional group add)
+   * Prevents Prisma pool timeout with efficient batch processing
+   */
   async import(
     organizationId: string,
     input: ImportContactsInput
   ): Promise<ImportContactsResponse> {
-    const { contacts, groupId, tags = [], skipDuplicates = true } = input;
+    const {
+      contacts,
+      groupId,
+      tags = [],
+      skipDuplicates = true,
+    } = input;
+
+    if (!contacts || contacts.length === 0) {
+      throw new AppError('At least one contact is required', 400);
+    }
+
+    // ✅ Optional group validation
+    if (groupId) {
+      const group = await prisma.contactGroup.findFirst({
+        where: { id: groupId, organizationId },
+        select: { id: true },
+      });
+      if (!group) {
+        throw new AppError('Contact group not found', 404);
+      }
+    }
 
     // Check organization limits
     const org = await prisma.organization.findUnique({
@@ -364,93 +388,98 @@ export class ContactsService {
       throw new AppError('Contact limit reached. Please upgrade your plan.', 400);
     }
 
-    let imported = 0;
-    let skipped = 0;
-    let failed = 0;
-    const errors: { row: number; error: string }[] = [];
+    // Normalize + merge root tags
+    const normalized = contacts.slice(0, availableSlots).map((c) => {
+      const phone = normalizePhone(c.phone);
+      const countryCode = c.countryCode || '+91';
 
-    // Process contacts in batches
-    const batchSize = 100;
-    const contactsToProcess = contacts.slice(0, availableSlots);
+      // Email: avoid empty string in DB
+      const email = c.email ? String(c.email).trim() : null;
+      const safeEmail = email && email.length > 0 ? email : null;
 
-    for (let i = 0; i < contactsToProcess.length; i += batchSize) {
-      const batch = contactsToProcess.slice(i, i + batchSize);
+      const mergedTags = Array.from(
+        new Set([...(c.tags || []), ...(tags || [])]
+          .map((t) => String(t).trim())
+          .filter(Boolean))
+      );
 
-      for (let j = 0; j < batch.length; j++) {
-        const contact = batch[j];
-        const rowNumber = i + j + 1;
+      return {
+        organizationId,
+        phone,
+        countryCode,
+        firstName: c.firstName || null,
+        lastName: c.lastName || null,
+        email: safeEmail,
+        tags: mergedTags,
+        customFields: c.customFields || {},
+        status: 'ACTIVE' as ContactStatus,
+        source: 'import',
+      };
+    });
 
-        try {
-          const normalizedPhone = normalizePhone(contact.phone);
+    // Filter invalid phones (should already be validated by zod, but extra safety)
+    const valid = normalized.filter((c) => 
+      c.phone && /^\d+$/.test(c.phone) && c.phone.length >= 10
+    );
 
-          // Check for duplicate
-          const existing = await prisma.contact.findUnique({
-            where: {
-              organizationId_phone: {
-                organizationId,
-                phone: normalizedPhone,
-              },
-            },
+    const invalidCount = normalized.length - valid.length;
+    if (valid.length === 0) {
+      throw new AppError('No valid contacts found after normalization', 400);
+    }
+
+    // Remove duplicates inside same upload (reduces DB load)
+    const seen = new Set<string>();
+    const unique = valid.filter((c) => {
+      const key = `${c.organizationId}:${c.phone}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    // ✅ ONE QUERY bulk insert
+    const createdRes = await prisma.contact.createMany({
+      data: unique,
+      skipDuplicates, // uses @@unique([organizationId, phone])
+    });
+
+    const imported = createdRes.count;
+    const skipped = unique.length - imported;
+    const errors: any[] = [];
+
+    // ✅ Optionally add to group (2 small queries)
+    let addedToGroup = 0;
+    if (groupId && imported > 0) {
+      try {
+        const phones = unique.map((c) => c.phone);
+        const createdContacts = await prisma.contact.findMany({
+          where: { 
+            organizationId, 
+            phone: { in: phones },
+            source: 'import' // Only get recently imported
+          },
+          select: { id: true },
+        });
+
+        if (createdContacts.length > 0) {
+          const groupMembers = await prisma.contactGroupMember.createMany({
+            data: createdContacts.map((ct) => ({
+              groupId,
+              contactId: ct.id,
+            })),
+            skipDuplicates: true,
           });
-
-          if (existing) {
-            if (skipDuplicates) {
-              skipped++;
-              continue;
-            } else {
-              // Update existing contact
-              await prisma.contact.update({
-                where: { id: existing.id },
-                data: {
-                  firstName: contact.firstName || existing.firstName,
-                  lastName: contact.lastName || existing.lastName,
-                  email: contact.email || existing.email,
-                  tags: [...new Set([...(existing.tags || []), ...(contact.tags || []), ...tags])],
-                  customFields: { ...(existing.customFields as object), ...contact.customFields },
-                },
-              });
-              imported++;
-              continue;
-            }
-          }
-
-          // Create new contact
-          const newContact = await prisma.contact.create({
-            data: {
-              organizationId,
-              phone: normalizedPhone,
-              countryCode: contact.countryCode || '+91',
-              firstName: contact.firstName,
-              lastName: contact.lastName,
-              email: contact.email,
-              tags: [...(contact.tags || []), ...tags],
-              customFields: contact.customFields || {},
-              source: 'import',
-            },
-          });
-
-          // Add to group if specified
-          if (groupId) {
-            await prisma.contactGroupMember.create({
-              data: {
-                contactId: newContact.id,
-                groupId,
-              },
-            }).catch(() => {}); // Ignore if already exists
-          }
-
-          imported++;
-        } catch (error: any) {
-          failed++;
-          errors.push({
-            row: rowNumber,
-            error: error.message || 'Unknown error',
-          });
+          addedToGroup = groupMembers.count;
         }
+      } catch (err: any) {
+        console.error('Failed to add contacts to group:', err);
+        errors.push({
+          row: 0,
+          error: `Failed to add contacts to group: ${err.message}`,
+        });
       }
     }
 
-    // Update subscription usage
+    // Update subscription usage if imported
     if (org?.subscription && imported > 0) {
       await prisma.subscription.update({
         where: { id: org.subscription.id },
@@ -458,10 +487,20 @@ export class ContactsService {
       });
     }
 
+    // Log import stats
+    console.log(`✅ Import complete:`, {
+      organizationId,
+      total: contacts.length,
+      imported,
+      skipped,
+      invalid: invalidCount,
+      addedToGroup,
+    });
+
     return {
       imported,
       skipped,
-      failed,
+      failed: invalidCount,
       errors: errors.slice(0, 50), // Return max 50 errors
     };
   }
@@ -652,7 +691,7 @@ export class ContactsService {
   }
 
   // ==========================================
-  // CONTACT GROUPS
+  // CONTACT GROUPS (Remaining methods unchanged)
   // ==========================================
 
   // Create Group
