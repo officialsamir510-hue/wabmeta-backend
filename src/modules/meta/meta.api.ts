@@ -1,15 +1,20 @@
 // src/modules/meta/meta.api.ts
 
 import axios, { AxiosInstance } from 'axios';
-import config from '../../config';
+
+interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in?: number;
+}
 
 export class MetaGraphAPI {
   private client: AxiosInstance;
   private version: string;
 
   constructor(accessToken?: string) {
-    this.version = config.meta.graphApiVersion || 'v21.0';
-    
+    this.version = process.env.META_GRAPH_API_VERSION || 'v21.0';
+
     this.client = axios.create({
       baseURL: `https://graph.facebook.com/${this.version}`,
       headers: {
@@ -20,16 +25,16 @@ export class MetaGraphAPI {
   }
 
   /**
-   * Exchange code for token (OAuth flow)
+   * Exchange code for token
    */
   async exchangeCodeForToken(code: string): Promise<TokenResponse> {
     try {
       const response = await this.client.get<TokenResponse>('/oauth/access_token', {
         params: {
-          client_id: config.meta.appId,
-          client_secret: config.meta.appSecret,
+          client_id: process.env.META_APP_ID,
+          client_secret: process.env.META_APP_SECRET,
           code: code,
-          redirect_uri: config.meta.redirectUri
+          redirect_uri: process.env.META_REDIRECT_URI
         }
       });
 
@@ -41,38 +46,58 @@ export class MetaGraphAPI {
   }
 
   /**
-   * Get user's accessible WhatsApp Business Accounts
-   * This will return the WABAs the user who authorized has access to
+   * Get long-lived token (60 days)
+   */
+  async getLongLivedToken(shortToken: string): Promise<TokenResponse> {
+    try {
+      const response = await this.client.get<TokenResponse>('/oauth/access_token', {
+        params: {
+          grant_type: 'fb_exchange_token',
+          client_id: process.env.META_APP_ID,
+          client_secret: process.env.META_APP_SECRET,
+          fb_exchange_token: shortToken
+        }
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.error('Long-lived token error:', error.response?.data || error.message);
+      throw new Error('Failed to get long-lived token');
+    }
+  }
+
+  /**
+   * Get accessible WABAs for user
    */
   async getAccessibleWABAs(userAccessToken: string) {
     try {
-      // First, get the user ID from token
+      // Debug token to get user ID
       const debugResponse = await this.client.get('/debug_token', {
         params: {
           input_token: userAccessToken,
-          access_token: `${config.meta.appId}|${config.meta.appSecret}`
+          access_token: `${process.env.META_APP_ID}|${process.env.META_APP_SECRET}`
         }
       });
 
       const userId = debugResponse.data.data.user_id;
 
-      // Get WABAs accessible to this user
-      const response = await this.client.get(`/${userId}/accounts`, {
+      // Get businesses
+      const businessResponse = await this.client.get(`/${userId}/businesses`, {
         headers: {
           'Authorization': `Bearer ${userAccessToken}`
         },
         params: {
-          fields: 'id,name,timezone_id,message_template_namespace'
+          fields: 'id,name'
         }
       });
 
-      // For each account, get WhatsApp Business Accounts
-      const accounts = response.data.data || [];
-      const wabas = [];
+      const businesses = businessResponse.data.data || [];
+      const wabas: any[] = [];
 
-      for (const account of accounts) {
+      // Get WABAs for each business
+      for (const business of businesses) {
         try {
-          const wabaResponse = await this.client.get(`/${account.id}/owned_whatsapp_business_accounts`, {
+          const wabaResponse = await this.client.get(`/${business.id}/owned_whatsapp_business_accounts`, {
             headers: {
               'Authorization': `Bearer ${userAccessToken}`
             },
@@ -84,8 +109,28 @@ export class MetaGraphAPI {
           if (wabaResponse.data.data) {
             wabas.push(...wabaResponse.data.data);
           }
-        } catch (error) {
-          console.error(`Error fetching WABAs for account ${account.id}:`, error);
+        } catch (err) {
+          console.error(`Error fetching WABAs for business ${business.id}`);
+        }
+      }
+
+      // If no WABAs from businesses, try direct WABA access
+      if (wabas.length === 0) {
+        try {
+          const directWabaResponse = await this.client.get('/me/whatsapp_business_accounts', {
+            headers: {
+              'Authorization': `Bearer ${userAccessToken}`
+            },
+            params: {
+              fields: 'id,name'
+            }
+          });
+
+          if (directWabaResponse.data.data) {
+            wabas.push(...directWabaResponse.data.data);
+          }
+        } catch (err) {
+          console.error('Error fetching direct WABAs');
         }
       }
 
@@ -97,7 +142,7 @@ export class MetaGraphAPI {
   }
 
   /**
-   * Get phone numbers for a WABA
+   * Get phone numbers for WABA
    */
   async getPhoneNumbers(wabaId: string, accessToken: string) {
     try {
@@ -114,6 +159,31 @@ export class MetaGraphAPI {
     } catch (error: any) {
       console.error('Get phone numbers error:', error.response?.data || error.message);
       throw new Error('Failed to fetch phone numbers');
+    }
+  }
+
+  /**
+   * Send message
+   */
+  async sendMessage(phoneNumberId: string, accessToken: string, payload: any) {
+    try {
+      const response = await this.client.post(
+        `/${phoneNumberId}/messages`,
+        {
+          messaging_product: 'whatsapp',
+          ...payload
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`
+          }
+        }
+      );
+
+      return response.data;
+    } catch (error: any) {
+      console.error('Send message error:', error.response?.data || error.message);
+      throw new Error(error.response?.data?.error?.message || 'Failed to send message');
     }
   }
 }
