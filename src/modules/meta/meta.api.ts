@@ -8,6 +8,11 @@ interface TokenResponse {
   expires_in?: number;
 }
 
+interface EmbeddedSignupData {
+  waba_id?: string;
+  phone_number_id?: string;
+}
+
 export class MetaGraphAPI {
   private client: AxiosInstance;
   private version: string;
@@ -67,154 +72,182 @@ export class MetaGraphAPI {
   }
 
   /**
-   * Get accessible WABAs for user (IMPROVED VERSION)
+   * Debug token to get embedded signup data
    */
-  async getAccessibleWABAs(userAccessToken: string) {
+  async getTokenInfo(accessToken: string): Promise<any> {
+    try {
+      const response = await this.client.get('/debug_token', {
+        params: {
+          input_token: accessToken,
+          access_token: `${process.env.META_APP_ID}|${process.env.META_APP_SECRET}`
+        }
+      });
+
+      return response.data.data;
+    } catch (error: any) {
+      console.error('Debug token error:', error.response?.data || error.message);
+      throw new Error('Failed to debug token');
+    }
+  }
+
+  /**
+   * Get WABA details by ID
+   */
+  async getWABAById(wabaId: string, accessToken: string) {
+    try {
+      const response = await this.client.get(`/${wabaId}`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        },
+        params: {
+          fields: 'id,name,timezone_id,message_template_namespace,owner_business_info,account_review_status'
+        }
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.error('Get WABA by ID error:', error.response?.data || error.message);
+      throw new Error('Failed to fetch WhatsApp Business Account details');
+    }
+  }
+
+  /**
+   * Get accessible WABAs - Multiple methods with Embedded Signup priority
+   */
+  async getAccessibleWABAs(userAccessToken: string, embeddedSignupWabaId?: string) {
     try {
       console.log('🔍 Fetching accessible WABAs...');
 
-      // Method 1: Try direct WABA access FIRST (most common for Embedded Signup)
+      // Method 1: If WABA ID provided from Embedded Signup, use it directly
+      if (embeddedSignupWabaId) {
+        console.log('📌 Using Embedded Signup WABA ID:', embeddedSignupWabaId);
+        try {
+          const waba = await this.getWABAById(embeddedSignupWabaId, userAccessToken);
+          if (waba) {
+            console.log('✅ Found WABA via Embedded Signup:', waba.name);
+            return [waba];
+          }
+        } catch (wabaError: any) {
+          console.error('Failed to get WABA by ID:', wabaError.message);
+        }
+      }
+
+      // Method 2: Try debug token to get WABA info (Embedded Signup stores it here)
+      try {
+        const tokenInfo = await this.getTokenInfo(userAccessToken);
+        console.log('Token granular_scopes:', JSON.stringify(tokenInfo.granular_scopes, null, 2));
+
+        // Look for WABA ID in granular scopes
+        if (tokenInfo.granular_scopes) {
+          for (const scope of tokenInfo.granular_scopes) {
+            if (scope.scope === 'whatsapp_business_management' && scope.target_ids?.length > 0) {
+              const wabaId = scope.target_ids[0];
+              console.log('📌 Found WABA ID in granular_scopes:', wabaId);
+              
+              try {
+                const waba = await this.getWABAById(wabaId, userAccessToken);
+                if (waba) {
+                  console.log('✅ Found WABA from granular_scopes:', waba.name);
+                  return [waba];
+                }
+              } catch (err) {
+                console.error('Failed to fetch WABA from granular scope:', err);
+              }
+            }
+
+            // Also check for phone number IDs
+            if (scope.scope === 'whatsapp_business_messaging' && scope.target_ids?.length > 0) {
+              console.log('📞 Found Phone Number IDs:', scope.target_ids);
+              // We can use phone number to find WABA
+              for (const phoneId of scope.target_ids) {
+                try {
+                  const phoneResponse = await this.client.get(`/${phoneId}`, {
+                    headers: { 'Authorization': `Bearer ${userAccessToken}` },
+                    params: { fields: 'id,display_phone_number,verified_name,account_id' }
+                  });
+
+                  const wabaId = phoneResponse.data.account_id;
+                  if (wabaId) {
+                    console.log('📌 Found WABA ID via phone number:', wabaId);
+                    const waba = await this.getWABAById(wabaId, userAccessToken);
+                    if (waba) {
+                      console.log('✅ Found WABA via phone number:', waba.name);
+                      return [waba];
+                    }
+                  }
+                } catch (phoneErr) {
+                  console.error('Failed to get phone number info:', phoneErr);
+                }
+              }
+            }
+          }
+        }
+      } catch (tokenError: any) {
+        console.error('Token debug error:', tokenError.message);
+      }
+
+      // Method 3: Try direct WABA access
       try {
         const directResponse = await this.client.get('/me/owned_whatsapp_business_accounts', {
-          headers: {
-            'Authorization': `Bearer ${userAccessToken}`
-          },
-          params: {
-            fields: 'id,name,timezone_id,message_template_namespace,owner_business_info'
-          }
+          headers: { 'Authorization': `Bearer ${userAccessToken}` },
+          params: { fields: 'id,name,timezone_id,message_template_namespace' }
         });
 
-        if (directResponse.data?.data && directResponse.data.data.length > 0) {
+        if (directResponse.data?.data?.length > 0) {
           console.log(`✅ Found ${directResponse.data.data.length} WABAs via direct access`);
           return directResponse.data.data;
         }
       } catch (directError: any) {
-        console.log('Direct WABA access failed:', directError.response?.data?.error?.message || 'Unknown error');
+        console.log('Direct WABA access failed:', directError.response?.data?.error?.message);
       }
 
-      // Method 2: Try shared WABAs
+      // Method 4: Last resort - try businesses (needs business_management permission)
       try {
-        const sharedResponse = await this.client.get('/me/client_whatsapp_business_accounts', {
-          headers: {
-            'Authorization': `Bearer ${userAccessToken}`
-          },
-          params: {
-            fields: 'id,name,timezone_id,message_template_namespace'
-          }
-        });
+        const tokenInfo = await this.getTokenInfo(userAccessToken);
+        const userId = tokenInfo.user_id;
 
-        if (sharedResponse.data?.data && sharedResponse.data.data.length > 0) {
-          console.log(`✅ Found ${sharedResponse.data.data.length} shared WABAs`);
-          return sharedResponse.data.data;
-        }
-      } catch (sharedError: any) {
-        console.log('Shared WABA access failed:', sharedError.response?.data?.error?.message || 'Unknown error');
-      }
-
-      // Method 3: Try via businesses
-      try {
-        // Debug token to get user ID
-        const debugResponse = await this.client.get('/debug_token', {
-          params: {
-            input_token: userAccessToken,
-            access_token: `${process.env.META_APP_ID}|${process.env.META_APP_SECRET}`
-          }
-        });
-
-        const userId = debugResponse.data.data.user_id;
-        console.log('User ID:', userId);
-
-        // Check permissions
-        const permissionsResponse = await this.client.get(`/${userId}/permissions`, {
-          headers: {
-            'Authorization': `Bearer ${userAccessToken}`
-          }
-        });
-
-        console.log('User permissions:', permissionsResponse.data);
-
-        // Get businesses
         const businessResponse = await this.client.get(`/${userId}/businesses`, {
-          headers: {
-            'Authorization': `Bearer ${userAccessToken}`
-          },
-          params: {
-            fields: 'id,name,verification_status'
-          }
+          headers: { 'Authorization': `Bearer ${userAccessToken}` },
+          params: { fields: 'id,name' }
         });
 
         const businesses = businessResponse.data?.data || [];
         console.log(`Found ${businesses.length} businesses`);
 
-        if (businesses.length === 0) {
-          // User might need to create business account first
-          throw new Error('No Meta Business Account found. Please create a business account at business.facebook.com first.');
-        }
-
         const wabas: any[] = [];
-
-        // Get WABAs for each business
         for (const business of businesses) {
           try {
             const wabaResponse = await this.client.get(`/${business.id}/owned_whatsapp_business_accounts`, {
-              headers: {
-                'Authorization': `Bearer ${userAccessToken}`
-              },
-              params: {
-                fields: 'id,name,timezone_id,message_template_namespace,owner_business_info'
-              }
+              headers: { 'Authorization': `Bearer ${userAccessToken}` },
+              params: { fields: 'id,name,timezone_id,message_template_namespace' }
             });
 
-            if (wabaResponse.data?.data && wabaResponse.data.data.length > 0) {
-              console.log(`✅ Found ${wabaResponse.data.data.length} WABAs for business "${business.name}"`);
+            if (wabaResponse.data?.data) {
               wabas.push(...wabaResponse.data.data);
             }
-          } catch (businessError: any) {
-            console.error(`Failed to fetch WABAs for business ${business.id}:`, 
-              businessError.response?.data?.error?.message || 'Unknown error');
-          }
-
-          // Also try client WABAs for each business
-          try {
-            const clientWabaResponse = await this.client.get(`/${business.id}/client_whatsapp_business_accounts`, {
-              headers: {
-                'Authorization': `Bearer ${userAccessToken}`
-              },
-              params: {
-                fields: 'id,name,timezone_id,message_template_namespace'
-              }
-            });
-
-            if (clientWabaResponse.data?.data && clientWabaResponse.data.data.length > 0) {
-              console.log(`✅ Found ${clientWabaResponse.data.data.length} client WABAs for business "${business.name}"`);
-              wabas.push(...clientWabaResponse.data.data);
-            }
-          } catch (clientError: any) {
-            console.error(`Failed to fetch client WABAs for business ${business.id}:`, 
-              clientError.response?.data?.error?.message || 'Unknown error');
+          } catch (err) {
+            console.log(`No WABAs found for business ${business.name}`);
           }
         }
 
         if (wabas.length > 0) {
           return wabas;
         }
-
       } catch (businessError: any) {
-        console.error('Business access error:', businessError.response?.data || businessError.message);
+        console.log('Business access failed (might need advanced access):', 
+          businessError.response?.data?.error?.message);
       }
 
-      // If all methods fail, provide helpful error message
+      // Final error
       throw new Error(
-        'No WhatsApp Business Accounts found. Please ensure:\n' +
-        '1. You have a Meta Business Account (create at business.facebook.com)\n' +
-        '2. WhatsApp Business Account is created and verified\n' +
-        '3. You have admin access to the WhatsApp Business Account\n' +
-        '4. The app has necessary permissions (whatsapp_business_management)\n\n' +
-        'If you just created a WABA, it may take a few minutes to appear.'
+        'Could not find WhatsApp Business Account. Please ensure:\n' +
+        '1. You selected a WhatsApp Business Account during signup\n' +
+        '2. You have admin access to the account\n' +
+        '3. Try disconnecting and reconnecting'
       );
 
     } catch (error: any) {
-      console.error('Get WABAs final error:', error.response?.data || error.message);
+      console.error('Get WABAs final error:', error.message);
       throw new Error(error.message || 'Failed to fetch WhatsApp Business Accounts');
     }
   }
@@ -225,9 +258,7 @@ export class MetaGraphAPI {
   async getPhoneNumbers(wabaId: string, accessToken: string) {
     try {
       const response = await this.client.get(`/${wabaId}/phone_numbers`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        },
+        headers: { 'Authorization': `Bearer ${accessToken}` },
         params: {
           fields: 'id,display_phone_number,verified_name,quality_rating,code_verification_status,messaging_limit_tier,name_status'
         }
@@ -236,7 +267,7 @@ export class MetaGraphAPI {
       return response.data?.data || [];
     } catch (error: any) {
       console.error('Get phone numbers error:', error.response?.data || error.message);
-      throw new Error('Failed to fetch phone numbers. Please ensure a phone number is added to your WhatsApp Business Account.');
+      throw new Error('Failed to fetch phone numbers');
     }
   }
 
@@ -247,17 +278,9 @@ export class MetaGraphAPI {
     try {
       const response = await this.client.post(
         `/${phoneNumberId}/messages`,
-        {
-          messaging_product: 'whatsapp',
-          ...payload
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
-          }
-        }
+        { messaging_product: 'whatsapp', ...payload },
+        { headers: { 'Authorization': `Bearer ${accessToken}` } }
       );
-
       return response.data;
     } catch (error: any) {
       console.error('Send message error:', error.response?.data || error.message);
