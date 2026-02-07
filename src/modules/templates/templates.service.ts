@@ -13,6 +13,7 @@ import {
   TemplateVariable,
 } from './templates.types';
 import { whatsappApi } from '../whatsapp/whatsapp.api';
+import { EncryptionUtil } from '../../utils/encryption';
 
 // ============================================
 // HELPERS
@@ -137,7 +138,36 @@ const buildMetaTemplatePayload = (t: {
   };
 };
 
-const getConnectedWaAccount = async (organizationId: string, whatsappAccountId?: string) => {
+/**
+ * ✅ Multi-tenant credentials resolver
+ * Priority:
+ * 1) MetaConnection (new connect flow, token encrypted)
+ * 2) WhatsAppAccount (old/manual connect flow)
+ */
+const getConnectedWabaCredentials = async (organizationId: string, whatsappAccountId?: string) => {
+  // 1) MetaConnection (new)
+  const metaConn = await prisma.metaConnection.findUnique({
+    where: { organizationId },
+    include: {
+      phoneNumbers: {
+        where: { isActive: true },
+        orderBy: [{ isPrimary: 'desc' }, { updatedAt: 'desc' }],
+      },
+    },
+  });
+
+  if (metaConn && metaConn.status === 'CONNECTED' && metaConn.accessToken && metaConn.wabaId) {
+    const accessToken = EncryptionUtil.decrypt(metaConn.accessToken);
+
+    return {
+      source: 'META_CONNECTION' as const,
+      wabaId: metaConn.wabaId,
+      accessToken,
+      phoneNumberId: metaConn.phoneNumbers?.[0]?.phoneNumberId || null,
+    };
+  }
+
+  // 2) WhatsAppAccount fallback (manual/old)
   const wa = await prisma.whatsAppAccount.findFirst({
     where: {
       organizationId,
@@ -150,7 +180,12 @@ const getConnectedWaAccount = async (organizationId: string, whatsappAccountId?:
   if (!wa.wabaId) throw new AppError('WABA ID missing on WhatsApp account.', 400);
   if (!wa.accessToken) throw new AppError('Access token missing on WhatsApp account.', 400);
 
-  return wa;
+  return {
+    source: 'WHATSAPP_ACCOUNT' as const,
+    wabaId: wa.wabaId,
+    accessToken: wa.accessToken,
+    phoneNumberId: wa.phoneNumberId || null,
+  };
 };
 
 // ============================================
@@ -159,7 +194,7 @@ const getConnectedWaAccount = async (organizationId: string, whatsappAccountId?:
 
 export class TemplatesService {
   // ==========================================
-  // VALIDATE TEMPLATE (used by controller)
+  // VALIDATE TEMPLATE
   // ==========================================
   validateTemplate(input: CreateTemplateInput): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
@@ -197,7 +232,7 @@ export class TemplatesService {
   }
 
   // ==========================================
-  // CREATE TEMPLATE (create locally + create on Meta)
+  // CREATE TEMPLATE (local + Meta submit)
   // ==========================================
   async create(organizationId: string, input: CreateTemplateInput): Promise<TemplateResponse> {
     const { name, language, category, headerType, headerContent, bodyText, footerText, buttons, variables } = input;
@@ -231,12 +266,15 @@ export class TemplatesService {
         buttons: toJsonValue(buttons || []),
         variables: toJsonValue(finalVariables),
         status: 'PENDING',
+        metaTemplateId: null,
+        rejectionReason: null,
       },
     });
 
-    // Try push to Meta (requires connected WA default)
+    // Submit to Meta
     try {
-      const wa = await getConnectedWaAccount(organizationId);
+      const wa = await getConnectedWabaCredentials(organizationId);
+
       const metaPayload = buildMetaTemplatePayload({
         name,
         language,
@@ -248,20 +286,35 @@ export class TemplatesService {
         buttons: (buttons || []) as any,
       });
 
-      const metaRes = await whatsappApi.createMessageTemplate(wa.wabaId, wa.accessToken || '', metaPayload);
+      const metaRes = await whatsappApi.createMessageTemplate(wa.wabaId, wa.accessToken, metaPayload);
       const metaTemplateId = metaRes?.id || metaRes?.template_id;
+
+      if (!metaTemplateId) {
+        throw new AppError('Meta did not return template ID. Submission may have failed.', 502);
+      }
 
       await prisma.template.update({
         where: { id: template.id },
         data: {
-          metaTemplateId: metaTemplateId ? String(metaTemplateId) : null,
+          metaTemplateId: String(metaTemplateId),
           status: 'PENDING',
+          rejectionReason: null,
         },
       });
 
-      console.log('✅ Meta template created:', { metaTemplateId, name });
+      console.log('✅ Meta template created:', { metaTemplateId, name, source: wa.source });
     } catch (e: any) {
+      const msg = String(e?.response?.data?.error?.message || e?.message || 'Meta submission failed');
       console.error('❌ Meta template create failed:', e?.response?.data || e);
+
+      // Mark as rejected locally so UI shows what happened
+      await prisma.template.update({
+        where: { id: template.id },
+        data: {
+          status: 'REJECTED',
+          rejectionReason: msg,
+        },
+      });
     }
 
     const latest = await prisma.template.findUnique({ where: { id: template.id } });
@@ -269,7 +322,7 @@ export class TemplatesService {
   }
 
   // ==========================================
-  // DUPLICATE (used by controller)
+  // DUPLICATE
   // ==========================================
   async duplicate(organizationId: string, templateId: string, newName: string): Promise<TemplateResponse> {
     const original = await prisma.template.findFirst({ where: { id: templateId, organizationId } });
@@ -300,7 +353,8 @@ export class TemplatesService {
         buttons: original.buttons || toJsonValue([]),
         variables: original.variables || toJsonValue([]),
         status: 'PENDING',
-        metaTemplateId: null, // new template must be re-submitted
+        metaTemplateId: null,
+        rejectionReason: null,
       },
     });
 
@@ -308,7 +362,7 @@ export class TemplatesService {
   }
 
   // ==========================================
-  // GET APPROVED TEMPLATES (used by controller)
+  // GET APPROVED TEMPLATES
   // ==========================================
   async getApprovedTemplates(organizationId: string): Promise<TemplateResponse[]> {
     const templates = await prisma.template.findMany({
@@ -319,7 +373,7 @@ export class TemplatesService {
   }
 
   // ==========================================
-  // GET LANGUAGES (used by controller)
+  // GET LANGUAGES
   // ==========================================
   async getLanguages(organizationId: string): Promise<{ language: string; count: number }[]> {
     const templates = await prisma.template.groupBy({
@@ -469,7 +523,7 @@ export class TemplatesService {
   }
 
   // ==========================================
-  // SUBMIT TO META (used by controller)
+  // SUBMIT TO META
   // ==========================================
   async submitToMeta(
     organizationId: string,
@@ -479,7 +533,7 @@ export class TemplatesService {
     const template = await prisma.template.findFirst({ where: { id: templateId, organizationId } });
     if (!template) throw new AppError('Template not found', 404);
 
-    const wa = await getConnectedWaAccount(organizationId, whatsappAccountId);
+    const wa = await getConnectedWabaCredentials(organizationId, whatsappAccountId);
 
     const metaPayload = buildMetaTemplatePayload({
       name: template.name,
@@ -492,7 +546,7 @@ export class TemplatesService {
       buttons: (template.buttons as any) || [],
     });
 
-    const metaRes = await whatsappApi.createMessageTemplate(wa.wabaId, wa.accessToken || '', metaPayload);
+    const metaRes = await whatsappApi.createMessageTemplate(wa.wabaId, wa.accessToken, metaPayload);
     const metaTemplateId = metaRes?.id || metaRes?.template_id;
 
     await prisma.template.update({
@@ -500,6 +554,7 @@ export class TemplatesService {
       data: {
         metaTemplateId: metaTemplateId ? String(metaTemplateId) : template.metaTemplateId,
         status: 'PENDING',
+        rejectionReason: null,
       },
     });
 
@@ -510,15 +565,16 @@ export class TemplatesService {
   }
 
   // ==========================================
-  // SYNC FROM META (controller passes 2 args)
+  // SYNC FROM META
   // ==========================================
   async syncFromMeta(
     organizationId: string,
     whatsappAccountId?: string
   ): Promise<{ message: string; synced: number }> {
-    const wa = await getConnectedWaAccount(organizationId, whatsappAccountId);
+    const wa = await getConnectedWabaCredentials(organizationId, whatsappAccountId);
 
-   const metaTemplates = await whatsappApi.listMessageTemplates(wa.wabaId, wa.accessToken || '');
+    const metaTemplates = await whatsappApi.listMessageTemplates(wa.wabaId, wa.accessToken);
+
     let synced = 0;
     for (const mt of metaTemplates) {
       const metaId = String(mt.id);
@@ -555,6 +611,7 @@ export class TemplatesService {
             metaTemplateId: metaId,
             buttons: toJsonValue([]),
             variables: toJsonValue([]),
+            rejectionReason,
           },
         });
       }
