@@ -24,6 +24,7 @@ import adminRoutes from './modules/admin/admin.routes';
 import billingRoutes from './modules/billing/billing.routes';
 import razorpayRoutes from './modules/billing/razorpay.routes';
 import metaRoutes from './modules/meta/meta.routes';
+import dashboardRoutes from './modules/dashboard/dashboard.routes';
 
 const app: Express = express();
 
@@ -237,6 +238,7 @@ app.use(`${apiPrefix}/admin`, adminRoutes);
 app.use(`${apiPrefix}/billing`, billingRoutes);
 app.use(`${apiPrefix}/billing/razorpay`, razorpayRoutes);
 app.use(`${apiPrefix}/meta`, metaRoutes);
+app.use(`${apiPrefix}/dashboard`, dashboardRoutes);
 
 // ============================================
 // 404 HANDLER

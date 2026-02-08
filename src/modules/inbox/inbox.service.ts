@@ -20,6 +20,21 @@ import {
 // HELPER FUNCTIONS
 // ============================================
 
+/**
+ * Emit Socket.IO events
+ */
+const emitSocketEvent = (event: string, room: string, data: any) => {
+  try {
+    const io = (global as any).io;
+    if (io) {
+      io.to(room).emit(event, data);
+      console.log(`📡 Emitted ${event} to room ${room}`);
+    }
+  } catch (error) {
+    console.error('Error emitting socket event:', error);
+  }
+};
+
 const formatContact = (contact: any) => ({
   id: contact.id,
   phone: contact.phone,
@@ -34,6 +49,7 @@ const formatContact = (contact: any) => ({
 
 const formatMessage = (message: any): MessageResponse => ({
   id: message.id,
+  wamId: message.wamId,
   waMessageId: message.waMessageId,
   direction: message.direction,
   type: message.type,
@@ -61,6 +77,7 @@ const formatConversation = (conversation: any): ConversationResponse => ({
   isArchived: conversation.isArchived,
   isRead: conversation.isRead,
   unreadCount: conversation.unreadCount,
+  status: conversation.status,
   assignedTo: conversation.assignedTo,
   assignedUser: conversation.assignedUser ? {
     id: conversation.assignedUser.id,
@@ -93,6 +110,7 @@ export class InboxService {
       isRead,
       assignedTo,
       labels,
+      status,
       sortBy = 'lastMessageAt',
       sortOrder = 'desc',
     } = query;
@@ -110,6 +128,10 @@ export class InboxService {
 
     if (isRead !== undefined) {
       where.isRead = isRead;
+    }
+
+    if (status) {
+      where.status = status;
     }
 
     if (assignedTo) {
@@ -138,6 +160,14 @@ export class InboxService {
         orderBy: { [sortBy]: sortOrder },
         include: {
           contact: true,
+          assignedUser: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              avatar: true,
+            },
+          },
         },
       }),
       prisma.conversation.count({ where }),
@@ -176,9 +206,20 @@ export class InboxService {
       },
       include: {
         contact: true,
+        assignedUser: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+          },
+        },
         messages: {
           take: 50,
           orderBy: { createdAt: 'desc' },
+          include: {
+            replyToMessage: true,
+          },
         },
       },
     });
@@ -241,13 +282,16 @@ export class InboxService {
 
     const messages = await prisma.message.findMany({
       where,
-      take: limit + 1, // Get one extra to check if there are more
+      take: limit + 1,
       orderBy: { createdAt: 'desc' },
+      include: {
+        replyToMessage: true,
+      },
     });
 
     const hasMore = messages.length > limit;
     if (hasMore) {
-      messages.pop(); // Remove the extra one
+      messages.pop();
     }
 
     return {
@@ -267,7 +311,7 @@ export class InboxService {
   ): Promise<MessageResponse> {
     const { type, content, mediaUrl, mediaType, filename, replyToMessageId, interactive } = input;
 
-    // Get conversation with contact and default WhatsApp account
+    // Get conversation with contact
     const conversation = await prisma.conversation.findFirst({
       where: {
         id: conversationId,
@@ -275,6 +319,14 @@ export class InboxService {
       },
       include: {
         contact: true,
+        assignedUser: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+          },
+        },
       },
     });
 
@@ -373,18 +425,34 @@ export class InboxService {
         mediaUrl,
         mediaType,
         status: waMessageId ? 'PENDING' : 'FAILED',
+        sentAt: new Date(),
         failedAt: sendError ? new Date() : null,
         failureReason: sendError,
         replyToMessageId,
+        sentBy: userId,
+      },
+      include: {
+        replyToMessage: true,
       },
     });
 
     // Update conversation
-    await prisma.conversation.update({
+    const updatedConversation = await prisma.conversation.update({
       where: { id: conversationId },
       data: {
         lastMessageAt: new Date(),
         lastMessagePreview: content?.substring(0, 100) || `[${type}]`,
+      },
+      include: {
+        contact: true,
+        assignedUser: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+          },
+        },
       },
     });
 
@@ -397,7 +465,31 @@ export class InboxService {
       },
     });
 
-    return formatMessage(message);
+    // ========================================
+    // 🔌 EMIT SOCKET EVENT FOR SENT MESSAGE
+    // ========================================
+    const formattedMessage = formatMessage(message);
+    const formattedConversation = formatConversation(updatedConversation);
+
+    // Emit to organization room
+    emitSocketEvent('message:new', `org:${organizationId}`, {
+      message: formattedMessage,
+      conversation: formattedConversation,
+    });
+
+    // Emit to conversation-specific room
+    emitSocketEvent('message:new', `conversation:${conversationId}`, {
+      message: formattedMessage,
+    });
+
+    // Emit conversation updated
+    emitSocketEvent('conversation:updated', `org:${organizationId}`, {
+      conversation: formattedConversation,
+    });
+
+    console.log(`✅ Message sent to ${toPhone} in conversation ${conversationId}`);
+
+    return formattedMessage;
   }
 
   // ==========================================
@@ -426,10 +518,33 @@ export class InboxService {
       },
       include: {
         contact: true,
+        assignedUser: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+          },
+        },
       },
     });
 
-    return formatConversation(updated);
+    const formattedConversation = formatConversation(updated);
+
+    // ========================================
+    // 🔌 EMIT SOCKET EVENT
+    // ========================================
+    emitSocketEvent('conversation:updated', `org:${organizationId}`, {
+      conversation: formattedConversation,
+    });
+
+    emitSocketEvent('conversation:read', `org:${organizationId}`, {
+      conversationId,
+      isRead: true,
+      unreadCount: 0,
+    });
+
+    return formattedConversation;
   }
 
   // ==========================================
@@ -456,10 +571,32 @@ export class InboxService {
       data: { isArchived: archive },
       include: {
         contact: true,
+        assignedUser: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+          },
+        },
       },
     });
 
-    return formatConversation(updated);
+    const formattedConversation = formatConversation(updated);
+
+    // ========================================
+    // 🔌 EMIT SOCKET EVENT
+    // ========================================
+    emitSocketEvent('conversation:updated', `org:${organizationId}`, {
+      conversation: formattedConversation,
+    });
+
+    emitSocketEvent('conversation:archived', `org:${organizationId}`, {
+      conversationId,
+      isArchived: archive,
+    });
+
+    return formattedConversation;
   }
 
   // ==========================================
@@ -468,7 +605,8 @@ export class InboxService {
   async assignConversation(
     organizationId: string,
     conversationId: string,
-    assignToUserId: string | null
+    assignToUserId: string | null,
+    assignedByUserId?: string
   ): Promise<ConversationResponse> {
     const conversation = await prisma.conversation.findFirst({
       where: {
@@ -482,6 +620,7 @@ export class InboxService {
     }
 
     // Verify user belongs to organization if assigning
+    let assignedUser = null;
     if (assignToUserId) {
       const member = await prisma.organizationMember.findUnique({
         where: {
@@ -490,11 +629,22 @@ export class InboxService {
             userId: assignToUserId,
           },
         },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              avatar: true,
+            },
+          },
+        },
       });
 
       if (!member) {
         throw new AppError('User is not a member of this organization', 400);
       }
+      assignedUser = member.user;
     }
 
     const updated = await prisma.conversation.update({
@@ -502,10 +652,41 @@ export class InboxService {
       data: { assignedTo: assignToUserId },
       include: {
         contact: true,
+        assignedUser: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+          },
+        },
       },
     });
 
-    return formatConversation(updated);
+    const formattedConversation = formatConversation(updated);
+
+    // ========================================
+    // 🔌 EMIT SOCKET EVENTS
+    // ========================================
+    emitSocketEvent('conversation:updated', `org:${organizationId}`, {
+      conversation: formattedConversation,
+    });
+
+    emitSocketEvent('conversation:assigned', `org:${organizationId}`, {
+      conversationId,
+      assignedTo: assignToUserId,
+      assignedUser,
+      assignedBy: assignedByUserId,
+    });
+
+    // Notify the assigned user directly
+    if (assignToUserId) {
+      emitSocketEvent('conversation:assignedToYou', `user:${assignToUserId}`, {
+        conversation: formattedConversation,
+      });
+    }
+
+    return formattedConversation;
   }
 
   // ==========================================
@@ -534,14 +715,32 @@ export class InboxService {
         isRead: input.isRead,
         labels: input.labels,
         assignedTo: input.assignedTo,
+        status: input.status,
         unreadCount: input.isRead ? 0 : undefined,
       },
       include: {
         contact: true,
+        assignedUser: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+          },
+        },
       },
     });
 
-    return formatConversation(updated);
+    const formattedConversation = formatConversation(updated);
+
+    // ========================================
+    // 🔌 EMIT SOCKET EVENT
+    // ========================================
+    emitSocketEvent('conversation:updated', `org:${organizationId}`, {
+      conversation: formattedConversation,
+    });
+
+    return formattedConversation;
   }
 
   // ==========================================
@@ -571,10 +770,32 @@ export class InboxService {
       data: { labels: newLabels },
       include: {
         contact: true,
+        assignedUser: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+          },
+        },
       },
     });
 
-    return formatConversation(updated);
+    const formattedConversation = formatConversation(updated);
+
+    // ========================================
+    // 🔌 EMIT SOCKET EVENT
+    // ========================================
+    emitSocketEvent('conversation:updated', `org:${organizationId}`, {
+      conversation: formattedConversation,
+    });
+
+    emitSocketEvent('conversation:labelsUpdated', `org:${organizationId}`, {
+      conversationId,
+      labels: newLabels,
+    });
+
+    return formattedConversation;
   }
 
   // ==========================================
@@ -604,10 +825,27 @@ export class InboxService {
       data: { labels: newLabels },
       include: {
         contact: true,
+        assignedUser: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+          },
+        },
       },
     });
 
-    return formatConversation(updated);
+    const formattedConversation = formatConversation(updated);
+
+    // ========================================
+    // 🔌 EMIT SOCKET EVENT
+    // ========================================
+    emitSocketEvent('conversation:updated', `org:${organizationId}`, {
+      conversation: formattedConversation,
+    });
+
+    return formattedConversation;
   }
 
   // ==========================================
@@ -632,6 +870,13 @@ export class InboxService {
       where: { id: conversationId },
     });
 
+    // ========================================
+    // 🔌 EMIT SOCKET EVENT
+    // ========================================
+    emitSocketEvent('conversation:deleted', `org:${organizationId}`, {
+      conversationId,
+    });
+
     return { message: 'Conversation deleted successfully' };
   }
 
@@ -654,6 +899,15 @@ export class InboxService {
         assignedTo: updates.assignedTo,
         unreadCount: updates.isRead ? 0 : undefined,
       },
+    });
+
+    // ========================================
+    // 🔌 EMIT SOCKET EVENT
+    // ========================================
+    emitSocketEvent('conversations:bulkUpdated', `org:${organizationId}`, {
+      conversationIds,
+      updates,
+      count: result.count,
     });
 
     return { updated: result.count };
@@ -718,6 +972,7 @@ export class InboxService {
       archivedConversations,
       assignedToMe,
       unassigned,
+      openConversations,
       todayMessages,
     ] = await Promise.all([
       prisma.conversation.count({ where: { organizationId } }),
@@ -725,6 +980,7 @@ export class InboxService {
       prisma.conversation.count({ where: { organizationId, isArchived: true } }),
       prisma.conversation.count({ where: { organizationId, assignedTo: userId } }),
       prisma.conversation.count({ where: { organizationId, assignedTo: null, isArchived: false } }),
+      prisma.conversation.count({ where: { organizationId, status: 'OPEN' } }),
       prisma.message.count({
         where: {
           conversation: { organizationId },
@@ -743,6 +999,7 @@ export class InboxService {
       archivedConversations,
       assignedToMe,
       unassigned,
+      openConversations,
       todayMessages,
       responseRate,
       averageResponseTime,
@@ -785,8 +1042,18 @@ export class InboxService {
       },
       include: {
         contact: true,
+        assignedUser: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+          },
+        },
       },
     });
+
+    const isNew = !conversation;
 
     if (!conversation) {
       // Create new conversation
@@ -794,14 +1061,70 @@ export class InboxService {
         data: {
           organizationId,
           contactId,
+          status: 'OPEN',
         },
         include: {
           contact: true,
+          assignedUser: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              avatar: true,
+            },
+          },
         },
       });
     }
 
-    return formatConversation(conversation);
+    const formattedConversation = formatConversation(conversation);
+
+    // ========================================
+    // 🔌 EMIT SOCKET EVENT FOR NEW CONVERSATION
+    // ========================================
+    if (isNew) {
+      emitSocketEvent('conversation:new', `org:${organizationId}`, {
+        conversation: formattedConversation,
+      });
+    }
+
+    return formattedConversation;
+  }
+
+  // ==========================================
+  // TYPING INDICATOR
+  // ==========================================
+  async sendTypingIndicator(
+    organizationId: string,
+    conversationId: string,
+    userId: string,
+    isTyping: boolean
+  ): Promise<void> {
+    // Get user info
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        avatar: true,
+      },
+    });
+
+    // ========================================
+    // 🔌 EMIT SOCKET EVENT
+    // ========================================
+    emitSocketEvent('typing', `conversation:${conversationId}`, {
+      conversationId,
+      user,
+      isTyping,
+    });
+
+    emitSocketEvent('typing', `org:${organizationId}`, {
+      conversationId,
+      user,
+      isTyping,
+    });
   }
 }
 

@@ -4,15 +4,8 @@ import { Request, Response, NextFunction } from 'express';
 import { chatbotService } from './chatbot.service';
 import { sendSuccess } from '../../utils/response';
 import { AppError } from '../../middleware/errorHandler';
-import {
-  CreateChatbotInput,
-  UpdateChatbotInput,
-  ChatbotsQueryInput,
-  TestChatbotInput,
-  FlowData,
-} from './chatbot.types';
+import { ChatbotStatus } from '@prisma/client';
 
-// Extended Request interface
 interface AuthRequest extends Request {
   user?: {
     id: string;
@@ -22,58 +15,40 @@ interface AuthRequest extends Request {
 }
 
 export class ChatbotController {
-  // ==========================================
-  // CREATE CHATBOT
-  // ==========================================
-  async create(req: AuthRequest, res: Response, next: NextFunction) {
+  // GET /api/v1/chatbot
+  async getAll(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
       if (!organizationId) {
         throw new AppError('Organization context required', 400);
       }
 
-      const input: CreateChatbotInput = req.body;
-      const chatbot = await chatbotService.create(organizationId, input);
-      return sendSuccess(res, chatbot, 'Chatbot created successfully', 201);
-    } catch (error) {
-      next(error);
-    }
-  }
+      const { page, limit, status, search } = req.query;
 
-  // ==========================================
-  // GET CHATBOTS LIST
-  // ==========================================
-  async getList(req: AuthRequest, res: Response, next: NextFunction) {
-    try {
-      const organizationId = req.user!.organizationId;
-      if (!organizationId) {
-        throw new AppError('Organization context required', 400);
-      }
+      const result = await chatbotService.getAll(organizationId, {
+        page: page ? parseInt(page as string) : 1,
+        limit: limit ? parseInt(limit as string) : 20,
+        status: status as ChatbotStatus | undefined,
+        search: search as string | undefined,
+      });
 
-      const query: ChatbotsQueryInput = {
-        page: parseInt(req.query.page as string) || 1,
-        limit: parseInt(req.query.limit as string) || 20,
-        search: req.query.search as string,
-        status: req.query.status as any,
-        sortBy: (req.query.sortBy as any) || 'createdAt',
-        sortOrder: (req.query.sortOrder as any) || 'desc',
-      };
-
-      const result = await chatbotService.getList(organizationId, query);
       return res.json({
         success: true,
         message: 'Chatbots fetched successfully',
         data: result.chatbots,
-        meta: result.meta,
+        meta: {
+          page: result.page,
+          limit: result.limit,
+          total: result.total,
+          totalPages: Math.ceil(result.total / result.limit),
+        },
       });
     } catch (error) {
       next(error);
     }
   }
 
-  // ==========================================
-  // GET CHATBOT BY ID
-  // ==========================================
+  // GET /api/v1/chatbot/:id
   async getById(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
@@ -83,15 +58,30 @@ export class ChatbotController {
 
       const { id } = req.params;
       const chatbot = await chatbotService.getById(organizationId, id);
+
       return sendSuccess(res, chatbot, 'Chatbot fetched successfully');
     } catch (error) {
       next(error);
     }
   }
 
-  // ==========================================
-  // UPDATE CHATBOT
-  // ==========================================
+  // POST /api/v1/chatbot
+  async create(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const organizationId = req.user!.organizationId;
+      if (!organizationId) {
+        throw new AppError('Organization context required', 400);
+      }
+
+      const chatbot = await chatbotService.create(organizationId, req.body);
+
+      return sendSuccess(res, chatbot, 'Chatbot created successfully', 201);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // PUT /api/v1/chatbot/:id
   async update(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
@@ -100,17 +90,15 @@ export class ChatbotController {
       }
 
       const { id } = req.params;
-      const input: UpdateChatbotInput = req.body;
-      const chatbot = await chatbotService.update(organizationId, id, input);
+      const chatbot = await chatbotService.update(organizationId, id, req.body);
+
       return sendSuccess(res, chatbot, 'Chatbot updated successfully');
     } catch (error) {
       next(error);
     }
   }
 
-  // ==========================================
-  // DELETE CHATBOT
-  // ==========================================
+  // DELETE /api/v1/chatbot/:id
   async delete(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
@@ -119,35 +107,15 @@ export class ChatbotController {
       }
 
       const { id } = req.params;
-      const result = await chatbotService.delete(organizationId, id);
-      return sendSuccess(res, result, result.message);
+      await chatbotService.delete(organizationId, id);
+
+      return sendSuccess(res, null, 'Chatbot deleted successfully');
     } catch (error) {
       next(error);
     }
   }
 
-  // ==========================================
-  // DUPLICATE CHATBOT
-  // ==========================================
-  async duplicate(req: AuthRequest, res: Response, next: NextFunction) {
-    try {
-      const organizationId = req.user!.organizationId;
-      if (!organizationId) {
-        throw new AppError('Organization context required', 400);
-      }
-
-      const { id } = req.params;
-      const { name } = req.body;
-      const chatbot = await chatbotService.duplicate(organizationId, id, name);
-      return sendSuccess(res, chatbot, 'Chatbot duplicated successfully', 201);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  // ==========================================
-  // ACTIVATE CHATBOT
-  // ==========================================
+  // POST /api/v1/chatbot/:id/activate
   async activate(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
@@ -157,16 +125,15 @@ export class ChatbotController {
 
       const { id } = req.params;
       const chatbot = await chatbotService.activate(organizationId, id);
+
       return sendSuccess(res, chatbot, 'Chatbot activated successfully');
     } catch (error) {
       next(error);
     }
   }
 
-  // ==========================================
-  // PAUSE CHATBOT
-  // ==========================================
-  async pause(req: AuthRequest, res: Response, next: NextFunction) {
+  // POST /api/v1/chatbot/:id/deactivate
+  async deactivate(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
       if (!organizationId) {
@@ -174,17 +141,16 @@ export class ChatbotController {
       }
 
       const { id } = req.params;
-      const chatbot = await chatbotService.pause(organizationId, id);
+      const chatbot = await chatbotService.deactivate(organizationId, id);
+
       return sendSuccess(res, chatbot, 'Chatbot paused successfully');
     } catch (error) {
       next(error);
     }
   }
 
-  // ==========================================
-  // SAVE FLOW
-  // ==========================================
-  async saveFlow(req: AuthRequest, res: Response, next: NextFunction) {
+  // POST /api/v1/chatbot/:id/duplicate
+  async duplicate(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
       if (!organizationId) {
@@ -192,36 +158,15 @@ export class ChatbotController {
       }
 
       const { id } = req.params;
-      const { flowData } = req.body;
-      const chatbot = await chatbotService.saveFlow(organizationId, id, flowData);
-      return sendSuccess(res, chatbot, 'Flow saved successfully');
+      const chatbot = await chatbotService.duplicate(organizationId, id);
+
+      return sendSuccess(res, chatbot, 'Chatbot duplicated successfully', 201);
     } catch (error) {
       next(error);
     }
   }
 
-  // ==========================================
-  // TEST CHATBOT
-  // ==========================================
-  async test(req: AuthRequest, res: Response, next: NextFunction) {
-    try {
-      const organizationId = req.user!.organizationId;
-      if (!organizationId) {
-        throw new AppError('Organization context required', 400);
-      }
-
-      const { id } = req.params;
-      const input: TestChatbotInput = req.body;
-      const result = await chatbotService.test(organizationId, id, input);
-      return sendSuccess(res, result, 'Test executed successfully');
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  // ==========================================
-  // GET STATS
-  // ==========================================
+  // GET /api/v1/chatbot/:id/stats
   async getStats(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
@@ -229,13 +174,14 @@ export class ChatbotController {
         throw new AppError('Organization context required', 400);
       }
 
-      const stats = await chatbotService.getStats(organizationId);
-      return sendSuccess(res, stats, 'Stats fetched successfully');
+      const { id } = req.params;
+      const stats = await chatbotService.getStats(organizationId, id);
+
+      return sendSuccess(res, stats, 'Chatbot stats fetched successfully');
     } catch (error) {
       next(error);
     }
   }
 }
 
-// Export singleton instance
 export const chatbotController = new ChatbotController();
