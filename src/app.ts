@@ -6,9 +6,12 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
+
 import { config } from './config';
 import { errorHandler } from './middleware/errorHandler';
 import { sendError } from './utils/response';
+
+import { WebhookService } from './modules/webhooks/webhook.service';
 
 // Import routes
 import authRoutes from './modules/auth/auth.routes';
@@ -36,7 +39,6 @@ app.set('trust proxy', 1);
 // ============================================
 // CORS CONFIGURATION
 // ============================================
-
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
@@ -52,15 +54,14 @@ if (config.frontendUrl && !allowedOrigins.includes(config.frontendUrl)) {
 console.log('🌐 CORS Allowed Origins:', allowedOrigins);
 
 const corsOptions: cors.CorsOptions = {
-  origin: function (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
-    if (!origin) {
-      return callback(null, true);
-    }
-    
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    
+  origin: (origin, callback) => {
+    // server-to-server requests / curl / meta webhook => origin undefined
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+
+    // NOTE: aapke current code me non-whitelisted origin ko bhi allow kiya ja raha tha.
+    // Same behavior maintain kar raha hu to avoid breaking anything in production.
     console.log('⚠️ CORS request from non-whitelisted origin:', origin);
     return callback(null, true);
   },
@@ -78,7 +79,6 @@ const corsOptions: cors.CorsOptions = {
   ],
   exposedHeaders: ['set-cookie', 'Set-Cookie'],
   maxAge: 86400,
-  preflightContinue: false,
   optionsSuccessStatus: 204,
 };
 
@@ -86,36 +86,16 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
 // ============================================
-// MANUAL CORS HEADERS
-// ============================================
-app.use((req: Request, res: Response, next: NextFunction) => {
-  const origin = req.headers.origin;
-  
-  if (origin && (allowedOrigins.includes(origin) || true)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  }
-  
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, x-platform, Cache-Control, Pragma');
-  res.setHeader('Access-Control-Max-Age', '86400');
-  
-  if (req.method === 'OPTIONS') {
-    return res.status(204).end();
-  }
-  
-  next();
-});
-
-// ============================================
 // SECURITY MIDDLEWARE
 // ============================================
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: 'cross-origin' },
-  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
-  crossOriginEmbedderPolicy: false,
-  contentSecurityPolicy: false,
-}));
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+    crossOriginEmbedderPolicy: false,
+    contentSecurityPolicy: false,
+  })
+);
 
 // ============================================
 // ⚡ WEBHOOK ROUTES (Before JSON parsing!)
@@ -136,30 +116,63 @@ app.get('/webhooks/meta', (req: Request, res: Response) => {
   }
 
   console.error('❌ Meta webhook verification failed');
-  res.sendStatus(403);
+  return res.sendStatus(403);
 });
 
-// Meta webhook events (POST)
-app.post('/webhooks/meta', async (req: Request, res: Response) => {
-  try {
-    console.log('📥 Meta webhook received');
-    console.log('Body:', req.body);
-    
-    // Acknowledge immediately
-    res.sendStatus(200);
-    
-    // Process async (don't block response)
-    // await processWebhook(req.body);
-  } catch (error) {
-    console.error('❌ Meta webhook error:', error);
-    res.sendStatus(200);
+/**
+ * Meta webhook events (POST)
+ * IMPORTANT: Use express.raw() to capture raw body (signature verification needs it)
+ */
+app.post(
+  '/webhooks/meta',
+  express.raw({ type: 'application/json', limit: '10mb' }),
+  async (req: Request, res: Response) => {
+    try {
+      const signature = req.headers['x-hub-signature-256'] as string | undefined;
+
+      const rawBody = Buffer.isBuffer(req.body)
+        ? (req.body as Buffer).toString('utf8')
+        : '';
+
+      // Verify signature (if header exists)
+      if (signature && rawBody) {
+        const valid = WebhookService.verifySignature(signature, rawBody);
+        if (!valid) {
+          console.error('❌ Invalid webhook signature');
+          return res.sendStatus(403);
+        }
+      } else {
+        // In some cases signature may not be present (testing)
+        console.warn('⚠️ Webhook signature missing or raw body empty');
+      }
+
+      // Parse JSON
+      let parsed: any = null;
+      try {
+        parsed = rawBody ? JSON.parse(rawBody) : req.body;
+      } catch (e) {
+        console.error('❌ Webhook JSON parse error');
+        return res.sendStatus(400);
+      }
+
+      // Acknowledge immediately
+      res.sendStatus(200);
+
+      // Process async (don’t block)
+      WebhookService.processMetaWebhook(parsed).catch((err) => {
+        console.error('❌ Webhook async processing error:', err);
+      });
+    } catch (error) {
+      console.error('❌ Meta webhook error:', error);
+      // Meta expects 200 quickly; even on error we respond 200 to avoid retries storm
+      return res.sendStatus(200);
+    }
   }
-});
+);
 
 // ============================================
-// PARSING MIDDLEWARE
+// PARSING MIDDLEWARE (for normal API routes)
 // ============================================
-
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -175,7 +188,6 @@ if (config.nodeEnv === 'development') {
 // ============================================
 // HEALTH CHECK & DEBUG ROUTES
 // ============================================
-
 app.get('/', (req: Request, res: Response) => {
   res.json({
     success: true,
@@ -201,7 +213,7 @@ app.get('/api/debug/cors', (req: Request, res: Response) => {
     success: true,
     message: 'CORS is working!',
     origin: req.headers.origin || 'No origin header',
-    allowedOrigins: allowedOrigins,
+    allowedOrigins,
     frontendUrl: config.frontendUrl,
     headers: {
       'access-control-allow-origin': res.getHeader('Access-Control-Allow-Origin'),
@@ -222,7 +234,6 @@ app.post('/api/debug/cors-test', (req: Request, res: Response) => {
 // ============================================
 // API ROUTES
 // ============================================
-
 const apiPrefix = `/api/${config.apiVersion}`;
 
 app.use(`${apiPrefix}/auth`, authRoutes);
@@ -243,7 +254,6 @@ app.use(`${apiPrefix}/dashboard`, dashboardRoutes);
 // ============================================
 // 404 HANDLER
 // ============================================
-
 app.use((req: Request, res: Response) => {
   sendError(res, `Route ${req.method} ${req.url} not found`, 404);
 });
@@ -251,7 +261,6 @@ app.use((req: Request, res: Response) => {
 // ============================================
 // ERROR HANDLER
 // ============================================
-
 app.use(errorHandler);
 
 export default app;

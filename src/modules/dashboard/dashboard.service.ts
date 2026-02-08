@@ -1,6 +1,7 @@
-// src/modules/dashboard/dashboard.service.ts (NEW FILE)
+// src/modules/dashboard/dashboard.service.ts
 
-import { prisma } from '../../config/database';
+import prisma from '../../config/database';
+import { Prisma } from '@prisma/client';
 
 export class DashboardService {
   
@@ -18,8 +19,10 @@ export class DashboardService {
     // Total Messages Sent (last 30 days)
     const messagesSent = await prisma.message.count({
       where: {
-        organizationId,
-        direction: 'outbound',
+        conversation: {
+          organizationId
+        },
+        direction: 'OUTBOUND',
         createdAt: { gte: last30Days }
       }
     });
@@ -27,8 +30,10 @@ export class DashboardService {
     // Total Messages Received (last 30 days)
     const messagesReceived = await prisma.message.count({
       where: {
-        organizationId,
-        direction: 'inbound',
+        conversation: {
+          organizationId
+        },
+        direction: 'INBOUND',
         createdAt: { gte: last30Days }
       }
     });
@@ -37,7 +42,7 @@ export class DashboardService {
     const activeCampaigns = await prisma.campaign.count({
       where: {
         organizationId,
-        status: 'active'
+        status: 'RUNNING'
       }
     });
 
@@ -45,8 +50,10 @@ export class DashboardService {
     const deliveryStats = await prisma.message.groupBy({
       by: ['status'],
       where: {
-        organizationId,
-        direction: 'outbound',
+        conversation: {
+          organizationId
+        },
+        direction: 'OUTBOUND',
         createdAt: { gte: last7Days }
       },
       _count: { status: true }
@@ -54,9 +61,9 @@ export class DashboardService {
 
     // Calculate delivery rate
     const totalOutbound = deliveryStats.reduce((sum, stat) => sum + stat._count.status, 0);
-    const delivered = deliveryStats.find(s => s.status === 'delivered')?._count.status || 0;
-    const read = deliveryStats.find(s => s.status === 'read')?._count.status || 0;
-    const failed = deliveryStats.find(s => s.status === 'failed')?._count.status || 0;
+    const delivered = deliveryStats.find(s => s.status === 'DELIVERED')?._count.status || 0;
+    const read = deliveryStats.find(s => s.status === 'READ')?._count.status || 0;
+    const failed = deliveryStats.find(s => s.status === 'FAILED')?._count.status || 0;
 
     const deliveryRate = totalOutbound > 0 ? ((delivered + read) / totalOutbound) * 100 : 0;
     const readRate = totalOutbound > 0 ? (read / totalOutbound) * 100 : 0;
@@ -103,7 +110,7 @@ export class DashboardService {
         totalSent: totalOutbound,
         delivered,
         read,
-        pending: deliveryStats.find(s => s.status === 'pending')?._count.status || 0
+        pending: deliveryStats.find(s => s.status === 'PENDING')?._count.status || 0
       },
       messagesOverview,
       recentActivity
@@ -114,7 +121,9 @@ export class DashboardService {
   private async getMessagesOverview(organizationId: string, startDate: Date) {
     const messages = await prisma.message.findMany({
       where: {
-        organizationId,
+        conversation: {
+          organizationId
+        },
         createdAt: { gte: startDate }
       },
       select: {
@@ -131,12 +140,24 @@ export class DashboardService {
       if (!dailyStats[dateKey]) {
         dailyStats[dateKey] = { sent: 0, received: 0, date: dateKey };
       }
-      if (msg.direction === 'outbound') {
+      if (msg.direction === 'OUTBOUND') {
         dailyStats[dateKey].sent++;
       } else {
         dailyStats[dateKey].received++;
       }
     });
+
+    // Fill missing dates
+    const currentDate = new Date(startDate);
+    const today = new Date();
+    
+    while (currentDate <= today) {
+      const dateKey = currentDate.toISOString().split('T')[0];
+      if (!dailyStats[dateKey]) {
+        dailyStats[dateKey] = { sent: 0, received: 0, date: dateKey };
+      }
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
 
     // Convert to array and sort by date
     return Object.values(dailyStats).sort((a, b) => 
@@ -150,29 +171,46 @@ export class DashboardService {
 
     // Recent messages
     const recentMessages = await prisma.message.findMany({
-      where: { organizationId },
+      where: { 
+        conversation: {
+          organizationId
+        }
+      },
       orderBy: { createdAt: 'desc' },
       take: 5,
       include: {
-        contact: {
-          select: { name: true, phone: true }
+        conversation: {
+          include: {
+            contact: {
+              select: { 
+                firstName: true, 
+                lastName: true, 
+                phone: true 
+              }
+            }
+          }
         }
       }
     });
 
     recentMessages.forEach(msg => {
+      const contact = msg.conversation?.contact;
+      const contactName = contact ? 
+        [contact.firstName, contact.lastName].filter(Boolean).join(' ') || contact.phone : 
+        'Unknown';
+
       activities.push({
         id: msg.id,
         type: 'message',
-        action: msg.direction === 'outbound' ? 'message_sent' : 'message_received',
-        description: msg.direction === 'outbound' 
-          ? `Message sent to ${msg.contact?.name || msg.contact?.phone}`
-          : `Message received from ${msg.contact?.name || msg.contact?.phone}`,
+        action: msg.direction === 'OUTBOUND' ? 'message_sent' : 'message_received',
+        description: msg.direction === 'OUTBOUND' 
+          ? `Message sent to ${contactName}`
+          : `Message received from ${contactName}`,
         timestamp: msg.createdAt,
         metadata: {
-          contactName: msg.contact?.name,
-          contactPhone: msg.contact?.phone,
-          messageType: msg.messageType
+          contactName: contactName,
+          contactPhone: contact?.phone,
+          messageType: msg.type
         }
       });
     });
@@ -188,8 +226,8 @@ export class DashboardService {
       activities.push({
         id: campaign.id,
         type: 'campaign',
-        action: `campaign_${campaign.status}`,
-        description: `Campaign "${campaign.name}" ${campaign.status}`,
+        action: `campaign_${campaign.status.toLowerCase()}`,
+        description: `Campaign "${campaign.name}" ${campaign.status.toLowerCase()}`,
         timestamp: campaign.updatedAt,
         metadata: {
           campaignName: campaign.name,
@@ -206,14 +244,16 @@ export class DashboardService {
     });
 
     recentContacts.forEach(contact => {
+      const contactName = [contact.firstName, contact.lastName].filter(Boolean).join(' ') || contact.phone;
+      
       activities.push({
         id: contact.id,
         type: 'contact',
         action: 'contact_added',
-        description: `New contact added: ${contact.name || contact.phone}`,
+        description: `New contact added: ${contactName}`,
         timestamp: contact.createdAt,
         metadata: {
-          contactName: contact.name,
+          contactName: contactName,
           contactPhone: contact.phone
         }
       });
@@ -227,25 +267,137 @@ export class DashboardService {
 
   // Get quick stats for header
   async getQuickStats(organizationId: string) {
-    const unreadMessages = await prisma.message.count({
+    // Unread conversations (not individual messages)
+    const unreadConversations = await prisma.conversation.count({
       where: {
         organizationId,
-        direction: 'inbound',
-        status: { not: 'read' }
+        isRead: false,
+        isArchived: false
       }
     });
 
     const pendingCampaigns = await prisma.campaign.count({
       where: {
         organizationId,
-        status: 'scheduled'
+        status: 'SCHEDULED'
+      }
+    });
+
+    // Get today's message count
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const todayMessages = await prisma.message.count({
+      where: {
+        conversation: {
+          organizationId
+        },
+        createdAt: { gte: today }
       }
     });
 
     return {
-      unreadMessages,
-      pendingCampaigns
+      unreadConversations,
+      pendingCampaigns,
+      todayMessages
     };
+  }
+
+  // Get chart data for dashboard
+  async getChartData(organizationId: string, days: number = 7) {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    startDate.setHours(0, 0, 0, 0);
+
+    // Get messages for chart
+    const messages = await prisma.message.findMany({
+      where: {
+        conversation: {
+          organizationId
+        },
+        createdAt: { gte: startDate }
+      },
+      select: {
+        direction: true,
+        status: true,
+        createdAt: true
+      }
+    });
+
+    // Process data for chart
+    const chartData: any[] = [];
+    const currentDate = new Date(startDate);
+    const today = new Date();
+
+    while (currentDate <= today) {
+      const dateString = currentDate.toISOString().split('T')[0];
+      const dayMessages = messages.filter(m => 
+        m.createdAt.toISOString().split('T')[0] === dateString
+      );
+
+      chartData.push({
+        date: dateString,
+        label: currentDate.toLocaleDateString('en', { weekday: 'short', day: 'numeric' }),
+        sent: dayMessages.filter(m => m.direction === 'OUTBOUND').length,
+        received: dayMessages.filter(m => m.direction === 'INBOUND').length,
+        delivered: dayMessages.filter(m => 
+          m.direction === 'OUTBOUND' && 
+          (m.status === 'DELIVERED' || m.status === 'READ')
+        ).length
+      });
+
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    return chartData;
+  }
+
+  // Get campaign performance
+  async getCampaignPerformance(organizationId: string) {
+    const campaigns = await prisma.campaign.findMany({
+      where: {
+        organizationId,
+        status: {
+          in: ['COMPLETED', 'RUNNING', 'PAUSED']
+        }
+      },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        totalContacts: true,
+        sentCount: true,
+        deliveredCount: true,
+        readCount: true,
+        failedCount: true,
+        createdAt: true
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 5
+    });
+
+    return campaigns.map(campaign => {
+      const successRate = campaign.totalContacts > 0
+        ? ((campaign.deliveredCount + campaign.readCount) / campaign.totalContacts) * 100
+        : 0;
+
+      const readRate = campaign.deliveredCount > 0
+        ? (campaign.readCount / campaign.deliveredCount) * 100
+        : 0;
+
+      return {
+        id: campaign.id,
+        name: campaign.name,
+        status: campaign.status,
+        totalContacts: campaign.totalContacts,
+        sent: campaign.sentCount,
+        delivered: campaign.deliveredCount,
+        read: campaign.readCount,
+        failed: campaign.failedCount,
+        successRate: Math.round(successRate * 100) / 100,
+        readRate: Math.round(readRate * 100) / 100
+      };
+    });
   }
 }
 

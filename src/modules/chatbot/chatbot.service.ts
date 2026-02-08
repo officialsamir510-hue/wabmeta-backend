@@ -239,7 +239,7 @@ export class ChatbotService {
         organizationId,
         name: `${original.name} (Copy)`,
         description: original.description,
-        flowData: original.flowData,
+        flowData: (original.flowData as any) || { nodes: [], edges: [] },
         triggerKeywords: original.triggerKeywords,
         isDefault: false,
         welcomeMessage: original.welcomeMessage,

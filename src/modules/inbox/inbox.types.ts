@@ -96,6 +96,7 @@ export interface ConversationDetailResponse extends ConversationResponse {
 
 export interface MessageResponse {
   id: string;
+  wamId: string | null;
   waMessageId: string | null;
   direction: MessageDirection;
   type: MessageType;
