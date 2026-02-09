@@ -5,6 +5,12 @@ import { whatsappApi } from "./whatsapp.api";
 import { MessageType } from "@prisma/client";
 
 export class WhatsAppService {
+  getTemplates(id: string, organizationId: string) {
+    throw new Error('Method not implemented.');
+  }
+  syncTemplates(whatsappAccountId: any, organizationId: string) {
+    throw new Error('Method not implemented.');
+  }
   // -----------------------------
   // CONNECT ACCOUNT (OAuth)
   // -----------------------------

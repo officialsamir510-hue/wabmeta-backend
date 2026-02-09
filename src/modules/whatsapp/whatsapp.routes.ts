@@ -1,8 +1,6 @@
 import { Router } from 'express';
-import { WhatsappController } from './whatsapp.controller';
+import { whatsappController } from './whatsapp.controller'; // ✅ Use lowercase instance
 import { authenticate } from '../../middleware/auth'; // ✅ Correct path (auth.ts)
-
-const whatsappController = new WhatsappController();
 
 const router = Router();
 

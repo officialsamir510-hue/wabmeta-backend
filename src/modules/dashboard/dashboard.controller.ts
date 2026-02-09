@@ -1,6 +1,7 @@
+// src/modules/dashboard/dashboard.controller.ts
+
 import { Request, Response, NextFunction } from 'express';
 import { dashboardService } from './dashboard.service';
-import { AppError } from '../../middleware/errorHandler';
 
 interface AuthRequest extends Request {
   user?: {
@@ -11,59 +12,119 @@ interface AuthRequest extends Request {
 }
 
 export class DashboardController {
-  // Existing
   async getDashboardStats(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user!.id;
       const organizationId = req.user!.organizationId;
-      if (!organizationId) throw new AppError('Organization context required', 400);
+
+      if (!organizationId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Organization context required'
+        });
+      }
 
       const stats = await dashboardService.getDashboardStats(userId, organizationId);
-      return res.json({ success: true, data: stats });
+
+      return res.json({
+        success: true,
+        data: stats
+      });
     } catch (error) {
       next(error);
     }
   }
 
-  // Existing
   async getQuickStats(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
-      if (!organizationId) throw new AppError('Organization context required', 400);
+
+      if (!organizationId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Organization context required'
+        });
+      }
 
       const stats = await dashboardService.getQuickStats(organizationId);
-      return res.json({ success: true, data: stats });
+
+      return res.json({
+        success: true,
+        data: stats
+      });
     } catch (error) {
       next(error);
     }
   }
 
-  // Existing
   async getChartData(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
-      const days = parseInt(String(req.query.days || '7')) || 7;
-      if (!organizationId) throw new AppError('Organization context required', 400);
+      const days = parseInt(req.query.days as string) || 7;
+
+      if (!organizationId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Organization context required'
+        });
+      }
 
       const chartData = await dashboardService.getChartData(organizationId, days);
-      return res.json({ success: true, data: chartData });
+
+      return res.json({
+        success: true,
+        data: chartData
+      });
     } catch (error) {
       next(error);
     }
   }
 
-  // ✅ NEW: Widgets Endpoint (All dashboard charts in one call)
+  // ✅ NEW: Get widgets data
   async getWidgets(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const organizationId = req.user?.organizationId;
-      if (!organizationId) throw new AppError('Organization context required', 400);
+      const organizationId = req.user!.organizationId;
+      const days = parseInt(req.query.days as string) || 7;
 
-      const days = Math.min(Math.max(parseInt(String(req.query.days || '7')), 7), 90);
+      if (!organizationId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Organization context required'
+        });
+      }
 
-      const data = await dashboardService.getDashboardWidgets(organizationId, days);
-      return res.json({ success: true, data });
-    } catch (e) {
-      next(e);
+      const widgets = await dashboardService.getWidgetsData(organizationId, days);
+
+      return res.json({
+        success: true,
+        data: widgets
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ✅ NEW: Get recent activity
+  async getRecentActivity(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const organizationId = req.user!.organizationId;
+      const limit = parseInt(req.query.limit as string) || 10;
+
+      if (!organizationId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Organization context required'
+        });
+      }
+
+      const activity = await dashboardService.getRecentActivity(organizationId, limit);
+
+      return res.json({
+        success: true,
+        data: activity
+      });
+    } catch (error) {
+      next(error);
     }
   }
 }
