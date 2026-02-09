@@ -8,6 +8,7 @@ import { MetaGraphAPI } from './meta.api';
 export class MetaService {
   static registerPhoneNumber: any;
   static sendTestMessage: any;
+  static getBusinessAccounts: any;
   static getPhoneNumbers(organizationId: string) {
     throw new Error('Method not implemented.');
   }
