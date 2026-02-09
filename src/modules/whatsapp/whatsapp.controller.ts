@@ -1,6 +1,7 @@
+// src/modules/dashboard/dashboard.controller.ts
+
 import { Request, Response, NextFunction } from 'express';
-import { whatsappService } from './whatsapp.service';
-import { AppError } from '../../middleware/errorHandler';
+import { dashboardService } from '../dashboard/dashboard.service';
 
 interface AuthRequest extends Request {
   user?: {
@@ -10,66 +11,74 @@ interface AuthRequest extends Request {
   };
 }
 
-export class WhatsAppController {
-  // GET /api/v1/whatsapp/accounts
-  async getAccounts(req: AuthRequest, res: Response, next: NextFunction) {
+export class DashboardController {
+  async getDashboardStats(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const organizationId = req.user?.organizationId;
-      if (!organizationId) throw new AppError('Organization context required', 400);
+      const userId = req.user!.id;
+      const organizationId = req.user!.organizationId;
 
-      const accounts = await whatsappService.getAccounts(organizationId);
-      
-      // Return proper array structure
-      return res.json({ success: true, data: accounts });
+      if (!organizationId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Organization context required'
+        });
+      }
+
+      const stats = await dashboardService.getDashboardStats(userId, organizationId);
+
+      return res.json({
+        success: true,
+        data: stats
+      });
     } catch (error) {
       next(error);
     }
   }
 
-  // POST /api/v1/whatsapp/connect (OAuth)
-  async connectAccount(req: AuthRequest, res: Response, next: NextFunction) {
+  async getQuickStats(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const organizationId = req.user?.organizationId;
-      if (!organizationId) throw new AppError('Organization context required', 400);
+      const organizationId = req.user!.organizationId;
 
-      const { code, redirectUri } = req.body;
-      const account = await whatsappService.connectAccount(organizationId, code, redirectUri);
+      if (!organizationId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Organization context required'
+        });
+      }
 
-      return res.json({ success: true, data: account });
+      const stats = await dashboardService.getQuickStats(organizationId);
+
+      return res.json({
+        success: true,
+        data: stats
+      });
     } catch (error) {
       next(error);
     }
   }
 
-  // DELETE /api/v1/whatsapp/accounts/:id
-  async disconnectAccount(req: AuthRequest, res: Response, next: NextFunction) {
+  async getChartData(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const organizationId = req.user?.organizationId;
-      if (!organizationId) throw new AppError('Organization context required', 400);
+      const organizationId = req.user!.organizationId;
+      const days = parseInt(req.query.days as string) || 7;
 
-      const { id } = req.params;
-      await whatsappService.disconnectAccount(organizationId, id);
+      if (!organizationId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Organization context required'
+        });
+      }
 
-      return res.json({ success: true, message: 'Account disconnected' });
-    } catch (error) {
-      next(error);
-    }
-  }
+      const chartData = await dashboardService.getChartData(organizationId, days);
 
-  // POST /api/v1/whatsapp/accounts/:id/default
-  async setDefaultAccount(req: AuthRequest, res: Response, next: NextFunction) {
-    try {
-      const organizationId = req.user?.organizationId;
-      if (!organizationId) throw new AppError('Organization context required', 400);
-
-      const { id } = req.params;
-      await whatsappService.setDefaultAccount(organizationId, id);
-
-      return res.json({ success: true, message: 'Default account updated' });
+      return res.json({
+        success: true,
+        data: chartData
+      });
     } catch (error) {
       next(error);
     }
   }
 }
 
-export const whatsappController = new WhatsAppController();
+export const dashboardController = new DashboardController();
