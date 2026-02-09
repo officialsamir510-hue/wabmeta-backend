@@ -82,3 +82,21 @@ export class DashboardController {
 }
 
 export const dashboardController = new DashboardController();
+
+export class WhatsappController {
+  getAccounts() {
+    // implementation
+  }
+
+  connectAccount() {
+    // implementation
+  }
+
+  disconnectAccount() {
+    // implementation
+  }
+
+  setDefaultAccount() {
+    // implementation
+  }
+}
