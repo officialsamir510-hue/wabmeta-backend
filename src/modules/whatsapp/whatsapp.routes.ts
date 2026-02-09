@@ -1,18 +1,15 @@
 import { Router } from 'express';
-import { whatsappController } from './whatsapp.controller'; // ✅ Use lowercase instance
-import { authenticate } from '../../middleware/auth'; // ✅ Correct path (auth.ts)
+import { WhatsAppController } from './whatsapp.controller'; // Ensure this matches export
+import { authenticate } from '../../middleware/auth'; // Fixed path
 
 const router = Router();
 
 router.use(authenticate);
 
-router.get('/accounts', whatsappController.getAccounts.bind(whatsappController));
-router.post('/connect', whatsappController.connectAccount.bind(whatsappController));
-router.delete('/accounts/:id', whatsappController.disconnectAccount.bind(whatsappController));
-router.post('/accounts/:id/default', whatsappController.setDefaultAccount.bind(whatsappController));
-
-// Messaging routes (agar controller me defined hain)
-// router.post('/send/text', whatsappController.sendText.bind(whatsappController)); 
-// (Ensure these methods exist in controller before uncommenting)
+// Ensure binding is correct
+router.get('/accounts', WhatsAppController.getAccounts.bind(WhatsAppController));
+router.post('/connect', WhatsAppController.connectAccount.bind(WhatsAppController));
+router.delete('/accounts/:id', WhatsAppController.connectAccount.bind(WhatsAppController));
+router.post('/accounts/:id/default', WhatsAppController.setDefaultAccount.bind(WhatsAppController));
 
 export default router;
