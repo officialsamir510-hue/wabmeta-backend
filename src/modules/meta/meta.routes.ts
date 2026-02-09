@@ -1,35 +1,24 @@
 // src/modules/meta/meta.routes.ts
 
-import { Router, Request, Response } from "express";
-import { MetaController } from "./meta.controller";
-import { authenticate } from "../../middleware/auth";
+import { Router } from 'express';
+import { authenticate } from '../../middleware/auth';
+import * as metaController from './meta.controller';
 
 const router = Router();
 
 // All routes require authentication
 router.use(authenticate);
 
-// OAuth Flow
-router.get("/auth/url", (req: Request, res: Response) => {
-  MetaController.getAuthUrl(req, res);
-});
+// Connect Meta account
+router.post('/connect', metaController.connectMeta);
 
-router.post("/auth/callback", (req: Request, res: Response) => {
-  MetaController.handleCallback(req, res);
-});
+// Get connection status
+router.get('/status', metaController.getConnectionStatus);
 
-// Connection Management
-router.get("/status", (req: Request, res: Response) => {
-  MetaController.getConnectionStatus(req, res);
-});
+// Refresh connection
+router.post('/refresh', metaController.refreshConnection);
 
-router.post("/disconnect", (req: Request, res: Response) => {
-  MetaController.disconnect(req, res);
-});
-
-// ✅ Settings/API/Webhook details
-router.get("/settings", (req: Request, res: Response) => {
-  MetaController.getSettings(req, res);
-});
+// Disconnect
+router.post('/disconnect', metaController.disconnect);
 
 export default router;
