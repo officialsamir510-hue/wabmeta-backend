@@ -6,6 +6,11 @@ import { AppError } from '../../middleware/errorHandler';
 import { MetaGraphAPI } from './meta.api';
 
 export class MetaService {
+  static registerPhoneNumber: any;
+  static sendTestMessage: any;
+  static getPhoneNumbers(organizationId: string) {
+    throw new Error('Method not implemented.');
+  }
   /**
    * ✅ NEW: Connect via Embedded Signup
    * This handles the code from Meta's embedded signup flow

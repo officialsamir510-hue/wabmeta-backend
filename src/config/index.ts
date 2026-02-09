@@ -22,8 +22,10 @@ export const config = {
   // JWT - Nested structure for compatibility
   jwt: {
     secret: process.env.JWT_SECRET || 'your-secret-key',
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+    accessSecret: process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || 'your-secret-key',
     refreshSecret: process.env.JWT_REFRESH_SECRET || 'your-refresh-secret',
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+    accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
   },
   
@@ -57,29 +59,40 @@ export const config = {
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
   },
   
-  // ✅ Meta/WhatsApp - UPDATED with all options
+  // ✅ Meta/WhatsApp - COMPLETE Configuration
   meta: {
     // App credentials
     appId: process.env.META_APP_ID || '',
     appSecret: process.env.META_APP_SECRET || '',
     
-    // OAuth
-    redirectUri: process.env.META_REDIRECT_URI || '',
-    configId: process.env.META_CONFIG_ID || '', // WhatsApp Embedded Signup config ID
+    // OAuth - Dynamic redirect URI with fallback
+    redirectUri: process.env.META_REDIRECT_URI || 
+      `${process.env.FRONTEND_URL || 'https://wabmeta.com'}/meta/callback`,
     
-    // API
-    graphApiVersion: process.env.META_GRAPH_API_VERSION || 'v19.0',
+    // WhatsApp Embedded Signup config ID (from Meta Business)
+    configId: process.env.META_CONFIG_ID || '',
+    
+    // API Version - Updated to latest stable
+    graphApiVersion: process.env.META_GRAPH_API_VERSION || 'v21.0',
     graphApiUrl: process.env.META_GRAPH_API_URL || 'https://graph.facebook.com',
     
     // Webhooks
     webhookVerifyToken: process.env.META_WEBHOOK_VERIFY_TOKEN || '',
     webhookSecret: process.env.META_WEBHOOK_SECRET || '', // For payload signature verification
     
+    // Webhook URL (for reference in Meta dashboard)
+    webhookUrl: process.env.META_WEBHOOK_URL || 
+      `${process.env.BACKEND_URL || 'https://wabmeta-api.onrender.com'}/webhooks/meta`,
+    
     // Rate limiting
     messagesPerSecond: parseInt(process.env.META_MESSAGES_PER_SECOND || '80', 10),
+    maxMessagesPerBatch: parseInt(process.env.META_MAX_MESSAGES_PER_BATCH || '25', 10),
     
     // Template defaults
     defaultLanguage: process.env.META_DEFAULT_LANGUAGE || 'en_US',
+    
+    // Timeouts
+    apiTimeout: parseInt(process.env.META_API_TIMEOUT || '30000', 10),
   },
   
   // Razorpay
@@ -108,6 +121,13 @@ export const config = {
     bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS || '12', 10),
     rateLimitWindow: parseInt(process.env.RATE_LIMIT_WINDOW || '900000', 10), // 15 minutes
     rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX || '100', 10),
+    corsOrigins: (process.env.CORS_ORIGINS || '').split(',').filter(Boolean),
+  },
+  
+  // Logging
+  logging: {
+    level: process.env.LOG_LEVEL || 'info',
+    format: process.env.LOG_FORMAT || 'combined',
   },
 };
 
@@ -117,27 +137,41 @@ export type Config = typeof config;
 // Validate required config on startup
 const validateConfig = () => {
   const errors: string[] = [];
+  const warnings: string[] = [];
   
+  // Critical errors
   if (!config.databaseUrl) {
     errors.push('DATABASE_URL is required');
   }
   
+  // Warnings for development
   if (!config.jwt.secret || config.jwt.secret === 'your-secret-key') {
-    console.warn('⚠️ Warning: Using default JWT secret. Set JWT_SECRET in production!');
+    warnings.push('Using default JWT secret. Set JWT_SECRET in production!');
   }
   
+  // Production-specific checks
   if (config.nodeEnv === 'production') {
     if (!config.meta.appId) {
-      console.warn('⚠️ Warning: META_APP_ID not set');
+      warnings.push('META_APP_ID not set - WhatsApp features will not work');
     }
     if (!config.meta.appSecret) {
-      console.warn('⚠️ Warning: META_APP_SECRET not set');
+      warnings.push('META_APP_SECRET not set - WhatsApp OAuth will not work');
     }
     if (!config.meta.webhookVerifyToken) {
-      console.warn('⚠️ Warning: META_WEBHOOK_VERIFY_TOKEN not set');
+      warnings.push('META_WEBHOOK_VERIFY_TOKEN not set - Webhooks will not work');
+    }
+    if (!config.meta.configId) {
+      warnings.push('META_CONFIG_ID not set - Embedded Signup will not work');
+    }
+    if (!config.email.user || !config.email.pass) {
+      warnings.push('SMTP credentials not set - Email features will not work');
     }
   }
   
+  // Log warnings
+  warnings.forEach(w => console.warn(`⚠️ Warning: ${w}`));
+  
+  // Throw on critical errors
   if (errors.length > 0) {
     console.error('❌ Configuration errors:', errors);
     if (config.nodeEnv === 'production') {
@@ -148,20 +182,34 @@ const validateConfig = () => {
 
 // Log config on startup (for debugging)
 if (process.env.NODE_ENV !== 'test') {
-  console.log('📝 Config loaded:');
-  console.log('   - NODE_ENV:', config.nodeEnv);
-  console.log('   - PORT:', config.port);
-  console.log('   - FRONTEND_URL:', config.frontendUrl);
-  console.log('   - BACKEND_URL:', config.backendUrl);
-  console.log('   - API_VERSION:', config.apiVersion);
-  console.log('   - JWT Secret:', config.jwt.secret && config.jwt.secret !== 'your-secret-key' ? '✅ Set' : '⚠️ Default');
-  console.log('   - Email Host:', config.email.host);
-  console.log('   - Database:', config.databaseUrl ? '✅ Set' : '❌ Missing');
-  console.log('   - Meta App ID:', config.meta.appId ? '✅ Set' : '⚠️ Missing');
-  console.log('   - Meta App Secret:', config.meta.appSecret ? '✅ Set' : '⚠️ Missing');
-  console.log('   - Meta Webhook Token:', config.meta.webhookVerifyToken ? '✅ Set' : '⚠️ Missing');
-  console.log('   - Meta Graph API Version:', config.meta.graphApiVersion);
-  console.log('   - Razorpay Key:', config.razorpay.keyId ? '✅ Set' : '⚠️ Missing');
+  console.log('');
+  console.log('╔════════════════════════════════════════════════╗');
+  console.log('║           📝 WabMeta Configuration             ║');
+  console.log('╠════════════════════════════════════════════════╣');
+  console.log(`║ Environment:     ${config.nodeEnv.padEnd(28)}║`);
+  console.log(`║ Port:            ${String(config.port).padEnd(28)}║`);
+  console.log(`║ API Version:     ${config.apiVersion.padEnd(28)}║`);
+  console.log('╠════════════════════════════════════════════════╣');
+  console.log('║ URLs                                           ║');
+  console.log(`║ Frontend:        ${config.frontendUrl.substring(0, 28).padEnd(28)}║`);
+  console.log(`║ Backend:         ${config.backendUrl.substring(0, 28).padEnd(28)}║`);
+  console.log('╠════════════════════════════════════════════════╣');
+  console.log('║ Services Status                                ║');
+  console.log(`║ Database:        ${config.databaseUrl ? '✅ Configured'.padEnd(28) : '❌ Missing'.padEnd(28)}║`);
+  console.log(`║ JWT Secret:      ${(config.jwt.secret && config.jwt.secret !== 'your-secret-key' ? '✅ Set' : '⚠️ Default').padEnd(28)}║`);
+  console.log(`║ Email (SMTP):    ${(config.email.user ? '✅ Configured' : '⚠️ Missing').padEnd(28)}║`);
+  console.log('╠════════════════════════════════════════════════╣');
+  console.log('║ Meta/WhatsApp                                  ║');
+  console.log(`║ App ID:          ${(config.meta.appId ? '✅ Set' : '⚠️ Missing').padEnd(28)}║`);
+  console.log(`║ App Secret:      ${(config.meta.appSecret ? '✅ Set' : '⚠️ Missing').padEnd(28)}║`);
+  console.log(`║ Config ID:       ${(config.meta.configId ? '✅ Set' : '⚠️ Missing').padEnd(28)}║`);
+  console.log(`║ Webhook Token:   ${(config.meta.webhookVerifyToken ? '✅ Set' : '⚠️ Missing').padEnd(28)}║`);
+  console.log(`║ Graph API:       ${config.meta.graphApiVersion.padEnd(28)}║`);
+  console.log('╠════════════════════════════════════════════════╣');
+  console.log('║ Payment                                        ║');
+  console.log(`║ Razorpay:        ${(config.razorpay.keyId ? '✅ Configured' : '⚠️ Missing').padEnd(28)}║`);
+  console.log('╚════════════════════════════════════════════════╝');
+  console.log('');
   
   // Validate after logging
   validateConfig();
