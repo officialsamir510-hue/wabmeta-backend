@@ -390,33 +390,46 @@ export class InboxService {
           break;
 
         case 'interactive':
-          if (!interactive || !content) throw new AppError('Interactive config and body text required', 400);
-          result = await whatsappService.sendInteractiveMessage(
-            organizationId,
-            waAccount.id,
-            toPhone,
-            interactive.type || 'button',
-            content,
-            {
-              buttons: interactive.buttons,
-              sections: interactive.sections,
-              buttonText: interactive.buttonText,
-            }
-          );
-          break;
+  if (!interactive || !content) throw new AppError('Interactive config and body text required', 400);
+  
+  // ✅ Process sections to ensure title is always string
+  const processedSections = interactive.sections
+    ?.filter(s => s.title != null) // Filter out null/undefined titles
+    .map(s => ({
+      title: String(s.title), // Convert to string explicitly
+      rows: s.rows.map(r => ({
+        id: r.id,
+        title: r.title,
+        description: r.description,
+      }))
+    }));
 
-        default:
-          // Default to text
-          if (content) {
-            result = await whatsappService.sendTextMessage(
-              organizationId,
-              waAccount.id,
-              toPhone,
-              content
-            );
-          } else {
-            throw new AppError('Content is required', 400);
-          }
+  result = await whatsappService.sendInteractiveMessage(
+    organizationId,
+    waAccount.id,
+    toPhone,
+    interactive.type || 'button',
+    content,
+    {
+      buttons: interactive.buttons,
+      sections: processedSections,
+      buttonText: interactive.buttonText,
+    }
+  );
+  break;
+
+default:
+  // Default to text
+  if (content) {
+    result = await whatsappService.sendTextMessage(
+      organizationId,
+      waAccount.id,
+      toPhone,
+      content
+    );
+  } else {
+    throw new AppError('Content is required', 400);
+  }
       }
 
       if (result?.success || result?.messages?.[0]?.id) {
