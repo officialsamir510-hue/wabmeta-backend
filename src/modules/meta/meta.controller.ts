@@ -14,6 +14,10 @@ interface AuthRequest extends Request {
   };
 }
 
+// ============================================
+// AUTH URL GENERATION
+// ============================================
+
 /**
  * GET /api/v1/meta/auth/url
  * Generate Meta OAuth URL for Embedded Signup
@@ -52,7 +56,7 @@ export const getAuthUrl = async (req: AuthRequest, res: Response) => {
     const redirectUri =
       config.meta.redirectUri || `${config.frontendUrl}/meta/callback`;
 
-    // ✅ FIXED: Remove 'v' prefix if already present in version
+    // Fix version format - remove 'v' if present
     const version = (config.meta.graphApiVersion || '21.0').replace(/^v/, '');
 
     // Embedded Signup OAuth URL
@@ -88,73 +92,22 @@ export const getAuthUrl = async (req: AuthRequest, res: Response) => {
   }
 };
 
-/**
- * POST /api/v1/meta/auth/callback
- * Handle OAuth callback from frontend (receives code and state)
- */
-export const handleAuthCallback = async (req: AuthRequest, res: Response) => {
-  try {
-    const organizationId = req.user?.organizationId;
-    const { code, state } = req.body;
-
-    if (!code) {
-      return sendError(res, 'Authorization code is required', 400);
-    }
-
-    if (!organizationId) {
-      return sendError(res, 'Organization ID is required', 400);
-    }
-
-    console.log('🔗 Meta auth callback:');
-    console.log('   Organization:', organizationId);
-    console.log('   Code:', code.substring(0, 20) + '...');
-    console.log('   State:', state ? state.substring(0, 20) + '...' : 'none');
-
-    // Verify state token if provided
-    if (state) {
-      try {
-        const decodedState = JSON.parse(
-          Buffer.from(state, 'base64').toString()
-        );
-        if (
-          decodedState.organizationId &&
-          decodedState.organizationId !== organizationId
-        ) {
-          console.warn('⚠️ State organization mismatch');
-          // Continue anyway - the auth token will determine the actual org
-        }
-      } catch (e) {
-        console.warn('⚠️ State verification skipped (invalid format)');
-      }
-    }
-
-    // Connect via embedded signup
-    const connection = await MetaService.connectEmbeddedSignup(
-      organizationId,
-      code,
-      state
-    );
-
-    console.log('✅ Meta account connected successfully');
-
-    sendSuccess(res, connection, 'Meta account connected successfully');
-  } catch (error: any) {
-    console.error('❌ Meta auth callback error:', error);
-    sendError(
-      res,
-      error.message || 'Failed to connect Meta account',
-      error.statusCode || 500
-    );
-  }
-};
+// ============================================
+// OAUTH CALLBACKS
+// ============================================
 
 /**
- * GET /api/v1/meta/callback (Query params version)
+ * GET /api/v1/meta/callback
  * Handle OAuth callback via redirect (receives code and state as query params)
  */
-export const handleCallbackRedirect = async (req: Request, res: Response) => {
+export const handleAuthCallback = async (req: Request, res: Response) => {
   try {
     const { code, state, error, error_description } = req.query;
+
+    console.log('🔗 Meta OAuth callback received (GET)');
+    console.log('   Code:', code ? 'present' : 'missing');
+    console.log('   State:', state ? 'present' : 'missing');
+    console.log('   Error:', error || 'none');
 
     // Handle OAuth errors from Meta
     if (error) {
@@ -192,7 +145,7 @@ export const handleCallbackRedirect = async (req: Request, res: Response) => {
       );
     }
 
-    console.log('🔗 Processing OAuth redirect callback for org:', organizationId);
+    console.log('🔗 Processing OAuth redirect for org:', organizationId);
 
     // Connect Meta account
     await MetaService.connectEmbeddedSignup(
@@ -213,10 +166,78 @@ export const handleCallbackRedirect = async (req: Request, res: Response) => {
 };
 
 /**
- * POST /api/v1/meta/connect
- * Connect Meta account (alias for handleAuthCallback)
+ * POST /api/v1/meta/auth/callback
+ * Handle OAuth callback from frontend popup (receives code and state in body)
  */
-export const connectMeta = handleAuthCallback;
+export const handleAuthCallbackPost = async (req: AuthRequest, res: Response) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    const { code, state, error, error_description } = req.body;
+
+    console.log('🔗 Meta OAuth callback received (POST)');
+    console.log('   Organization:', organizationId);
+    console.log('   Code:', code ? code.substring(0, 20) + '...' : 'missing');
+    console.log('   State:', state ? 'present' : 'missing');
+
+    // Handle OAuth errors
+    if (error) {
+      return sendError(res, error_description || error, 400);
+    }
+
+    if (!code) {
+      return sendError(res, 'Authorization code is required', 400);
+    }
+
+    if (!organizationId) {
+      return sendError(res, 'Organization ID is required', 400);
+    }
+
+    // Verify state token if provided
+    if (state) {
+      try {
+        const decodedState = JSON.parse(
+          Buffer.from(state, 'base64').toString()
+        );
+        if (
+          decodedState.organizationId &&
+          decodedState.organizationId !== organizationId
+        ) {
+          console.warn('⚠️ State organization mismatch, using auth token org');
+        }
+      } catch (e) {
+        console.warn('⚠️ State verification skipped (invalid format)');
+      }
+    }
+
+    // Connect via embedded signup
+    const connection = await MetaService.connectEmbeddedSignup(
+      organizationId,
+      code,
+      state
+    );
+
+    console.log('✅ Meta account connected via POST callback');
+
+    sendSuccess(res, connection, 'Meta account connected successfully');
+  } catch (error: any) {
+    console.error('❌ POST Callback error:', error);
+    sendError(
+      res,
+      error.message || 'Failed to connect Meta account',
+      error.statusCode || 500
+    );
+  }
+};
+
+/**
+ * POST /api/v1/meta/connect
+ * Connect Meta account (alias for handleAuthCallbackPost)
+ */
+export const connectMeta = handleAuthCallbackPost;
+
+// ============================================
+// CONNECTION MANAGEMENT
+// ============================================
 
 /**
  * GET /api/v1/meta/status
@@ -235,6 +256,16 @@ export const getConnectionStatus = async (req: AuthRequest, res: Response) => {
     sendSuccess(res, status, 'Connection status retrieved');
   } catch (error: any) {
     console.error('❌ Get connection status error:', error);
+
+    // Handle database timeout gracefully
+    if (error.code === 'P2024') {
+      return sendError(
+        res,
+        'Database temporarily unavailable. Please try again.',
+        503
+      );
+    }
+
     sendError(res, error.message || 'Failed to get connection status', 500);
   }
 };
@@ -284,6 +315,10 @@ export const refreshConnection = async (req: AuthRequest, res: Response) => {
     sendError(res, error.message || 'Failed to refresh connection', 500);
   }
 };
+
+// ============================================
+// PHONE NUMBER MANAGEMENT
+// ============================================
 
 /**
  * GET /api/v1/meta/phone-numbers
@@ -339,6 +374,35 @@ export const registerPhoneNumber = async (req: AuthRequest, res: Response) => {
   }
 };
 
+// ============================================
+// BUSINESS ACCOUNTS
+// ============================================
+
+/**
+ * GET /api/v1/meta/business-accounts
+ * Get linked business accounts
+ */
+export const getBusinessAccounts = async (req: AuthRequest, res: Response) => {
+  try {
+    const organizationId = req.user?.organizationId;
+
+    if (!organizationId) {
+      return sendError(res, 'Organization ID is required', 400);
+    }
+
+    const accounts = await MetaService.getBusinessAccounts(organizationId);
+
+    sendSuccess(res, accounts, 'Business accounts retrieved');
+  } catch (error: any) {
+    console.error('❌ Get business accounts error:', error);
+    sendError(res, error.message || 'Failed to get business accounts', 500);
+  }
+};
+
+// ============================================
+// MESSAGING
+// ============================================
+
 /**
  * POST /api/v1/meta/test-message
  * Send a test WhatsApp message
@@ -372,27 +436,6 @@ export const sendTestMessage = async (req: AuthRequest, res: Response) => {
   }
 };
 
-/**
- * GET /api/v1/meta/business-accounts
- * Get linked business accounts
- */
-export const getBusinessAccounts = async (req: AuthRequest, res: Response) => {
-  try {
-    const organizationId = req.user?.organizationId;
-
-    if (!organizationId) {
-      return sendError(res, 'Organization ID is required', 400);
-    }
-
-    const accounts = await MetaService.getBusinessAccounts(organizationId);
-
-    sendSuccess(res, accounts, 'Business accounts retrieved');
-  } catch (error: any) {
-    console.error('❌ Get business accounts error:', error);
-    sendError(res, error.message || 'Failed to get business accounts', 500);
-  }
-};
-
-export function handleCallback(arg0: string, handleCallback: any) {
+export function handleCallbackRedirect(arg0: string, handleCallbackRedirect: any) {
     throw new Error('Function not implemented.');
 }
