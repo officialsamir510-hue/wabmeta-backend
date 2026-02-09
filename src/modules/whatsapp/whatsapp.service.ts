@@ -2,7 +2,7 @@ import prisma from "../../config/database";
 import { config } from "../../config";
 import { AppError } from "../../middleware/errorHandler";
 import { whatsappApi } from "./whatsapp.api";
-import { MediaType } from "@prisma/client";
+import { MessageType } from "@prisma/client";
 
 export class WhatsAppService {
   // -----------------------------
