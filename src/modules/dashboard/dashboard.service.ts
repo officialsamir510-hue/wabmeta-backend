@@ -4,6 +4,9 @@ import prisma from '../../config/database';
 import { Prisma } from '@prisma/client';
 
 export class DashboardService {
+  getDashboardWidgets(organizationId: string, days: number) {
+    throw new Error('Method not implemented.');
+  }
   
   // Get real dashboard stats for user
   async getDashboardStats(userId: string, organizationId: string) {
