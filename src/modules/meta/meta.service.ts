@@ -8,7 +8,6 @@ import { MetaGraphAPI } from './meta.api';
 export class MetaService {
   /**
    * ✅ Connect via Embedded Signup
-   * This handles the code from Meta's embedded signup flow
    */
   static async connectEmbeddedSignup(
     organizationId: string,
@@ -231,7 +230,7 @@ export class MetaService {
             },
           });
           
-          console.log('✅ WhatsAppAccount synced');
+          console.log('✅ WhatsAppAccount synced for backward compatibility');
         }
 
         // 9. Create activity log
@@ -257,6 +256,9 @@ export class MetaService {
       });
 
       console.log('✅ Meta connection completed successfully!');
+      console.log('   Connection ID:', result.metaConnection.id);
+      console.log('   WABA ID:', result.metaConnection.wabaId);
+      console.log('   Phone Count:', result.phoneNumbers.length);
 
       // Return formatted response
       return {
@@ -279,6 +281,7 @@ export class MetaService {
 
     } catch (error: any) {
       console.error('❌ Meta connection error:', error);
+      console.error('Error stack:', error.stack);
 
       // Save error to database
       try {
@@ -312,10 +315,13 @@ export class MetaService {
   }
 
   /**
-   * Get current Meta connection status
+   * ✅ Get current Meta connection status (UPDATED)
    */
   static async getConnectionStatus(organizationId: string) {
     try {
+      console.log('🔍 Checking connection status for org:', organizationId);
+
+      // Check MetaConnection first
       const connection = await prisma.metaConnection.findUnique({
         where: { organizationId },
         include: {
@@ -326,8 +332,8 @@ export class MetaService {
         }
       });
 
-      // Also check WhatsAppAccount for backward compatibility
-      const whatsappAccount = await prisma.whatsAppAccount.findFirst({
+      // ✅ Also check WhatsAppAccount for backward compatibility
+      const whatsappAccounts = await prisma.whatsAppAccount.findMany({
         where: { 
           organizationId,
           status: 'CONNECTED'
@@ -337,62 +343,132 @@ export class MetaService {
           phoneNumber: true,
           displayName: true,
           status: true,
-        }
+          phoneNumberId: true,
+          wabaId: true,
+          isDefault: true,
+        },
+        orderBy: { isDefault: 'desc' }
       });
 
-      if (!connection && !whatsappAccount) {
-        return {
-          isConnected: false,
-          status: 'DISCONNECTED',
-          message: 'No Meta connection found'
-        };
-      }
+      console.log('   MetaConnection:', connection ? 'Found' : 'Not found');
+      console.log('   WhatsApp Accounts:', whatsappAccounts.length);
 
-      // If only WhatsApp account exists (old system)
-      if (!connection && whatsappAccount) {
+      // ✅ If WhatsApp accounts exist, we're connected!
+      if (whatsappAccounts.length > 0) {
+        console.log('✅ Found', whatsappAccounts.length, 'connected WhatsApp account(s)');
+        
+        // If MetaConnection has error but WhatsApp accounts exist, fix it
+        if (connection && connection.status === 'ERROR') {
+          await prisma.metaConnection.update({
+            where: { organizationId },
+            data: { 
+              status: 'CONNECTED',
+              errorMessage: null 
+            }
+          });
+        }
+
         return {
           isConnected: true,
           status: 'CONNECTED',
-          message: 'Connected via WhatsApp (legacy)',
-          whatsappAccount,
+          message: 'WhatsApp connected',
+          connection: connection || null,
+          whatsappAccounts,
+          phoneNumbers: whatsappAccounts.map(acc => ({
+            id: acc.id,
+            phoneNumber: acc.phoneNumber,
+            displayName: acc.displayName,
+            isDefault: acc.isDefault,
+          })),
+          phoneCount: whatsappAccounts.length,
+          primaryAccount: whatsappAccounts[0],
         };
       }
 
-      // Check token expiry
-      if (connection!.accessTokenExpiresAt && connection!.accessTokenExpiresAt < new Date()) {
-        await prisma.metaConnection.update({
-          where: { organizationId },
-          data: {
+      // Check MetaConnection
+      if (connection) {
+        // Check token expiry
+        if (connection.accessTokenExpiresAt && connection.accessTokenExpiresAt < new Date()) {
+          await prisma.metaConnection.update({
+            where: { organizationId },
+            data: {
+              status: 'TOKEN_EXPIRED',
+              errorMessage: 'Access token expired. Please reconnect.'
+            }
+          });
+
+          return {
+            isConnected: false,
             status: 'TOKEN_EXPIRED',
-            errorMessage: 'Access token expired. Please reconnect.'
+            message: 'Access token expired. Please reconnect.',
+            connection
+          };
+        }
+
+        return {
+          isConnected: connection.status === 'CONNECTED',
+          status: connection.status,
+          message: connection.status === 'CONNECTED' 
+            ? 'Connected' 
+            : connection.errorMessage || 'Not connected',
+          connection: {
+            ...connection,
+            phoneCount: connection.phoneNumbers.length,
+            primaryPhone: connection.phoneNumbers[0] || null
+          },
+          phoneNumbers: connection.phoneNumbers,
+          whatsappAccounts: [],
+        };
+      }
+
+      // No connection found
+      console.log('⚠️ No connection found');
+      return {
+        isConnected: false,
+        status: 'DISCONNECTED',
+        message: 'No Meta connection found',
+        connection: null,
+        whatsappAccounts: [],
+        phoneNumbers: [],
+      };
+
+    } catch (error: any) {
+      console.error('❌ Get connection status error:', error);
+      
+      // ✅ On error, still try to check WhatsApp accounts (fallback)
+      try {
+        const whatsappAccounts = await prisma.whatsAppAccount.findMany({
+          where: { 
+            organizationId,
+            status: 'CONNECTED'
           }
         });
 
-        return {
-          isConnected: false,
-          status: 'TOKEN_EXPIRED',
-          message: 'Access token expired. Please reconnect.',
-          connection
-        };
+        if (whatsappAccounts.length > 0) {
+          console.log('✅ Fallback: Found WhatsApp accounts');
+          return {
+            isConnected: true,
+            status: 'CONNECTED',
+            message: 'WhatsApp connected (fallback)',
+            connection: null,
+            whatsappAccounts,
+            phoneNumbers: whatsappAccounts.map(acc => ({
+              phoneNumber: acc.phoneNumber,
+              displayName: acc.displayName,
+            })),
+          };
+        }
+      } catch (fallbackError) {
+        console.error('Fallback check also failed:', fallbackError);
       }
-
-      return {
-        isConnected: connection!.status === 'CONNECTED',
-        status: connection!.status,
-        connection: {
-          ...connection,
-          phoneCount: connection!.phoneNumbers.length,
-          primaryPhone: connection!.phoneNumbers.find(p => p.isPrimary) || connection!.phoneNumbers[0]
-        },
-        whatsappAccount,
-      };
-    } catch (error: any) {
-      console.error('Get connection status error:', error);
       
       return {
         isConnected: false,
         status: 'ERROR',
-        message: error.message || 'Failed to get connection status'
+        message: error.message || 'Failed to get connection status',
+        connection: null,
+        whatsappAccounts: [],
+        phoneNumbers: [],
       };
     }
   }
@@ -528,7 +604,7 @@ export class MetaService {
       // Get accessible WABAs
       const wabas = await metaApi.getAccessibleWABAs(connection.accessToken);
 
-      return wabas.map((waba: { id: any; name: any; currency: any; timezone_id: any; messaging_limit_tier: any; quality_rating: any; }) => ({
+      return wabas.map((waba: any) => ({
         id: waba.id,
         name: waba.name,
         currency: waba.currency,
@@ -587,6 +663,8 @@ export class MetaService {
       });
     });
 
+    console.log('✅ Meta disconnected for org:', organizationId);
+
     return { message: 'Meta connection disconnected successfully' };
   }
 
@@ -619,6 +697,8 @@ export class MetaService {
           qualityRating: wabaDetails.quality_rating || null,
           messagingLimit: wabaDetails.messaging_limit_tier || null,
           lastSyncedAt: new Date(),
+          status: 'CONNECTED', // ✅ Fix status if it was error
+          errorMessage: null,
         }
       });
 

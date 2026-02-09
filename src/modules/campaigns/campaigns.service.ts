@@ -15,7 +15,6 @@ import {
   CampaignStats,
   CampaignAnalytics,
   AudienceFilter,
-  VariableMapping,
 } from './campaigns.types';
 import { whatsappApi } from '../whatsapp/whatsapp.api';
 
@@ -143,9 +142,9 @@ export class CampaignsService {
       contactIds,
       audienceFilter,
       scheduledAt,
-      variableMapping,
     } = input;
 
+    // Validate template
     const template = await prisma.template.findFirst({
       where: { id: templateId, organizationId },
     });
@@ -154,6 +153,7 @@ export class CampaignsService {
       throw new AppError('Template not found', 404);
     }
 
+    // Validate WhatsApp account
     const waAccount = await prisma.whatsAppAccount.findFirst({
       where: { id: whatsappAccountId, organizationId },
     });
@@ -162,6 +162,7 @@ export class CampaignsService {
       throw new AppError('WhatsApp account not found', 404);
     }
 
+    // Validate contact group if provided
     if (contactGroupId) {
       const group = await prisma.contactGroup.findFirst({
         where: { id: contactGroupId, organizationId },
@@ -172,6 +173,7 @@ export class CampaignsService {
       }
     }
 
+    // Gather target contacts
     let targetContacts: { id: string }[] = [];
 
     if (contactIds && contactIds.length > 0) {
@@ -230,6 +232,7 @@ export class CampaignsService {
       throw new AppError('No contacts found for this campaign', 400);
     }
 
+    // Create campaign with contacts
     const campaign = await prisma.$transaction(async (tx) => {
       const newCampaign = await tx.campaign.create({
         data: {
@@ -263,6 +266,8 @@ export class CampaignsService {
 
       return newCampaign;
     });
+
+    console.log(`✅ Campaign created: ${campaign.id} with ${targetContacts.length} contacts`);
 
     return formatCampaign(campaign);
   }
@@ -450,11 +455,13 @@ export class CampaignsService {
       where: { id: campaignId },
     });
 
+    console.log(`✅ Campaign deleted: ${campaignId}`);
+
     return { message: 'Campaign deleted successfully' };
   }
 
   // ==========================================
-  // START CAMPAIGN (✅ WITH META API SENDING)
+  // START CAMPAIGN
   // ==========================================
   async start(organizationId: string, campaignId: string): Promise<CampaignResponse> {
     const campaign = await prisma.campaign.findFirst({
@@ -463,6 +470,7 @@ export class CampaignsService {
     });
 
     if (!campaign) throw new AppError('Campaign not found', 404);
+    
     if (!['DRAFT', 'SCHEDULED', 'PAUSED'].includes(campaign.status)) {
       throw new AppError(`Cannot start campaign with status: ${campaign.status}`, 400);
     }
@@ -473,7 +481,10 @@ export class CampaignsService {
 
     const updated = await prisma.campaign.update({
       where: { id: campaignId },
-      data: { status: 'RUNNING', startedAt: campaign.startedAt || new Date() },
+      data: { 
+        status: 'RUNNING', 
+        startedAt: campaign.startedAt || new Date() 
+      },
       include: {
         template: { select: { name: true, language: true, variables: true } },
         whatsappAccount: { select: { id: true, phoneNumber: true } },
@@ -481,7 +492,9 @@ export class CampaignsService {
       },
     });
 
-    // ✅ Fire-and-forget sending (does NOT block API response)
+    console.log(`🚀 Starting campaign: ${campaignId}`);
+
+    // Fire-and-forget sending (does NOT block API response)
     void this.processCampaignSending(organizationId, campaignId).catch((e) => {
       console.error('❌ Campaign send process failed:', e);
     });
@@ -518,6 +531,8 @@ export class CampaignsService {
       },
     });
 
+    console.log(`⏸️ Campaign paused: ${campaignId}`);
+
     return formatCampaign(updated);
   }
 
@@ -549,6 +564,8 @@ export class CampaignsService {
         contactGroup: { select: { name: true } },
       },
     });
+
+    console.log(`▶️ Campaign resumed: ${campaignId}`);
 
     // Resume sending
     void this.processCampaignSending(organizationId, campaignId).catch((e) => {
@@ -589,6 +606,8 @@ export class CampaignsService {
         contactGroup: { select: { name: true } },
       },
     });
+
+    console.log(`❌ Campaign cancelled: ${campaignId}`);
 
     return formatCampaign(updated);
   }
@@ -701,6 +720,8 @@ export class CampaignsService {
       });
     }
 
+    console.log(`🔄 Retrying ${result.count} messages for campaign: ${campaignId}`);
+
     return {
       message: `${result.count} messages queued for retry`,
       retryCount: result.count,
@@ -766,58 +787,93 @@ export class CampaignsService {
       return newCampaign;
     });
 
+    console.log(`📋 Campaign duplicated: ${campaignId} -> ${duplicate.id}`);
+
     return formatCampaign(duplicate);
   }
 
   // ==========================================
-  // GET CAMPAIGN STATS
+  // GET CAMPAIGN STATS (✅ OPTIMIZED)
   // ==========================================
   async getStats(organizationId: string): Promise<CampaignStats> {
-    const [
-      total,
-      draft,
-      scheduled,
-      running,
-      completed,
-      failed,
-      paused,
-      aggregates,
-    ] = await Promise.all([
-      prisma.campaign.count({ where: { organizationId } }),
-      prisma.campaign.count({ where: { organizationId, status: 'DRAFT' } }),
-      prisma.campaign.count({ where: { organizationId, status: 'SCHEDULED' } }),
-      prisma.campaign.count({ where: { organizationId, status: 'RUNNING' } }),
-      prisma.campaign.count({ where: { organizationId, status: 'COMPLETED' } }),
-      prisma.campaign.count({ where: { organizationId, status: 'FAILED' } }),
-      prisma.campaign.count({ where: { organizationId, status: 'PAUSED' } }),
-      prisma.campaign.aggregate({
+    try {
+      console.log('📊 Fetching campaign stats for org:', organizationId);
+
+      // Single query for aggregates
+      const stats = await prisma.campaign.aggregate({
         where: { organizationId },
+        _count: { id: true },
         _sum: {
+          totalContacts: true,
           sentCount: true,
           deliveredCount: true,
           readCount: true,
-        },
-      }),
-    ]);
+          failedCount: true,
+        }
+      });
 
-    const totalSent = aggregates._sum.sentCount || 0;
-    const totalDelivered = aggregates._sum.deliveredCount || 0;
-    const totalRead = aggregates._sum.readCount || 0;
+      // Get status counts separately
+      const statusCounts = await prisma.campaign.groupBy({
+        by: ['status'],
+        where: { organizationId },
+        _count: true,
+      });
 
-    return {
-      total,
-      draft,
-      scheduled,
-      running,
-      completed,
-      failed,
-      paused,
-      totalMessagesSent: totalSent,
-      totalMessagesDelivered: totalDelivered,
-      totalMessagesRead: totalRead,
-      averageDeliveryRate: totalSent > 0 ? Math.round((totalDelivered / totalSent) * 100) : 0,
-      averageReadRate: totalDelivered > 0 ? Math.round((totalRead / totalDelivered) * 100) : 0,
-    };
+      const total = stats._count.id || 0;
+      const totalSent = stats._sum.sentCount || 0;
+      const totalDelivered = stats._sum.deliveredCount || 0;
+      const totalRead = stats._sum.readCount || 0;
+
+      // Map status counts
+      const getStatusCount = (status: CampaignStatus) =>
+        statusCounts.find(s => s.status === status)?._count || 0;
+
+      const deliveryRate = totalSent > 0 
+        ? Number(((totalDelivered / totalSent) * 100).toFixed(1))
+        : 0;
+
+      const readRate = totalDelivered > 0
+        ? Number(((totalRead / totalDelivered) * 100).toFixed(1))
+        : 0;
+
+      return {
+        total,
+        draft: getStatusCount('DRAFT'),
+        scheduled: getStatusCount('SCHEDULED'),
+        running: getStatusCount('RUNNING'),
+        completed: getStatusCount('COMPLETED'),
+        failed: getStatusCount('FAILED'),
+        paused: getStatusCount('PAUSED'),
+        totalMessagesSent: totalSent,
+        totalMessagesDelivered: totalDelivered,
+        totalMessagesRead: totalRead,
+        averageDeliveryRate: deliveryRate,
+        averageReadRate: readRate,
+      };
+    } catch (error: any) {
+      console.error('❌ Get campaign stats error:', error);
+      
+      // Return empty stats on database timeout
+      if (error.code === 'P2024') {
+        console.warn('⚠️ Database timeout, returning empty stats');
+        return {
+          total: 0,
+          draft: 0,
+          scheduled: 0,
+          running: 0,
+          completed: 0,
+          failed: 0,
+          paused: 0,
+          totalMessagesSent: 0,
+          totalMessagesDelivered: 0,
+          totalMessagesRead: 0,
+          averageDeliveryRate: 0,
+          averageReadRate: 0,
+        };
+      }
+      
+      throw new AppError('Failed to fetch campaign statistics', 500);
+    }
   }
 
   // ==========================================
@@ -848,10 +904,8 @@ export class CampaignsService {
       percentage: Math.round((s._count.status / totalContacts) * 100),
     }));
 
-    const hourlyStats: CampaignAnalytics['hourlyStats'] = [];
-
     return {
-      hourlyStats,
+      hourlyStats: [],
       statusBreakdown,
     };
   }
@@ -897,6 +951,7 @@ export class CampaignsService {
       data: updateData,
     });
 
+    // Update campaign counters
     const countField = `${status.toLowerCase()}Count`;
     if (['SENT', 'DELIVERED', 'READ', 'FAILED'].includes(status)) {
       await prisma.campaign.update({
@@ -909,7 +964,7 @@ export class CampaignsService {
   }
 
   // ==========================================
-  // MARK CAMPAIGN COMPLETE (Internal)
+  // CHECK AND COMPLETE CAMPAIGN (Internal)
   // ==========================================
   async checkAndComplete(campaignId: string): Promise<void> {
     const campaign = await prisma.campaign.findUnique({
@@ -933,11 +988,13 @@ export class CampaignsService {
           completedAt: new Date(),
         },
       });
+
+      console.log(`✅ Campaign completed: ${campaignId}`);
     }
   }
 
   // ==========================================
-  // ✅ PROCESS CAMPAIGN SENDING (Meta Cloud API)
+  // PROCESS CAMPAIGN SENDING (Internal)
   // ==========================================
   private async processCampaignSending(organizationId: string, campaignId: string): Promise<void> {
     const campaign = await prisma.campaign.findFirst({
@@ -957,6 +1014,7 @@ export class CampaignsService {
     const template = campaign.template;
     const templateName = template?.name;
     const templateLang = template?.language || 'en_US';
+    
     if (!templateName) {
       console.error('❌ Campaign template missing');
       return;
@@ -968,12 +1026,32 @@ export class CampaignsService {
     console.log(`🚀 Sending campaign ${campaignId} to pending contacts...`);
 
     while (true) {
+      // Check if campaign is still running
+      const currentCampaign = await prisma.campaign.findUnique({
+        where: { id: campaignId },
+        select: { status: true },
+      });
+
+      if (!currentCampaign || currentCampaign.status !== 'RUNNING') {
+        console.log(`⏹️ Campaign stopped: ${campaignId}`);
+        break;
+      }
+
+      // Get batch of pending contacts
       const pending = await prisma.campaignContact.findMany({
         where: { campaignId, status: 'PENDING' },
         take: 25,
         orderBy: { createdAt: 'asc' },
         include: {
-          contact: { select: { id: true, phone: true, firstName: true, lastName: true, email: true } },
+          contact: { 
+            select: { 
+              id: true, 
+              phone: true, 
+              firstName: true, 
+              lastName: true, 
+              email: true 
+            } 
+          },
         },
       });
 
@@ -982,7 +1060,13 @@ export class CampaignsService {
       for (const cc of pending) {
         const to = cc.contact?.phone;
         if (!to) {
-          await this.updateContactStatus(campaignId, cc.contactId, 'FAILED', undefined, 'Contact phone missing');
+          await this.updateContactStatus(
+            campaignId, 
+            cc.contactId, 
+            'FAILED', 
+            undefined, 
+            'Contact phone missing'
+          );
           continue;
         }
 
@@ -1001,6 +1085,7 @@ export class CampaignsService {
           await this.updateContactStatus(campaignId, cc.contactId, 'SENT', waMessageId);
           console.log('✅ Sent:', { campaignId, contactId: cc.contactId, waMessageId });
 
+          // Rate limiting: 80ms delay between messages
           await new Promise((r) => setTimeout(r, 80));
         } catch (e: any) {
           const reason = e?.response?.data?.error?.message || e?.message || 'Send failed';

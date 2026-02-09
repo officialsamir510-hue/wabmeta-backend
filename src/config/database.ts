@@ -2,102 +2,46 @@
 
 import { PrismaClient } from '@prisma/client';
 
-// Determine log levels based on environment
-const getLogLevels = (): ('query' | 'error' | 'warn' | 'info')[] => {
-  if (process.env.NODE_ENV === 'development') {
-    return ['query', 'error', 'warn'];
-  }
-  return ['error', 'warn'];
-};
-
-// Create Prisma client with optimized settings
-const prismaClientSingleton = () => {
-  return new PrismaClient({
-    log: getLogLevels(),
-    datasources: {
-      db: {
-        url: process.env.DATABASE_URL,
-      },
-    },
+const createPrismaClient = () => {
+  const client = new PrismaClient({
+    log: process.env.NODE_ENV === 'development' 
+      ? ['query', 'error', 'warn'] 
+      : ['error'],
   });
+
+  // ✅ Add connection retry logic
+  client.$connect()
+    .then(() => console.log('✅ Database connected'))
+    .catch((err) => {
+      console.error('❌ Database connection failed:', err);
+      // Retry after 5 seconds
+      setTimeout(() => {
+        client.$connect().catch(console.error);
+      }, 5000);
+    });
+
+  return client;
 };
 
-// TypeScript declaration for global prisma instance
+// Singleton pattern
 declare global {
-  // eslint-disable-next-line no-var
   var prisma: PrismaClient | undefined;
 }
 
-// Use existing global instance or create new one
-// This prevents multiple connections in development due to hot reloading
-const prisma = globalThis.prisma ?? prismaClientSingleton();
+const prisma = globalThis.prisma ?? createPrismaClient();
 
-// Store in global only in non-production environments
 if (process.env.NODE_ENV !== 'production') {
   globalThis.prisma = prisma;
 }
 
-// ============================================
-// GRACEFUL SHUTDOWN HANDLERS
-// ============================================
-
-// Handle process termination signals
-const shutdownHandler = async (signal: string) => {
-  console.log(`\n🔌 Received ${signal}. Closing database connection...`);
+// Graceful shutdown
+const shutdown = async () => {
+  console.log('🔌 Disconnecting database...');
   await prisma.$disconnect();
-  console.log('✅ Database connection closed');
-  process.exit(0);
 };
 
-// Register shutdown handlers (only once)
-if (!globalThis.prisma) {
-  process.on('SIGINT', () => shutdownHandler('SIGINT'));
-  process.on('SIGTERM', () => shutdownHandler('SIGTERM'));
-  process.on('beforeExit', async () => {
-    await prisma.$disconnect();
-  });
-}
-
-// ============================================
-// CONNECTION HEALTH CHECK
-// ============================================
-
-/**
- * Check if database connection is healthy
- */
-export const checkDatabaseConnection = async (): Promise<boolean> => {
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-    return true;
-  } catch (error) {
-    console.error('❌ Database connection check failed:', error);
-    return false;
-  }
-};
-
-/**
- * Connect to database with retry logic
- */
-export const connectWithRetry = async (
-  maxRetries = 5,
-  delayMs = 5000
-): Promise<void> => {
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      await prisma.$connect();
-      console.log('✅ Database connected successfully');
-      return;
-    } catch (error) {
-      console.error(`❌ Database connection attempt ${attempt}/${maxRetries} failed:`, error);
-      
-      if (attempt === maxRetries) {
-        throw new Error('Failed to connect to database after maximum retries');
-      }
-      
-      console.log(`⏳ Retrying in ${delayMs / 1000} seconds...`);
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-  }
-};
+process.on('beforeExit', shutdown);
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 export default prisma;

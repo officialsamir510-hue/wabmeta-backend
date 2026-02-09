@@ -1,7 +1,8 @@
 // prisma/schema.prisma
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch"]
 }
 
 datasource db {
@@ -125,7 +126,6 @@ enum NotificationType {
   ALERT
 }
 
-// ✅ NEW ENUMS
 enum ConnectionStatus {
   PENDING
   CONNECTED
@@ -173,6 +173,7 @@ model User {
   createdAt            DateTime   @default(now())
   updatedAt            DateTime   @updatedAt
   
+  // Relations
   ownedOrganizations   Organization[]       @relation("OrganizationOwner")
   memberships          OrganizationMember[]
   refreshTokens        RefreshToken[]
@@ -181,6 +182,7 @@ model User {
   
   @@index([email])
   @@index([googleId])
+  @@index([status])
 }
 
 model RefreshToken {
@@ -195,6 +197,7 @@ model RefreshToken {
   
   @@index([userId])
   @@index([token])
+  @@index([expiresAt])
 }
 
 model Organization {
@@ -229,13 +232,12 @@ model Organization {
   webhooks          Webhook[]
   activityLogs      ActivityLog[]
   notifications     Notification[]
-  
-  // ✅ NEW RELATIONS
   metaConnection    MetaConnection?
   webhookLogs       WebhookLog[]
   
   @@index([slug])
   @@index([ownerId])
+  @@index([planType])
 }
 
 model OrganizationMember {
@@ -251,6 +253,7 @@ model OrganizationMember {
   @@unique([organizationId, userId])
   @@index([organizationId])
   @@index([userId])
+  @@index([role])
 }
 
 // ============================================
@@ -280,6 +283,9 @@ model Plan {
   updatedAt       DateTime @updatedAt
   
   subscriptions   Subscription[]
+  
+  @@index([type])
+  @@index([isActive])
 }
 
 model Subscription {
@@ -307,10 +313,12 @@ model Subscription {
   updatedAt          DateTime           @updatedAt
   
   @@index([organizationId])
+  @@index([status])
+  @@index([currentPeriodEnd])
 }
 
 // ============================================
-// WHATSAPP INTEGRATION
+// WHATSAPP INTEGRATION (Legacy)
 // ============================================
 
 model WhatsAppAccount {
@@ -340,10 +348,12 @@ model WhatsAppAccount {
   
   @@index([organizationId])
   @@index([phoneNumberId])
+  @@index([status])
+  @@index([wabaId])
 }
 
 // ============================================
-// ✅ META CONNECTION (NEW)
+// META CONNECTION (New System)
 // ============================================
 
 model MetaConnection {
@@ -352,28 +362,36 @@ model MetaConnection {
   organizationId        String           @unique
   organization          Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   
+  // Token info
   accessToken           String           @db.Text
   accessTokenExpiresAt  DateTime?
   
+  // WABA info
   wabaId                String
   wabaName              String?
   businessId            String?
   
-  phoneNumbers          PhoneNumber[]
-  
+  // Status
   status                ConnectionStatus @default(PENDING)
   lastSyncedAt          DateTime?
-  errorMessage          String?
+  errorMessage          String?          @db.Text
   
+  // Webhook
   webhookVerified       Boolean          @default(false)
   
+  // Quality & limits
   messagingLimit        String?
   qualityRating         String?
+  
+  // Relations
+  phoneNumbers          PhoneNumber[]
   
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt
   
   @@index([organizationId])
+  @@index([status])
+  @@index([wabaId])
 }
 
 model PhoneNumber {
@@ -382,19 +400,23 @@ model PhoneNumber {
   metaConnectionId      String
   metaConnection        MetaConnection @relation(fields: [metaConnectionId], references: [id], onDelete: Cascade)
   
+  // Meta identifiers
   phoneNumberId         String         @unique
   phoneNumber           String
   displayName           String?
   qualityRating         String?
   verifiedName          String?
   
+  // Status
   isActive              Boolean        @default(true)
   isPrimary             Boolean        @default(false)
   
+  // Usage tracking
   messagesLimit         Int?
   messagesUsed          Int            @default(0)
   lastResetAt           DateTime       @default(now())
   
+  // Relations
   conversations         Conversation[]
   
   createdAt             DateTime       @default(now())
@@ -402,32 +424,35 @@ model PhoneNumber {
   
   @@index([phoneNumberId])
   @@index([metaConnectionId])
+  @@index([isActive, isPrimary])
 }
 
 // ============================================
-// ✅ WEBHOOK LOG (NEW)
+// WEBHOOK LOG
 // ============================================
 
 model WebhookLog {
   id                String        @id @default(cuid())
   
   organizationId    String?
-  organization      Organization? @relation(fields: [organizationId], references: [id])
+  organization      Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   
-  source            String
-  eventType         String
+  source            String        // e.g., "meta", "whatsapp", "stripe"
+  eventType         String        // e.g., "message", "status", "payment"
   payload           Json
   
   status            WebhookStatus @default(PENDING)
   processedAt       DateTime?
-  responseTime      Int?
-  errorMessage      String?
+  responseTime      Int?          // in milliseconds
+  errorMessage      String?       @db.Text
   
   createdAt         DateTime      @default(now())
   
   @@index([organizationId])
   @@index([eventType])
+  @@index([status])
   @@index([createdAt])
+  @@index([source, eventType])
 }
 
 // ============================================
@@ -468,7 +493,10 @@ model Contact {
   @@unique([organizationId, phone])
   @@index([organizationId])
   @@index([phone])
+  @@index([status])
   @@index([tags])
+  @@index([createdAt])
+  @@index([lastMessageAt])
 }
 
 model ContactGroup {
@@ -508,42 +536,45 @@ model ContactGroupMember {
 // ============================================
 
 model Conversation {
-  id                 String        @id @default(cuid())
-  organizationId     String
-  organization       Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  contactId          String
-  contact            Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  id                    String        @id @default(cuid())
+  organizationId        String
+  organization          Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contactId             String
+  contact               Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
   
-  // ✅ NEW: Phone Number relation
-  phoneNumberId      String?
-  phoneNumber        PhoneNumber?  @relation(fields: [phoneNumberId], references: [id])
+  // Phone Number relation (new system)
+  phoneNumberId         String?
+  phoneNumber           PhoneNumber?  @relation(fields: [phoneNumberId], references: [id])
   
-  lastMessageAt      DateTime?
-  lastMessagePreview String?
+  lastMessageAt         DateTime?
+  lastMessagePreview    String?
   
-  isArchived         Boolean       @default(false)
-  isRead             Boolean       @default(true)
-  unreadCount        Int           @default(0)
+  isArchived            Boolean       @default(false)
+  isRead                Boolean       @default(true)
+  unreadCount           Int           @default(0)
   
-  assignedTo         String?
+  assignedTo            String?
   
-  labels             String[]      @default([])
+  labels                String[]      @default([])
   
-  // ✅ NEW: Window tracking
+  // Window tracking (24-hour rule)
   lastCustomerMessageAt DateTime?
   windowExpiresAt       DateTime?
-  isWindowOpen          Boolean   @default(true)
+  isWindowOpen          Boolean       @default(true)
   
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
   
-  messages           Message[]
+  messages              Message[]
   
   @@unique([organizationId, contactId])
   @@index([organizationId])
   @@index([contactId])
-  @@index([lastMessageAt])
   @@index([phoneNumberId])
+  @@index([lastMessageAt])
+  @@index([isArchived])
+  @@index([assignedTo])
+  @@index([isWindowOpen])
 }
 
 model Message {
@@ -554,36 +585,40 @@ model Message {
   whatsappAccountId String?
   whatsappAccount   WhatsAppAccount? @relation(fields: [whatsappAccountId], references: [id])
   
+  // WhatsApp message IDs
   waMessageId       String?          @unique
-  
-  // ✅ NEW: Additional WhatsApp Message ID field
   wamId             String?          @unique
   
   direction         MessageDirection
   type              MessageType      @default(TEXT)
   
-  content           String?
+  // Content
+  content           String?          @db.Text
   mediaUrl          String?
   mediaType         String?
   mediaMimeType     String?
   
+  // Template info
   templateId        String?
   templateName      String?
   templateParams    Json?
   
+  // Status tracking
   status            MessageStatus    @default(PENDING)
   sentAt            DateTime?
   deliveredAt       DateTime?
   readAt            DateTime?
   failedAt          DateTime?
   failureReason     String?
-  
-  // ✅ NEW: Status tracking & retry
   statusUpdatedAt   DateTime?
+  
+  // Retry logic
   retryCount        Int              @default(0)
   
+  // Reply context
   replyToMessageId  String?
   
+  // Additional data
   metadata          Json?
   
   createdAt         DateTime         @default(now())
@@ -592,7 +627,9 @@ model Message {
   @@index([conversationId])
   @@index([waMessageId])
   @@index([wamId])
+  @@index([status])
   @@index([createdAt])
+  @@index([direction])
 }
 
 // ============================================
@@ -610,12 +647,11 @@ model Template {
   category        TemplateCategory @default(MARKETING)
   
   headerType      String?
-  headerContent   String?
-  bodyText        String
+  headerContent   String?          @db.Text
+  bodyText        String           @db.Text
   footerText      String?
   
   buttons         Json             @default("[]")
-  
   variables       Json             @default("[]")
   
   status          TemplateStatus   @default(PENDING)
@@ -629,6 +665,8 @@ model Template {
   @@unique([organizationId, name, language])
   @@index([organizationId])
   @@index([status])
+  @@index([category])
+  @@index([metaTemplateId])
 }
 
 // ============================================
@@ -659,6 +697,7 @@ model Campaign {
   startedAt         DateTime?
   completedAt       DateTime?
   
+  // Stats
   totalContacts     Int             @default(0)
   sentCount         Int             @default(0)
   deliveredCount    Int             @default(0)
@@ -673,6 +712,7 @@ model Campaign {
   @@index([organizationId])
   @@index([status])
   @@index([scheduledAt])
+  @@index([createdAt])
 }
 
 model CampaignContact {
@@ -701,6 +741,7 @@ model CampaignContact {
   @@index([campaignId])
   @@index([contactId])
   @@index([status])
+  @@index([nextRetryAt])
 }
 
 // ============================================
@@ -720,8 +761,8 @@ model Chatbot {
   triggerKeywords String[]      @default([])
   
   isDefault       Boolean       @default(false)
-  welcomeMessage  String?
-  fallbackMessage String?
+  welcomeMessage  String?       @db.Text
+  fallbackMessage String?       @db.Text
   
   status          ChatbotStatus @default(DRAFT)
   
@@ -730,6 +771,7 @@ model Chatbot {
   
   @@index([organizationId])
   @@index([status])
+  @@index([isDefault])
 }
 
 // ============================================
@@ -759,6 +801,7 @@ model Automation {
   
   @@index([organizationId])
   @@index([trigger])
+  @@index([isActive])
 }
 
 // ============================================
@@ -789,6 +832,7 @@ model ApiKey {
   
   @@index([organizationId])
   @@index([key])
+  @@index([isActive])
 }
 
 model Webhook {
@@ -811,6 +855,7 @@ model Webhook {
   updatedAt       DateTime     @updatedAt
   
   @@index([organizationId])
+  @@index([isActive])
 }
 
 // ============================================
@@ -828,7 +873,7 @@ model Notification {
   
   type           String        @default("system")
   title          String
-  description    String
+  description    String        @db.Text
   actionUrl      String?
   
   metadata       Json          @default("{}")
@@ -842,6 +887,7 @@ model Notification {
   @@index([userId, read])
   @@index([organizationId])
   @@index([createdAt])
+  @@index([type])
 }
 
 // ============================================
@@ -869,6 +915,7 @@ model ActivityLog {
   @@index([organizationId])
   @@index([userId])
   @@index([action])
+  @@index([entity, entityId])
   @@index([createdAt])
 }
 
@@ -890,4 +937,6 @@ model AdminUser {
   updatedAt   DateTime @updatedAt
   
   @@index([email])
+  @@index([role])
+  @@index([isActive])
 }
