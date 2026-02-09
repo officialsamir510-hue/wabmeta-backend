@@ -1,82 +1,74 @@
-import { Request, Response, NextFunction } from "express";
-import { sendSuccess } from "../../utils/response";
-import { AppError } from "../../middleware/errorHandler";
-import { AuthRequest } from "../../types/express";
-import { whatsappService } from "./whatsapp.service";
+import { Request, Response, NextFunction } from 'express';
+import { whatsappService } from './whatsapp.service';
+import { AppError } from '../../middleware/errorHandler';
+
+interface AuthRequest extends Request {
+  user?: {
+    id: string;
+    email: string;
+    organizationId?: string;
+  };
+}
 
 export class WhatsAppController {
-  // GET /api/v1/whatsapp/webhook (Meta verify)
-  async verifyWebhook(req: Request, res: Response, next: NextFunction) {
+  // GET /api/v1/whatsapp/accounts
+  async getAccounts(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const mode = req.query["hub.mode"] as string | undefined;
-      const token = req.query["hub.verify_token"] as string | undefined;
-      const challenge = req.query["hub.challenge"] as string | undefined;
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) throw new AppError('Organization context required', 400);
 
-      const response = whatsappService.verifyWebhook(mode, token, challenge);
-      return res.status(200).send(response);
-    } catch (e) {
-      next(e);
+      const accounts = await whatsappService.getAccounts(organizationId);
+      
+      // Return proper array structure
+      return res.json({ success: true, data: accounts });
+    } catch (error) {
+      next(error);
     }
   }
 
-  // POST /api/v1/whatsapp/webhook (events)
-  async handleWebhook(req: Request, res: Response, next: NextFunction) {
-    try {
-      await whatsappService.handleWebhook(req.body);
-      return res.sendStatus(200);
-    } catch (e) {
-      // Still return 200 to avoid endless retries, but log internally
-      console.error("Webhook handler error:", e);
-      return res.sendStatus(200);
-    }
-  }
-
-  // POST /api/v1/whatsapp/connect (Auth required)
+  // POST /api/v1/whatsapp/connect (OAuth)
   async connectAccount(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user?.organizationId;
-      if (!organizationId) throw new AppError("Organization context required", 400);
+      if (!organizationId) throw new AppError('Organization context required', 400);
 
-      const { code, redirectUri } = req.body as { code?: string; redirectUri?: string };
-      if (!code || !redirectUri) throw new AppError("code and redirectUri are required", 400);
-
+      const { code, redirectUri } = req.body;
       const account = await whatsappService.connectAccount(organizationId, code, redirectUri);
-      return sendSuccess(res, account, "WhatsApp account connected successfully", 201);
-    } catch (e) {
-      next(e);
+
+      return res.json({ success: true, data: account });
+    } catch (error) {
+      next(error);
     }
   }
 
-  // Optional placeholders to match your routes (implement later)
-  async getAccounts(req: AuthRequest, res: Response) {
-    return sendSuccess(res, [], "Not implemented");
+  // DELETE /api/v1/whatsapp/accounts/:id
+  async disconnectAccount(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) throw new AppError('Organization context required', 400);
+
+      const { id } = req.params;
+      await whatsappService.disconnectAccount(organizationId, id);
+
+      return res.json({ success: true, message: 'Account disconnected' });
+    } catch (error) {
+      next(error);
+    }
   }
-  async getAccountById(req: AuthRequest, res: Response) {
-    return sendSuccess(res, null, "Not implemented");
-  }
-  async disconnectAccount(req: AuthRequest, res: Response) {
-    return sendSuccess(res, null, "Not implemented");
-  }
-  async setDefaultAccount(req: AuthRequest, res: Response) {
-    return sendSuccess(res, null, "Not implemented");
-  }
-  async sendTextMessage(req: AuthRequest, res: Response) {
-    return sendSuccess(res, null, "Not implemented");
-  }
-  async sendTemplateMessage(req: AuthRequest, res: Response) {
-    return sendSuccess(res, null, "Not implemented");
-  }
-  async sendMediaMessage(req: AuthRequest, res: Response) {
-    return sendSuccess(res, null, "Not implemented");
-  }
-  async sendInteractiveMessage(req: AuthRequest, res: Response) {
-    return sendSuccess(res, null, "Not implemented");
-  }
-  async syncTemplates(req: AuthRequest, res: Response) {
-    return sendSuccess(res, null, "Not implemented");
-  }
-  async getMediaUrl(req: AuthRequest, res: Response) {
-    return sendSuccess(res, null, "Not implemented");
+
+  // POST /api/v1/whatsapp/accounts/:id/default
+  async setDefaultAccount(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) throw new AppError('Organization context required', 400);
+
+      const { id } = req.params;
+      await whatsappService.setDefaultAccount(organizationId, id);
+
+      return res.json({ success: true, message: 'Default account updated' });
+    } catch (error) {
+      next(error);
+    }
   }
 }
 

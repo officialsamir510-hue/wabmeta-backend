@@ -1,11 +1,7 @@
-// src/modules/whatsapp/whatsapp.service.ts
-
 import prisma from "../../config/database";
 import { config } from "../../config";
 import { AppError } from "../../middleware/errorHandler";
 import { whatsappApi } from "./whatsapp.api";
-
-type MediaType = "image" | "video" | "audio" | "document";
 
 export class WhatsAppService {
   // -----------------------------
@@ -78,7 +74,6 @@ export class WhatsAppService {
     } catch (e: any) {
       console.error("❌ META token debug failed:", e?.message || e);
 
-      // Re-throw AppError as-is, wrap others
       if (e instanceof AppError) {
         throw e;
       }
@@ -152,7 +147,6 @@ export class WhatsAppService {
       console.log("✅ App subscribed to WABA webhooks");
     } catch (e: any) {
       console.warn("⚠️ Failed to subscribe app to WABA (non-blocking):", e?.message || e);
-      // Don't throw - this is non-blocking, webhooks might already be set up
     }
 
     // Step 6: Upsert account in database
@@ -210,8 +204,8 @@ export class WhatsAppService {
       where: { id: accountId },
       data: {
         status: "DISCONNECTED",
-        accessToken: undefined,
-        tokenExpiresAt: undefined,
+        accessToken: null, // Clear token on disconnect
+        tokenExpiresAt: null,
       },
     });
 
@@ -305,33 +299,6 @@ export class WhatsAppService {
   }
 
   // -----------------------------
-  // WEBHOOK VERIFY
-  // -----------------------------
-  verifyWebhook(mode?: string, token?: string, challenge?: string) {
-    console.log("🔍 Webhook verification:", { mode, token: token?.slice(0, 10) + "..." });
-
-    if (mode === "subscribe" && token === config.meta.webhookVerifyToken) {
-      console.log("✅ Webhook verified successfully");
-      return challenge || "";
-    }
-
-    console.error("❌ Webhook verification failed");
-    throw new AppError("Webhook verification failed", 403);
-  }
-
-  // -----------------------------
-  // WEBHOOK HANDLER
-  // -----------------------------
-  async handleWebhook(payload: any) {
-    console.log("📥 Webhook received:", JSON.stringify(payload, null, 2));
-
-    // TODO: Process incoming messages, status updates, etc.
-    // This will be expanded in the webhook handler module
-
-    return true;
-  }
-
-  // -----------------------------
   // INTERNAL: get account by org + id
   // -----------------------------
   private async getAccount(organizationId: string, whatsappAccountId: string) {
@@ -355,12 +322,11 @@ export class WhatsAppService {
   }
 
   // =========================================================
-  // ✅ MESSAGING METHODS (Used by inbox.service.ts)
+  // ✅ MESSAGING METHODS
   // =========================================================
 
   /**
    * Send text message
-   * Called by: inbox.service.ts
    */
   async sendTextMessage(
     organizationId: string,
@@ -398,14 +364,13 @@ export class WhatsAppService {
   }
 
   /**
-   * Send media message (image, video, audio, document)
-   * Called by: inbox.service.ts
+   * Send media message
    */
   async sendMediaMessage(
     organizationId: string,
     whatsappAccountId: string,
     to: string,
-    mediaType: MediaType,
+    mediaType: string, // Accept string, map to Prisma enum if needed logic specific
     mediaUrl: string,
     caption?: string,
     filename?: string
@@ -415,18 +380,21 @@ export class WhatsAppService {
 
     const account = await this.getAccount(organizationId, whatsappAccountId);
 
+    // Map string type to valid WhatsApp API type (lowercase)
+    const type = mediaType.toLowerCase();
+
     const mediaObj: any = { link: mediaUrl };
     if (caption) mediaObj.caption = caption;
-    if (filename && mediaType === "document") mediaObj.filename = filename;
+    if (filename && type === "document") mediaObj.filename = filename;
 
     const payload: any = {
       messaging_product: "whatsapp",
       to: this.formatPhoneNumber(to),
-      type: mediaType,
-      [mediaType]: mediaObj,
+      type: type,
+      [type]: mediaObj,
     };
 
-    console.log("📤 Sending media message:", { to, mediaType, mediaUrl });
+    console.log("📤 Sending media message:", { to, type, mediaUrl });
 
     const result = await whatsappApi.sendMessage(account.phoneNumberId, account.accessToken || '', payload);
 
@@ -436,8 +404,7 @@ export class WhatsAppService {
   }
 
   /**
-   * Send interactive message (buttons, lists)
-   * Called by: inbox.service.ts
+   * Send interactive message
    */
   async sendInteractiveMessage(
     organizationId: string,
@@ -462,13 +429,12 @@ export class WhatsAppService {
 
     let interactive: any;
 
-    // Buttons (max 3)
     if (type.includes("button") || (configObj?.buttons && configObj.buttons.length > 0)) {
       const buttons = (configObj.buttons || []).slice(0, 3).map((b, idx) => ({
         type: "reply",
         reply: {
           id: b.id || `btn_${idx + 1}`,
-          title: String(b.title || b.text || `Button ${idx + 1}`).slice(0, 20), // Max 20 chars
+          title: String(b.title || b.text || `Button ${idx + 1}`).slice(0, 20),
         },
       }));
 
@@ -484,9 +450,7 @@ export class WhatsAppService {
       if (configObj.footerText) {
         interactive.footer = { text: configObj.footerText };
       }
-    }
-    // List (max 10 sections, 10 rows per section)
-    else if (type.includes("list") || (configObj?.sections && configObj.sections.length > 0)) {
+    } else if (type.includes("list") || (configObj?.sections && configObj.sections.length > 0)) {
       interactive = {
         type: "list",
         body: { text: bodyText },
@@ -524,7 +488,6 @@ export class WhatsAppService {
 
   /**
    * Send template message
-   * For campaigns and proactive messaging
    */
   async sendTemplateMessage(
     organizationId: string,
@@ -587,18 +550,14 @@ export class WhatsAppService {
 
   /**
    * Format phone number for WhatsApp API
-   * Removes '+', spaces, dashes, and validates
    */
   private formatPhoneNumber(phone: string): string {
-    // Remove all non-numeric characters except leading +
     let cleaned = phone.replace(/[^\d+]/g, "");
 
-    // Remove leading + if present
     if (cleaned.startsWith("+")) {
       cleaned = cleaned.slice(1);
     }
 
-    // Validate length (minimum 10 digits for most countries)
     if (cleaned.length < 10) {
       throw new AppError(`Invalid phone number: ${phone}`, 400);
     }
@@ -633,7 +592,6 @@ export class WhatsAppService {
       return { healthy: false, reason: "Token expired" };
     }
 
-    // Optional: Verify with Meta API
     try {
       await whatsappApi.getMe(account.accessToken);
       return { healthy: true, reason: "OK" };
