@@ -294,3 +294,4 @@ export class WhatsAppController {
     }
   }
 }
+export const whatsappController = new WhatsAppController();
