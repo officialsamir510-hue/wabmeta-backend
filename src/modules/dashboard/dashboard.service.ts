@@ -61,12 +61,25 @@ export class DashboardService {
     return arr;
   }
 
+  // --- Real Stats Methods ---
+
   async getMessagesOverview(organizationId: string, days: number): Promise<MessagesOverviewPoint[]> {
     const start = this.getRangeStart(days);
 
+    // ✅ Safe approach: Find conversations first
+    const conversations = await prisma.conversation.findMany({
+      where: { organizationId },
+      select: { id: true }
+    });
+    const conversationIds = conversations.map(c => c.id);
+
+    if (conversationIds.length === 0) {
+      return this.initDays(days).map(d => ({ ...d, sent: 0, received: 0, total: 0 }));
+    }
+
     const messages = await prisma.message.findMany({
       where: {
-        conversation: { organizationId },
+        conversationId: { in: conversationIds }, // ✅ Direct ID check
         createdAt: { gte: start },
       },
       select: { direction: true, createdAt: true },
@@ -94,9 +107,26 @@ export class DashboardService {
   async getDeliveryPerformance(organizationId: string, days: number) {
     const start = this.getRangeStart(days);
 
+    // ✅ Safe approach
+    const conversations = await prisma.conversation.findMany({
+      where: { organizationId },
+      select: { id: true }
+    });
+    const conversationIds = conversations.map(c => c.id);
+
+    if (conversationIds.length === 0) {
+      // Empty return
+      const base = this.initDays(days);
+      const emptyDay = { total: 0, delivered: 0, read: 0, failed: 0, deliveryRate: 0, readRate: 0 };
+      return {
+        summary: { totalSent: 0, delivered: 0, read: 0, failed: 0, pending: 0, deliveryRate: 0, readRate: 0 },
+        byDay: base.map(d => ({ ...d, ...emptyDay }))
+      };
+    }
+
     const outbound = await prisma.message.findMany({
       where: {
-        conversation: { organizationId },
+        conversationId: { in: conversationIds },
         direction: MessageDirection.OUTBOUND,
         createdAt: { gte: start },
       },
@@ -175,9 +205,17 @@ export class DashboardService {
   async getRecentActivity(organizationId: string, limit = 10): Promise<RecentActivityItem[]> {
     const items: RecentActivityItem[] = [];
 
-    const [recentMessages, recentCampaigns, recentContacts] = await Promise.all([
-      prisma.message.findMany({
-        where: { conversation: { organizationId } },
+    // ✅ Safe approach
+    const conversations = await prisma.conversation.findMany({
+      where: { organizationId },
+      select: { id: true }
+    });
+    const conversationIds = conversations.map(c => c.id);
+
+    let recentMessages: any[] = [];
+    if (conversationIds.length > 0) {
+      recentMessages = await prisma.message.findMany({
+        where: { conversationId: { in: conversationIds } },
         orderBy: { createdAt: 'desc' },
         take: 5,
         include: {
@@ -187,20 +225,22 @@ export class DashboardService {
             },
           },
         },
-      }),
-      prisma.campaign.findMany({
-        where: { organizationId },
-        orderBy: { updatedAt: 'desc' },
-        take: 3,
-        select: { id: true, name: true, status: true, updatedAt: true },
-      }),
-      prisma.contact.findMany({
-        where: { organizationId },
-        orderBy: { createdAt: 'desc' },
-        take: 3,
-        select: { id: true, firstName: true, lastName: true, phone: true, createdAt: true },
-      }),
-    ]);
+      });
+    }
+
+    const recentCampaigns = await prisma.campaign.findMany({
+      where: { organizationId },
+      orderBy: { updatedAt: 'desc' },
+      take: 3,
+      select: { id: true, name: true, status: true, updatedAt: true },
+    });
+
+    const recentContacts = await prisma.contact.findMany({
+      where: { organizationId },
+      orderBy: { createdAt: 'desc' },
+      take: 3,
+      select: { id: true, firstName: true, lastName: true, phone: true, createdAt: true },
+    });
 
     for (const m of recentMessages) {
       const c = m.conversation?.contact;
@@ -243,7 +283,6 @@ export class DashboardService {
       .slice(0, limit);
   }
 
-  // --- Main Widget Method ---
   async getDashboardWidgets(organizationId: string, days = 7) {
     const [messagesOverview, delivery, recentActivity] = await Promise.all([
       this.getMessagesOverview(organizationId, days),
@@ -267,6 +306,13 @@ export class DashboardService {
     const last30Days = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
     const last24Hours = new Date(today.getTime() - 24 * 60 * 60 * 1000);
 
+    // Safe approach for messages
+    const conversations = await prisma.conversation.findMany({
+      where: { organizationId },
+      select: { id: true }
+    });
+    const conversationIds = conversations.map(c => c.id);
+
     const [
       totalContacts,
       messagesSent,
@@ -277,8 +323,15 @@ export class DashboardService {
       chatbotsCount
     ] = await Promise.all([
       prisma.contact.count({ where: { organizationId } }),
-      prisma.message.count({ where: { conversation: { organizationId }, direction: 'OUTBOUND', createdAt: { gte: last30Days } } }),
-      prisma.message.count({ where: { conversation: { organizationId }, direction: 'INBOUND', createdAt: { gte: last30Days } } }),
+      
+      conversationIds.length > 0 ? prisma.message.count({ 
+        where: { conversationId: { in: conversationIds }, direction: 'OUTBOUND', createdAt: { gte: last30Days } } 
+      }) : 0,
+      
+      conversationIds.length > 0 ? prisma.message.count({ 
+        where: { conversationId: { in: conversationIds }, direction: 'INBOUND', createdAt: { gte: last30Days } } 
+      }) : 0,
+
       prisma.campaign.count({ where: { organizationId, status: 'RUNNING' } }),
       prisma.conversation.count({ where: { organizationId, lastMessageAt: { gte: last24Hours } } }),
       prisma.template.count({ where: { organizationId } }),
@@ -309,22 +362,31 @@ export class DashboardService {
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const todayMessages = await prisma.message.count({
-      where: { conversation: { organizationId }, createdAt: { gte: today } }
+    
+    // Safe approach for today messages
+    const conversations = await prisma.conversation.findMany({
+      where: { organizationId },
+      select: { id: true }
     });
+    const conversationIds = conversations.map(c => c.id);
+
+    const todayMessages = conversationIds.length > 0 
+      ? await prisma.message.count({
+          where: { conversationId: { in: conversationIds }, createdAt: { gte: today } }
+        })
+      : 0;
 
     return { unreadConversations, pendingCampaigns, todayMessages };
   }
 
   async getChartData(organizationId: string, days: number) {
-    // Reusing logic from getMessagesOverview
     const data = await this.getMessagesOverview(organizationId, days);
     return data.map(d => ({
       date: d.date,
       label: d.label,
       sent: d.sent,
       received: d.received,
-      delivered: d.sent // simplified for chart-data endpoint
+      delivered: d.sent 
     }));
   }
 }
