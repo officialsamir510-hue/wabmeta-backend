@@ -16,6 +16,8 @@ interface EmbeddedSignupData {
 export class MetaGraphAPI {
   private client: AxiosInstance;
   private version: string;
+  registerPhoneNumber: any;
+  sendTextMessage: any;
 
   constructor(accessToken?: string) {
     this.version = process.env.META_GRAPH_API_VERSION || 'v21.0';

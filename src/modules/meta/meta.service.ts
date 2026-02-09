@@ -6,14 +6,8 @@ import { AppError } from '../../middleware/errorHandler';
 import { MetaGraphAPI } from './meta.api';
 
 export class MetaService {
-  static registerPhoneNumber: any;
-  static sendTestMessage: any;
-  static getBusinessAccounts: any;
-  static getPhoneNumbers(organizationId: string) {
-    throw new Error('Method not implemented.');
-  }
   /**
-   * ✅ NEW: Connect via Embedded Signup
+   * ✅ Connect via Embedded Signup
    * This handles the code from Meta's embedded signup flow
    */
   static async connectEmbeddedSignup(
@@ -57,7 +51,7 @@ export class MetaService {
         }
       }
 
-      // 3. Debug token to get WABA info (Embedded Signup stores it here)
+      // 3. Debug token to get WABA info
       console.log('🔍 Getting token info and WABA details...');
       const tokenInfo = await metaApi.getTokenInfo(accessToken);
       
@@ -74,13 +68,11 @@ export class MetaService {
 
       if (tokenInfo.granular_scopes) {
         for (const scope of tokenInfo.granular_scopes) {
-          // Look for WABA in whatsapp_business_management
           if (scope.scope === 'whatsapp_business_management' && scope.target_ids?.length > 0) {
             wabaId = scope.target_ids[0];
             console.log('📌 Found WABA ID in granular_scopes:', wabaId);
           }
 
-          // Get phone number IDs
           if (scope.scope === 'whatsapp_business_messaging' && scope.target_ids?.length > 0) {
             phoneNumberIds = scope.target_ids;
             console.log('📞 Found Phone Number IDs:', phoneNumberIds);
@@ -105,16 +97,12 @@ export class MetaService {
         console.log('✅ Found WABA via alternative method:', wabaId);
       }
 
-      // Ensure wabaId is not null before proceeding
       if (!wabaId) {
-        throw new AppError(
-          'Failed to obtain WhatsApp Business Account ID.',
-          400
-        );
+        throw new AppError('Failed to obtain WhatsApp Business Account ID.', 400);
       }
 
       // Get WABA full details
-      const wabaDetails = await metaApi.getWABAById(wabaId as string, accessToken);
+      const wabaDetails = await metaApi.getWABAById(wabaId, accessToken);
       console.log('✅ WABA Details:', {
         id: wabaDetails.id,
         name: wabaDetails.name,
@@ -123,7 +111,7 @@ export class MetaService {
 
       // 6. Get phone numbers
       console.log('🔄 Fetching phone numbers for WABA...');
-      const phoneNumbers = await metaApi.getPhoneNumbers(wabaId as string, accessToken);
+      const phoneNumbers = await metaApi.getPhoneNumbers(wabaId, accessToken);
 
       if (phoneNumbers.length === 0) {
         throw new AppError(
@@ -134,108 +122,160 @@ export class MetaService {
 
       console.log(`✅ Found ${phoneNumbers.length} phone number(s)`);
 
-      // 7. Save to database
+      // 7. Save to database using transaction
       console.log('💾 Saving Meta connection to database...');
 
-      // Check if connection already exists
-      const existingConnection = await prisma.metaConnection.findUnique({
-        where: { organizationId },
-        include: { phoneNumbers: true }
-      });
-
-      let metaConnection;
-
-      if (existingConnection) {
-        console.log('🔄 Updating existing Meta connection...');
-        
-        // Update existing connection
-        metaConnection = await prisma.metaConnection.update({
-          where: { organizationId },
-          data: {
-            accessToken,
-            accessTokenExpiresAt: tokenExpiresAt,
-            wabaId: wabaId || undefined,
-            wabaName: wabaDetails.name || null,
-            businessId: wabaDetails.owner_business_info?.id || null,
-            status: 'CONNECTED',
-            lastSyncedAt: new Date(),
-            errorMessage: null,
-            webhookVerified: true,
-          },
+      const result = await prisma.$transaction(async (tx) => {
+        // Check if connection already exists
+        const existingConnection = await tx.metaConnection.findUnique({
+          where: { organizationId }
         });
 
-        // Delete old phone numbers
-        await prisma.phoneNumber.deleteMany({
-          where: { metaConnectionId: metaConnection.id }
-        });
+        let metaConnection;
 
-      } else {
-        console.log('✨ Creating new Meta connection...');
+        if (existingConnection) {
+          console.log('🔄 Updating existing Meta connection...');
+          
+          // Delete old phone numbers first
+          await tx.phoneNumber.deleteMany({
+            where: { metaConnectionId: existingConnection.id }
+          });
+          
+          // Update connection
+          metaConnection = await tx.metaConnection.update({
+            where: { organizationId },
+            data: {
+              accessToken,
+              accessTokenExpiresAt: tokenExpiresAt,
+              wabaId,
+              wabaName: wabaDetails.name || null,
+              businessId: wabaDetails.owner_business_info?.id || null,
+              status: 'CONNECTED',
+              lastSyncedAt: new Date(),
+              errorMessage: null,
+              webhookVerified: true,
+              messagingLimit: wabaDetails.messaging_limit_tier || null,
+              qualityRating: wabaDetails.quality_rating || null,
+            },
+          });
+        } else {
+          console.log('✨ Creating new Meta connection...');
+          
+          metaConnection = await tx.metaConnection.create({
+            data: {
+              organizationId,
+              accessToken,
+              accessTokenExpiresAt: tokenExpiresAt,
+              wabaId,
+              wabaName: wabaDetails.name || null,
+              businessId: wabaDetails.owner_business_info?.id || null,
+              status: 'CONNECTED',
+              lastSyncedAt: new Date(),
+              webhookVerified: true,
+              messagingLimit: wabaDetails.messaging_limit_tier || null,
+              qualityRating: wabaDetails.quality_rating || null,
+            },
+          });
+        }
+
+        // 8. Save phone numbers
+        console.log('💾 Saving phone numbers...');
         
-        metaConnection = await prisma.metaConnection.create({
+        const savedPhoneNumbers = [];
+        for (let i = 0; i < phoneNumbers.length; i++) {
+          const phone = phoneNumbers[i];
+          
+          const savedPhone = await tx.phoneNumber.create({
+            data: {
+              metaConnectionId: metaConnection.id,
+              phoneNumberId: phone.id,
+              phoneNumber: phone.display_phone_number || phone.verified_name || '',
+              displayName: phone.verified_name || null,
+              qualityRating: phone.quality_rating || null,
+              verifiedName: phone.verified_name || null,
+              isActive: true,
+              isPrimary: i === 0,
+            },
+          });
+          
+          savedPhoneNumbers.push(savedPhone);
+          console.log(`   ✅ Saved phone: ${phone.display_phone_number || phone.id}`);
+        }
+
+        // ✅ Create/Update WhatsAppAccount for backward compatibility
+        if (savedPhoneNumbers.length > 0) {
+          const primaryPhone = savedPhoneNumbers[0];
+          
+          await tx.whatsAppAccount.upsert({
+            where: { phoneNumberId: primaryPhone.phoneNumberId },
+            update: {
+              organizationId,
+              wabaId,
+              phoneNumber: primaryPhone.phoneNumber,
+              displayName: primaryPhone.displayName || 'WhatsApp',
+              accessToken,
+              tokenExpiresAt,
+              status: 'CONNECTED',
+              isDefault: true,
+            },
+            create: {
+              organizationId,
+              phoneNumberId: primaryPhone.phoneNumberId,
+              wabaId,
+              phoneNumber: primaryPhone.phoneNumber,
+              displayName: primaryPhone.displayName || 'WhatsApp',
+              accessToken,
+              tokenExpiresAt,
+              status: 'CONNECTED',
+              isDefault: true,
+            },
+          });
+          
+          console.log('✅ WhatsAppAccount synced');
+        }
+
+        // 9. Create activity log
+        await tx.activityLog.create({
           data: {
             organizationId,
-            accessToken,
-            accessTokenExpiresAt: tokenExpiresAt,
-            wabaId,
-            wabaName: wabaDetails.name || null,
-            businessId: wabaDetails.owner_business_info?.id || null,
-            status: 'CONNECTED',
-            lastSyncedAt: new Date(),
-            webhookVerified: true,
-          },
-        });
-      }
-
-      // 8. Save phone numbers
-      console.log('💾 Saving phone numbers...');
-      
-      for (let i = 0; i < phoneNumbers.length; i++) {
-        const phone = phoneNumbers[i];
-        
-        await prisma.phoneNumber.create({
-          data: {
-            metaConnectionId: metaConnection.id,
-            phoneNumberId: phone.id,
-            phoneNumber: phone.display_phone_number || phone.verified_name || '',
-            displayName: phone.verified_name || null,
-            qualityRating: phone.quality_rating || null,
-            verifiedName: phone.verified_name || null,
-            isActive: true,
-            isPrimary: i === 0, // First number is primary
+            action: 'META_CONNECTED',
+            entity: 'MetaConnection',
+            entityId: metaConnection.id,
+            metadata: {
+              wabaId,
+              wabaName: wabaDetails.name,
+              phoneCount: phoneNumbers.length,
+              phoneNumbers: savedPhoneNumbers.map(p => ({
+                id: p.phoneNumberId,
+                number: p.phoneNumber
+              }))
+            },
           },
         });
 
-        console.log(`   ✅ Saved phone: ${phone.display_phone_number}`);
-      }
-
-      // 9. Create activity log
-      await prisma.activityLog.create({
-        data: {
-          organizationId,
-          action: 'META_CONNECTED',
-          entity: 'MetaConnection',
-          entityId: metaConnection.id,
-          metadata: {
-            wabaId,
-            wabaName: wabaDetails.name,
-            phoneCount: phoneNumbers.length,
-          },
-        },
+        return { metaConnection, phoneNumbers: savedPhoneNumbers };
       });
 
       console.log('✅ Meta connection completed successfully!');
 
-      // Return connection with phone numbers
-      return prisma.metaConnection.findUnique({
-        where: { id: metaConnection.id },
-        include: {
-          phoneNumbers: {
-            where: { isActive: true },
-            orderBy: { isPrimary: 'desc' }
-          }
-        }
-      });
+      // Return formatted response
+      return {
+        id: result.metaConnection.id,
+        organizationId: result.metaConnection.organizationId,
+        wabaId: result.metaConnection.wabaId,
+        wabaName: result.metaConnection.wabaName,
+        status: result.metaConnection.status,
+        phoneNumbers: result.phoneNumbers.map(phone => ({
+          id: phone.id,
+          phoneNumberId: phone.phoneNumberId,
+          phoneNumber: phone.phoneNumber,
+          displayName: phone.displayName,
+          isPrimary: phone.isPrimary,
+          isActive: phone.isActive,
+        })),
+        lastSyncedAt: result.metaConnection.lastSyncedAt,
+        webhookVerified: result.metaConnection.webhookVerified,
+      };
 
     } catch (error: any) {
       console.error('❌ Meta connection error:', error);
@@ -275,6 +315,92 @@ export class MetaService {
    * Get current Meta connection status
    */
   static async getConnectionStatus(organizationId: string) {
+    try {
+      const connection = await prisma.metaConnection.findUnique({
+        where: { organizationId },
+        include: {
+          phoneNumbers: {
+            where: { isActive: true },
+            orderBy: { isPrimary: 'desc' }
+          }
+        }
+      });
+
+      // Also check WhatsAppAccount for backward compatibility
+      const whatsappAccount = await prisma.whatsAppAccount.findFirst({
+        where: { 
+          organizationId,
+          status: 'CONNECTED'
+        },
+        select: {
+          id: true,
+          phoneNumber: true,
+          displayName: true,
+          status: true,
+        }
+      });
+
+      if (!connection && !whatsappAccount) {
+        return {
+          isConnected: false,
+          status: 'DISCONNECTED',
+          message: 'No Meta connection found'
+        };
+      }
+
+      // If only WhatsApp account exists (old system)
+      if (!connection && whatsappAccount) {
+        return {
+          isConnected: true,
+          status: 'CONNECTED',
+          message: 'Connected via WhatsApp (legacy)',
+          whatsappAccount,
+        };
+      }
+
+      // Check token expiry
+      if (connection!.accessTokenExpiresAt && connection!.accessTokenExpiresAt < new Date()) {
+        await prisma.metaConnection.update({
+          where: { organizationId },
+          data: {
+            status: 'TOKEN_EXPIRED',
+            errorMessage: 'Access token expired. Please reconnect.'
+          }
+        });
+
+        return {
+          isConnected: false,
+          status: 'TOKEN_EXPIRED',
+          message: 'Access token expired. Please reconnect.',
+          connection
+        };
+      }
+
+      return {
+        isConnected: connection!.status === 'CONNECTED',
+        status: connection!.status,
+        connection: {
+          ...connection,
+          phoneCount: connection!.phoneNumbers.length,
+          primaryPhone: connection!.phoneNumbers.find(p => p.isPrimary) || connection!.phoneNumbers[0]
+        },
+        whatsappAccount,
+      };
+    } catch (error: any) {
+      console.error('Get connection status error:', error);
+      
+      return {
+        isConnected: false,
+        status: 'ERROR',
+        message: error.message || 'Failed to get connection status'
+      };
+    }
+  }
+
+  /**
+   * Get connected phone numbers
+   */
+  static async getPhoneNumbers(organizationId: string) {
     const connection = await prisma.metaConnection.findUnique({
       where: { organizationId },
       include: {
@@ -286,36 +412,134 @@ export class MetaService {
     });
 
     if (!connection) {
-      return {
-        isConnected: false,
-        status: 'DISCONNECTED',
-        message: 'No Meta connection found'
-      };
+      throw new AppError('No Meta connection found', 404);
     }
 
-    // Check token expiry
-    if (connection.accessTokenExpiresAt && connection.accessTokenExpiresAt < new Date()) {
-      await prisma.metaConnection.update({
-        where: { organizationId },
-        data: {
-          status: 'TOKEN_EXPIRED',
-          errorMessage: 'Access token expired. Please reconnect.'
+    return connection.phoneNumbers.map(phone => ({
+      id: phone.id,
+      phoneNumberId: phone.phoneNumberId,
+      phoneNumber: phone.phoneNumber,
+      displayName: phone.displayName,
+      verifiedName: phone.verifiedName,
+      qualityRating: phone.qualityRating,
+      isPrimary: phone.isPrimary,
+      isActive: phone.isActive,
+      messagesLimit: phone.messagesLimit,
+      messagesUsed: phone.messagesUsed,
+      lastResetAt: phone.lastResetAt,
+    }));
+  }
+
+  /**
+   * Register a phone number for messaging
+   */
+  static async registerPhoneNumber(
+    organizationId: string,
+    phoneNumberId: string,
+    pin?: string
+  ) {
+    const connection = await prisma.metaConnection.findUnique({
+      where: { organizationId }
+    });
+
+    if (!connection || !connection.accessToken) {
+      throw new AppError('No active Meta connection found', 404);
+    }
+
+    try {
+      const metaApi = new MetaGraphAPI(connection.accessToken);
+      
+      // Register phone number with Meta
+      const result = await metaApi.registerPhoneNumber(phoneNumberId, pin);
+
+      console.log('✅ Phone number registered:', phoneNumberId);
+
+      return {
+        success: true,
+        phoneNumberId,
+        ...result
+      };
+    } catch (error: any) {
+      console.error('❌ Register phone number error:', error);
+      throw new AppError(error.message || 'Failed to register phone number', 500);
+    }
+  }
+
+  /**
+   * Send test message
+   */
+  static async sendTestMessage(
+    organizationId: string,
+    phoneNumberId: string,
+    to: string,
+    message: string
+  ) {
+    const connection = await prisma.metaConnection.findUnique({
+      where: { organizationId },
+      include: {
+        phoneNumbers: {
+          where: { phoneNumberId, isActive: true }
         }
-      });
+      }
+    });
 
-      return {
-        isConnected: false,
-        status: 'TOKEN_EXPIRED',
-        message: 'Access token expired. Please reconnect.',
-        connection
-      };
+    if (!connection || !connection.accessToken) {
+      throw new AppError('No active Meta connection found', 404);
     }
 
-    return {
-      isConnected: connection.status === 'CONNECTED',
-      status: connection.status,
-      connection
-    };
+    if (connection.phoneNumbers.length === 0) {
+      throw new AppError('Phone number not found or inactive', 404);
+    }
+
+    try {
+      const metaApi = new MetaGraphAPI(connection.accessToken);
+      
+      // Send test message
+      const result = await metaApi.sendTextMessage(phoneNumberId, to, message);
+
+      console.log('✅ Test message sent:', result.messages[0].id);
+
+      return {
+        success: true,
+        messageId: result.messages[0].id,
+        ...result
+      };
+    } catch (error: any) {
+      console.error('❌ Send test message error:', error);
+      throw new AppError(error.message || 'Failed to send test message', 500);
+    }
+  }
+
+  /**
+   * Get linked business accounts
+   */
+  static async getBusinessAccounts(organizationId: string) {
+    const connection = await prisma.metaConnection.findUnique({
+      where: { organizationId }
+    });
+
+    if (!connection || !connection.accessToken) {
+      throw new AppError('No active Meta connection found', 404);
+    }
+
+    try {
+      const metaApi = new MetaGraphAPI(connection.accessToken);
+      
+      // Get accessible WABAs
+      const wabas = await metaApi.getAccessibleWABAs(connection.accessToken);
+
+      return wabas.map((waba: { id: any; name: any; currency: any; timezone_id: any; messaging_limit_tier: any; quality_rating: any; }) => ({
+        id: waba.id,
+        name: waba.name,
+        currency: waba.currency,
+        timezone: waba.timezone_id,
+        messagingLimit: waba.messaging_limit_tier,
+        qualityRating: waba.quality_rating,
+      }));
+    } catch (error: any) {
+      console.error('❌ Get business accounts error:', error);
+      throw new AppError(error.message || 'Failed to get business accounts', 500);
+    }
   }
 
   /**
@@ -330,38 +554,44 @@ export class MetaService {
       throw new AppError('No Meta connection found', 404);
     }
 
-    // Update status
-    await prisma.metaConnection.update({
-      where: { organizationId },
-      data: {
-        status: 'DISCONNECTED',
-        accessToken: undefined,
-        accessTokenExpiresAt: null,
-        errorMessage: 'Manually disconnected'
-      }
-    });
+    await prisma.$transaction(async (tx) => {
+      // Update connection status
+      await tx.metaConnection.update({
+        where: { organizationId },
+        data: {
+          status: 'DISCONNECTED',
+          errorMessage: 'Manually disconnected'
+        }
+      });
 
-    // Deactivate phone numbers
-    await prisma.phoneNumber.updateMany({
-      where: { metaConnectionId: connection.id },
-      data: { isActive: false }
-    });
+      // Deactivate phone numbers
+      await tx.phoneNumber.updateMany({
+        where: { metaConnectionId: connection.id },
+        data: { isActive: false }
+      });
 
-    // Log activity
-    await prisma.activityLog.create({
-      data: {
-        organizationId,
-        action: 'META_DISCONNECTED',
-        entity: 'MetaConnection',
-        entityId: connection.id,
-      },
+      // Update WhatsApp accounts
+      await tx.whatsAppAccount.updateMany({
+        where: { organizationId },
+        data: { status: 'DISCONNECTED' }
+      });
+
+      // Log activity
+      await tx.activityLog.create({
+        data: {
+          organizationId,
+          action: 'META_DISCONNECTED',
+          entity: 'MetaConnection',
+          entityId: connection.id,
+        },
+      });
     });
 
     return { message: 'Meta connection disconnected successfully' };
   }
 
   /**
-   * Refresh connection data (sync WABA details, phone numbers, etc.)
+   * Refresh connection data
    */
   static async refreshConnection(organizationId: string) {
     const connection = await prisma.metaConnection.findUnique({
@@ -386,7 +616,8 @@ export class MetaService {
         where: { organizationId },
         data: {
           wabaName: wabaDetails.name || null,
-          qualityRating: wabaDetails.account_review_status || null,
+          qualityRating: wabaDetails.quality_rating || null,
+          messagingLimit: wabaDetails.messaging_limit_tier || null,
           lastSyncedAt: new Date(),
         }
       });
