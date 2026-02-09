@@ -14,6 +14,7 @@ interface AuthRequest extends Request {
 export class WhatsAppController {
   static connectAccount: any;
     static setDefaultAccount: any;
+    disconnectAccount: any;
   static async getAccounts(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user?.organizationId;

@@ -1,17 +1,16 @@
-// src/modules/whatsapp/whatsapp.routes.ts
-
 import { Router } from 'express';
-import { whatsappController } from './whatsapp.controller'; // Instance import (lowercase 'w')
+// ✅ Import the INSTANCE (lowercase w), NOT the Class
+import { WhatsAppController, whatsappController } from './whatsapp.controller'; 
 import { authenticate } from '../../middleware/auth';
 
 const router = Router();
 
 router.use(authenticate);
 
-// Use instance methods, NOT class static methods
-router.get('/accounts', whatsappController.getAccounts.bind(whatsappController));
-router.post('/connect', whatsappController.connectAccount.bind(whatsappController));
+// ✅ Call static methods on the class
+router.get('/accounts', WhatsAppController.getAccounts);
+router.post('/connect', WhatsAppController.connectAccount);
 router.delete('/accounts/:id', whatsappController.disconnectAccount.bind(whatsappController));
-router.post('/accounts/:id/default', whatsappController.setDefaultAccount.bind(whatsappController));
+router.post('/accounts/:id/default', WhatsAppController.setDefaultAccount);
 
 export default router;
