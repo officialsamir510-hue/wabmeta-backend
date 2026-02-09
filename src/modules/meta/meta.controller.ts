@@ -392,3 +392,7 @@ export const getBusinessAccounts = async (req: AuthRequest, res: Response) => {
     sendError(res, error.message || 'Failed to get business accounts', 500);
   }
 };
+
+export function handleCallback(arg0: string, handleCallback: any) {
+    throw new Error('Function not implemented.');
+}
