@@ -113,36 +113,71 @@ export const SocketEvents = {
 // ============================================
 
 export const initializeSocket = (server: HTTPServer): Server => {
-  // Allowed origins
+  // ✅ FIXED: Comprehensive allowed origins list
   const allowedOrigins = [
+    // Local development
     'http://localhost:5173',
     'http://localhost:5174',
     'http://localhost:3000',
+    'http://localhost:3001',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:5174',
+    
+    // Production domains
     'https://wabmeta.com',
     'https://www.wabmeta.com',
-    config.frontendUrl,
-  ].filter(Boolean) as string[];
+    
+    // Render preview URLs (if any)
+    'https://wabmeta.onrender.com',
+    'https://wabmeta-frontend.onrender.com',
+  ];
+
+  // Add config.frontendUrl if not already in list
+  if (config.frontendUrl && !allowedOrigins.includes(config.frontendUrl)) {
+    allowedOrigins.push(config.frontendUrl);
+  }
+
+  console.log('🔌 Socket.IO allowed origins:', allowedOrigins);
 
   io = new Server(server, {
     cors: {
+      // ✅ FIXED: More permissive origin handling
       origin: (origin, callback) => {
-        // Allow requests with no origin (mobile apps, curl, etc.)
-        if (!origin) return callback(null, true);
+        // Allow requests with no origin (mobile apps, curl, Postman, etc.)
+        if (!origin) {
+          return callback(null, true);
+        }
         
+        // Check if origin is in allowed list
         if (allowedOrigins.includes(origin)) {
           return callback(null, true);
         }
         
-        console.warn(`⚠️ Socket CORS blocked origin: ${origin}`);
-        return callback(null, true); // Allow all for now, can be strict in production
+        // Allow any origin in development
+        if (config.nodeEnv === 'development') {
+          console.log(`⚠️ Socket allowing dev origin: ${origin}`);
+          return callback(null, true);
+        }
+        
+        // In production, be more lenient but log
+        console.warn(`⚠️ Socket CORS non-whitelisted origin: ${origin}`);
+        // Allow anyway to prevent connection issues
+        return callback(null, true);
       },
       methods: ['GET', 'POST'],
       credentials: true,
+      allowedHeaders: ['Content-Type', 'Authorization'],
     },
+    // ✅ Connection settings
     pingTimeout: 60000,
     pingInterval: 25000,
     transports: ['websocket', 'polling'],
     allowEIO3: true, // Allow Engine.IO v3 clients
+    
+    // ✅ Additional settings for stability
+    connectTimeout: 45000,
+    maxHttpBufferSize: 1e6, // 1MB
+    path: '/socket.io/',
   });
 
   // ============================================
@@ -151,9 +186,12 @@ export const initializeSocket = (server: HTTPServer): Server => {
 
   io.use(async (socket: AuthenticatedSocket, next) => {
     try {
-      const token = socket.handshake.auth.token || 
-                    socket.handshake.headers.authorization?.replace('Bearer ', '') ||
-                    socket.handshake.query.token;
+      // ✅ Multiple ways to get token
+      const token = 
+        socket.handshake.auth?.token || 
+        socket.handshake.headers?.authorization?.replace('Bearer ', '') ||
+        (socket.handshake.query?.token as string) ||
+        null;
 
       if (!token || typeof token !== 'string') {
         console.log('❌ Socket auth failed: No token provided');
@@ -163,7 +201,15 @@ export const initializeSocket = (server: HTTPServer): Server => {
       // Verify JWT
       let decoded: JWTPayload;
       try {
-        decoded = jwt.verify(token, config.jwt.secret || config.jwtSecret) as JWTPayload;
+        // ✅ Try multiple secret keys
+        const jwtSecret = config.jwt?.secret || config.jwtSecret;
+        
+        if (!jwtSecret) {
+          console.error('❌ JWT secret not configured');
+          return next(new Error('Server configuration error'));
+        }
+        
+        decoded = jwt.verify(token, jwtSecret) as JWTPayload;
       } catch (jwtError: any) {
         console.log('❌ Socket auth failed: Invalid JWT -', jwtError.message);
         return next(new Error('Invalid or expired token'));
@@ -442,6 +488,13 @@ export const getIO = (): Server => {
     throw new Error('Socket.IO not initialized');
   }
   return io;
+};
+
+/**
+ * Safe getIO that doesn't throw
+ */
+export const getIOSafe = (): Server | null => {
+  return io || null;
 };
 
 /**
