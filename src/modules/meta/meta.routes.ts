@@ -3,6 +3,7 @@
 import { Router } from 'express';
 import { authenticate } from '../../middleware/auth';
 import * as metaController from './meta.controller';
+import { Request, Response } from 'express';
 
 const router = Router();
 
@@ -124,3 +125,31 @@ router.get('/business-accounts', metaController.getBusinessAccounts);
 router.post('/test-message', metaController.sendTestMessage);
 
 export default router;
+/**
+ * Handles the OAuth callback redirect from Meta.
+ * Expects ?code and ?state in the query params.
+ * Redirects the user to the frontend with the code/state or an error.
+ */
+
+export const handleCallbackRedirect = (req: Request, res: Response) => {
+  const { code, state, error, error_description } = req.query;
+
+  // Define your frontend redirect URI (could be from config/env)
+  const frontendRedirectUri = process.env.META_OAUTH_FRONTEND_REDIRECT || 'https://your-frontend-app.com/meta/oauth/callback';
+
+  if (error) {
+    // Redirect with error details
+    const redirectUrl = `${frontendRedirectUri}?error=${encodeURIComponent(String(error))}&error_description=${encodeURIComponent(String(error_description || ''))}`;
+    return res.redirect(redirectUrl);
+  }
+
+  if (!code) {
+    // Missing code, redirect with error
+    const redirectUrl = `${frontendRedirectUri}?error=missing_code`;
+    return res.redirect(redirectUrl);
+  }
+
+  // Redirect with code and state
+  const redirectUrl = `${frontendRedirectUri}?code=${encodeURIComponent(String(code))}${state ? `&state=${encodeURIComponent(String(state))}` : ''}`;
+  return res.redirect(redirectUrl);
+};
