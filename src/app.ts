@@ -29,7 +29,6 @@ import razorpayRoutes from './modules/billing/razorpay.routes';
 import metaRoutes from './modules/meta/meta.routes';
 import dashboardRoutes from './modules/dashboard/dashboard.routes';
 
-
 const app: Express = express();
 
 // ============================================
@@ -56,13 +55,8 @@ console.log('🌐 CORS Allowed Origins:', allowedOrigins);
 
 const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
-    // server-to-server requests / curl / meta webhook => origin undefined
     if (!origin) return callback(null, true);
-
     if (allowedOrigins.includes(origin)) return callback(null, true);
-
-    // NOTE: aapke current code me non-whitelisted origin ko bhi allow kiya ja raha tha.
-    // Same behavior maintain kar raha hu to avoid breaking anything in production.
     console.log('⚠️ CORS request from non-whitelisted origin:', origin);
     return callback(null, true);
   },
@@ -108,8 +102,10 @@ app.get('/webhooks/meta', (req: Request, res: Response) => {
   const token = req.query['hub.verify_token'] as string | undefined;
   const challenge = req.query['hub.challenge'] as string | undefined;
 
-  const tokenPreview = token ? token.slice(0, 10) + '...' : 'undefined';
-  console.log('🔍 Meta webhook verification:', { mode, token: tokenPreview });
+  console.log('🔍 Meta webhook verification:', { 
+    mode, 
+    token: token ? token.slice(0, 10) + '...' : 'undefined' 
+  });
 
   if (mode === 'subscribe' && token === config.meta.webhookVerifyToken) {
     console.log('✅ Meta webhook verified');
@@ -120,34 +116,25 @@ app.get('/webhooks/meta', (req: Request, res: Response) => {
   return res.sendStatus(403);
 });
 
-/**
- * Meta webhook events (POST)
- * IMPORTANT: Use express.raw() to capture raw body (signature verification needs it)
- */
+// Meta webhook events (POST)
 app.post(
   '/webhooks/meta',
   express.raw({ type: 'application/json', limit: '10mb' }),
   async (req: Request, res: Response) => {
     try {
       const signature = req.headers['x-hub-signature-256'] as string | undefined;
+      const rawBody = Buffer.isBuffer(req.body) ? (req.body as Buffer).toString('utf8') : '';
 
-      const rawBody = Buffer.isBuffer(req.body)
-        ? (req.body as Buffer).toString('utf8')
-        : '';
-
-      // Verify signature (if header exists)
-      if (signature && rawBody) {
+      if (signature && rawBody && config.meta.appSecret) {
         const valid = WebhookService.verifySignature(signature, rawBody);
         if (!valid) {
           console.error('❌ Invalid webhook signature');
           return res.sendStatus(403);
         }
       } else {
-        // In some cases signature may not be present (testing)
         console.warn('⚠️ Webhook signature missing or raw body empty');
       }
 
-      // Parse JSON
       let parsed: any = null;
       try {
         parsed = rawBody ? JSON.parse(rawBody) : req.body;
@@ -156,16 +143,13 @@ app.post(
         return res.sendStatus(400);
       }
 
-      // Acknowledge immediately
       res.sendStatus(200);
 
-      // Process async (don’t block)
       WebhookService.processMetaWebhook(parsed).catch((err) => {
         console.error('❌ Webhook async processing error:', err);
       });
     } catch (error) {
       console.error('❌ Meta webhook error:', error);
-      // Meta expects 200 quickly; even on error we respond 200 to avoid retries storm
       return res.sendStatus(200);
     }
   }
@@ -187,6 +171,16 @@ if (config.nodeEnv === 'development') {
 }
 
 // ============================================
+// REQUEST LOGGER (Debug middleware)
+// ============================================
+if (config.nodeEnv === 'development') {
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    console.log(`📥 ${req.method} ${req.path}`);
+    next();
+  });
+}
+
+// ============================================
 // HEALTH CHECK & DEBUG ROUTES
 // ============================================
 app.get('/', (req: Request, res: Response) => {
@@ -199,14 +193,26 @@ app.get('/', (req: Request, res: Response) => {
   });
 });
 
-app.get('/health', (req: Request, res: Response) => {
-  res.json({
-    success: true,
-    message: 'WabMeta API is running',
-    timestamp: new Date().toISOString(),
-    environment: config.nodeEnv,
-    uptime: process.uptime(),
-  });
+app.get('/health', async (req: Request, res: Response) => {
+  try {
+    res.json({
+      success: true,
+      message: 'WabMeta API is healthy',
+      timestamp: new Date().toISOString(),
+      environment: config.nodeEnv,
+      uptime: Math.floor(process.uptime()),
+      memory: {
+        heapUsed: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB',
+        heapTotal: Math.round(process.memoryUsage().heapTotal / 1024 / 1024) + 'MB',
+      },
+    });
+  } catch (error) {
+    res.status(503).json({
+      success: false,
+      message: 'Service unhealthy',
+      timestamp: new Date().toISOString(),
+    });
+  }
 });
 
 app.get('/api/debug/cors', (req: Request, res: Response) => {
@@ -233,34 +239,86 @@ app.post('/api/debug/cors-test', (req: Request, res: Response) => {
 });
 
 // ============================================
-// API ROUTES
+// API ROUTES (Order matters!)
 // ============================================
 const apiPrefix = `/api/${config.apiVersion}`;
 
+// Core routes
 app.use(`${apiPrefix}/auth`, authRoutes);
 app.use(`${apiPrefix}/users`, userRoutes);
 app.use(`${apiPrefix}/organizations`, organizationRoutes);
+
+// Feature routes
 app.use(`${apiPrefix}/contacts`, contactsRoutes);
 app.use(`${apiPrefix}/templates`, templatesRoutes);
 app.use(`${apiPrefix}/campaigns`, campaignsRoutes);
 app.use(`${apiPrefix}/whatsapp`, whatsappRoutes);
 app.use(`${apiPrefix}/inbox`, inboxRoutes);
 app.use(`${apiPrefix}/chatbot`, chatbotRoutes);
-app.use(`${apiPrefix}/admin`, adminRoutes);
-app.use(`${apiPrefix}/billing`, billingRoutes);
-app.use(`${apiPrefix}/billing/razorpay`, razorpayRoutes);
+
+// Integration routes
 app.use(`${apiPrefix}/meta`, metaRoutes);
+app.use(`${apiPrefix}/billing`, billingRoutes);
+app.use(`${apiPrefix}/billing/razorpay`, razorpayRoutes); // ⚠️ More specific route should come first
+
+// Admin & Dashboard
+app.use(`${apiPrefix}/admin`, adminRoutes);
 app.use(`${apiPrefix}/dashboard`, dashboardRoutes);
 
 // ============================================
-// 404 HANDLER
+// LOG REGISTERED ROUTES (Development)
 // ============================================
-app.use((req: Request, res: Response) => {
+if (config.nodeEnv === 'development') {
+  const routes: string[] = [];
+  
+  function extractRoutes(stack: any[], prefix = '') {
+    stack.forEach((layer) => {
+      if (layer.route) {
+        const methods = Object.keys(layer.route.methods).join(', ').toUpperCase();
+        routes.push(`   [${methods}] ${prefix}${layer.route.path}`);
+      } else if (layer.name === 'router') {
+        const routerPrefix = layer.regexp.source
+          .replace('\\/?', '')
+          .replace('(?=\\/|$)', '')
+          .replace(/\\\//g, '/')
+          .replace(/\^/g, '')
+          .replace(/\$/g, '')
+          .replace(/\\/g, '');
+        
+        extractRoutes(layer.handle.stack, prefix + routerPrefix);
+      }
+    });
+  }
+
+  console.log('\n📍 Registered API Routes:');
+  console.log(`   ${apiPrefix}/auth`);
+  console.log(`   ${apiPrefix}/users`);
+  console.log(`   ${apiPrefix}/organizations`);
+  console.log(`   ${apiPrefix}/contacts`);
+  console.log(`   ${apiPrefix}/templates`);
+  console.log(`   ${apiPrefix}/campaigns`);
+  console.log(`   ${apiPrefix}/whatsapp`);
+  console.log(`   ${apiPrefix}/inbox`);
+  console.log(`   ${apiPrefix}/chatbot`);
+  console.log(`   ${apiPrefix}/meta`);
+  console.log(`   ${apiPrefix}/billing`);
+  console.log(`   ${apiPrefix}/billing/razorpay`);
+  console.log(`   ${apiPrefix}/admin`);
+  console.log(`   ${apiPrefix}/dashboard`);
+  console.log('   /webhooks/meta (GET, POST)');
+  console.log('');
+}
+
+// ============================================
+// 404 HANDLER (Must come AFTER all routes!)
+// ============================================
+app.use((req: Request, res: Response, next: NextFunction) => {
+  console.log(`❌ 404: ${req.method} ${req.url}`);
   sendError(res, `Route ${req.method} ${req.url} not found`, 404);
 });
 
 // ============================================
-// ERROR HANDLER
+// ERROR HANDLER (Must be last!)
 // ============================================
 app.use(errorHandler);
 

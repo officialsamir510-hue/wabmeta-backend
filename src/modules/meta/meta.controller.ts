@@ -166,6 +166,11 @@ export const handleAuthCallback = async (req: Request, res: Response) => {
 };
 
 /**
+ * Alias for handleAuthCallback (GET version)
+ */
+export const handleCallbackRedirect = handleAuthCallback;
+
+/**
  * POST /api/v1/meta/auth/callback
  * Handle OAuth callback from frontend popup (receives code and state in body)
  */
@@ -231,9 +236,54 @@ export const handleAuthCallbackPost = async (req: AuthRequest, res: Response) =>
 
 /**
  * POST /api/v1/meta/connect
- * Connect Meta account (alias for handleAuthCallbackPost)
+ * Connect Meta account via Embedded Signup
  */
-export const connectMeta = handleAuthCallbackPost;
+export const connectMeta = async (req: AuthRequest, res: Response) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    const { code, state } = req.body;
+
+    console.log('🔗 Meta connect request received:');
+    console.log('   Organization:', organizationId);
+    console.log('   Code:', code ? code.substring(0, 20) + '...' : 'MISSING');
+    console.log('   State:', state ? state.substring(0, 20) + '...' : 'MISSING');
+
+    // Validate organization
+    if (!organizationId) {
+      console.error('❌ No organization ID');
+      return sendError(res, 'Organization ID is required', 400);
+    }
+
+    // Validate code
+    if (!code) {
+      console.error('❌ No code provided');
+      return sendError(res, 'Authorization code is required', 400);
+    }
+
+    // Connect with detailed logging
+    const connection = await MetaService.connectEmbeddedSignup(
+      organizationId,
+      code,
+      state
+    );
+
+    console.log('✅ Meta connection successful');
+    console.log('   Connection ID:', connection.id);
+    console.log('   WABA ID:', connection.wabaId);
+    console.log('   Phone Numbers:', connection.phoneNumbers?.length || 0);
+
+    sendSuccess(res, connection, 'Meta account connected successfully');
+  } catch (error: any) {
+    console.error('❌ Meta connect error:', error);
+    console.error('   Error message:', error.message);
+    console.error('   Error stack:', error.stack);
+
+    const statusCode = error.statusCode || 500;
+    const message = error.message || 'Failed to connect Meta account';
+
+    sendError(res, message, statusCode);
+  }
+};
 
 // ============================================
 // CONNECTION MANAGEMENT
@@ -435,7 +485,3 @@ export const sendTestMessage = async (req: AuthRequest, res: Response) => {
     sendError(res, error.message || 'Failed to send test message', 500);
   }
 };
-
-export function handleCallbackRedirect(arg0: string, handleCallbackRedirect: any) {
-    throw new Error('Function not implemented.');
-}
