@@ -114,6 +114,59 @@ export const getAuthUrl = async (req: AuthRequest, res: Response) => {
   }
 };
 
+/**
+ * GET /api/v1/meta/auth/url/fallback
+ * Get fallback URL (Standard OAuth)
+ */
+export const getFallbackUrl = async (req: AuthRequest, res: Response) => {
+  try {
+    const organizationId = req.user?.organizationId;
+
+    if (!organizationId) {
+      return sendError(res, 'Organization ID is required', 400);
+    }
+
+    if (!config.meta?.appId) {
+      return sendError(res, 'Meta app not configured', 500);
+    }
+
+    const state = Buffer.from(
+      JSON.stringify({
+        organizationId,
+        timestamp: Date.now(),
+        random: Math.random().toString(36).substring(7),
+        mode: 'standard'
+      })
+    ).toString('base64');
+
+    const version = config.meta.graphApiVersion.replace(/^v/, '');
+    const redirectUri = encodeURIComponent(
+      config.meta.redirectUri || `${config.frontendUrl}/meta/callback`
+    );
+
+    // Standard OAuth Only
+    const authUrl = `https://www.facebook.com/v${version}/dialog/oauth` +
+      `?client_id=${config.meta.appId}` +
+      `&redirect_uri=${redirectUri}` +
+      `&state=${state}` +
+      `&response_type=code` +
+      `&scope=whatsapp_business_management,whatsapp_business_messaging,business_management` +
+      `&display=popup`;
+
+    console.log('🔄 Fallback URL generated (Standard OAuth)');
+
+    sendSuccess(res, { 
+      url: authUrl,
+      state,
+      mode: 'standard'
+    }, 'Fallback URL generated');
+
+  } catch (error: any) {
+    console.error('❌ Get fallback URL error:', error);
+    sendError(res, error.message || 'Failed to generate fallback URL', 500);
+  }
+};
+
 // ============================================
 // OAUTH CALLBACKS
 // ============================================
@@ -191,11 +244,6 @@ export const handleAuthCallback = async (req: Request, res: Response) => {
 };
 
 /**
- * Alias for handleAuthCallback
- */
-export const handleCallbackRedirect = handleAuthCallback;
-
-/**
  * POST /api/v1/meta/auth/callback
  * Handle OAuth callback from frontend popup
  */
@@ -241,7 +289,7 @@ export const handleAuthCallbackPost = async (req: AuthRequest, res: Response) =>
 
 /**
  * POST /api/v1/meta/connect
- * Connect Meta account
+ * Connect Meta account (Standard Endpoint)
  */
 export const connectMeta = async (req: AuthRequest, res: Response) => {
   try {

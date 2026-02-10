@@ -73,7 +73,7 @@ export const config = {
     configId: process.env.META_CONFIG_ID || '',
     
     // ✅ API Version - Using latest stable
-    graphApiVersion: process.env.META_GRAPH_API_VERSION || 'v23.0',
+    graphApiVersion: process.env.META_GRAPH_API_VERSION || 'v22.0',
     graphApiUrl: process.env.META_GRAPH_API_URL || 'https://graph.facebook.com',
     
     // ✅ Webhooks - Points to backend webhook endpoint
