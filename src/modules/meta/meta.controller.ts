@@ -20,106 +20,65 @@ interface AuthRequest extends Request {
 
 /**
  * GET /api/v1/meta/auth/url
- * Generate Meta OAuth URL for Embedded Signup or Standard OAuth
+ * Generate Meta OAuth URL for Standard OAuth
  */
 export const getAuthUrl = async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user?.organizationId;
-    
-    // ✅ Get mode from query param (embedded or standard)
-    const mode = (req.query.mode as string) || 'embedded';
 
     if (!organizationId) {
       return sendError(res, 'Organization ID is required', 400);
     }
 
-    // Validate Meta configuration
     if (!config.meta?.appId) {
       console.error('❌ Meta app ID missing');
-      return sendError(
-        res,
-        'Meta app configuration is incomplete. Please contact support.',
-        500
-      );
+      return sendError(res, 'Meta app not configured', 500);
     }
 
-    // Generate state token (for CSRF protection)
+    // ✅ Generate state for CSRF protection
     const state = Buffer.from(
       JSON.stringify({
         organizationId,
         timestamp: Date.now(),
         random: Math.random().toString(36).substring(7),
-        mode, // ✅ Include mode in state
       })
     ).toString('base64');
 
-    // Build redirect URI
-    const redirectUri =
-      config.meta.redirectUri || `${config.frontendUrl}/meta/callback`;
+    // ✅ API Version - Use latest
+    const version = 'v23.0';
 
-    // Fix version format - remove 'v' if present
-    const version = (config.meta.graphApiVersion || '21.0').replace(/^v/, '');
+    // ✅ Redirect URI
+    const redirectUri = config.meta.redirectUri || `${config.frontendUrl}/meta/callback`;
 
-    let authUrl: string;
+    // ✅ Scopes
+    const scopes = [
+      'business_management',
+      'whatsapp_business_management',
+      'whatsapp_business_messaging',
+    ].join(',');
 
-    // ✅ TWO DIFFERENT FLOWS
-    if (mode === 'standard') {
-      // Traditional OAuth (for existing Meta apps)
-      authUrl =
-        `https://www.facebook.com/v${version}/dialog/oauth` +
-        `?client_id=${config.meta.appId}` +
-        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-        `&state=${state}` +
-        `&response_type=code` +
-        `&scope=whatsapp_business_management,whatsapp_business_messaging,business_management`;
+    // ✅ Build OAuth URL (Standard - no config_id)
+    const authUrl = 
+      `https://www.facebook.com/${version}/dialog/oauth` +
+      `?client_id=${config.meta.appId}` +
+      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+      `&response_type=code` +
+      `&scope=${encodeURIComponent(scopes)}` +
+      `&state=${state}` +
+      `&display=popup`;
 
-      console.log('📱 Generated Standard OAuth URL:');
-      console.log('   Mode: Standard OAuth');
-      console.log('   Organization:', organizationId);
-      console.log('   Version:', version);
-      console.log('   App ID:', config.meta.appId);
-      console.log('   Redirect URI:', redirectUri);
-      
-    } else {
-      // Embedded Signup (default - for new setups)
-      if (!config.meta.configId) {
-        console.error('❌ Meta config ID missing for embedded signup');
-        return sendError(
-          res,
-          'Embedded signup is not configured. Please use standard mode or contact support.',
-          500
-        );
-      }
+    console.log('🔗 Standard OAuth URL generated:');
+    console.log('   App ID:', config.meta.appId);
+    console.log('   Redirect:', redirectUri);
+    console.log('   Scopes:', scopes);
 
-      authUrl =
-        `https://www.facebook.com/v${version}/dialog/oauth` +
-        `?client_id=${config.meta.appId}` +
-        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-        `&state=${state}` +
-        `&config_id=${config.meta.configId}` +
-        `&response_type=code` +
-        `&scope=whatsapp_business_management,whatsapp_business_messaging,business_management`;
+    sendSuccess(res, { 
+      url: authUrl,
+      authUrl,
+      state,
+      redirectUri,
+    }, 'Auth URL generated successfully');
 
-      console.log('🆕 Generated Embedded Signup URL:');
-      console.log('   Mode: Embedded Signup');
-      console.log('   Organization:', organizationId);
-      console.log('   Version:', version);
-      console.log('   App ID:', config.meta.appId);
-      console.log('   Config ID:', config.meta.configId);
-      console.log('   Redirect URI:', redirectUri);
-    }
-
-    sendSuccess(
-      res,
-      {
-        url: authUrl,
-        authUrl, // Include both for compatibility
-        state,
-        redirectUri,
-        mode,
-      },
-      'Auth URL generated successfully'
-    );
   } catch (error: any) {
     console.error('❌ Get auth URL error:', error);
     sendError(res, error.message || 'Failed to generate auth URL', 500);
@@ -132,7 +91,7 @@ export const getAuthUrl = async (req: AuthRequest, res: Response) => {
 
 /**
  * GET /api/v1/meta/callback
- * Handle OAuth callback via redirect (receives code and state as query params)
+ * Handle OAuth callback via redirect
  */
 export const handleAuthCallback = async (req: Request, res: Response) => {
   try {
@@ -161,16 +120,14 @@ export const handleAuthCallback = async (req: Request, res: Response) => {
       );
     }
 
-    // Decode state to get organization ID and mode
+    // Decode state to get organization ID
     let organizationId: string;
-    let mode: string = 'embedded';
     
     try {
       const decodedState = JSON.parse(
         Buffer.from(state as string, 'base64').toString()
       );
       organizationId = decodedState.organizationId;
-      mode = decodedState.mode || 'embedded';
 
       if (!organizationId) {
         throw new Error('Organization ID not found in state');
@@ -182,7 +139,7 @@ export const handleAuthCallback = async (req: Request, res: Response) => {
       );
     }
 
-    console.log(`🔗 Processing ${mode} OAuth redirect for org:`, organizationId);
+    console.log('🔗 Processing OAuth redirect for org:', organizationId);
 
     // Connect Meta account
     await MetaService.connectEmbeddedSignup(
@@ -191,10 +148,10 @@ export const handleAuthCallback = async (req: Request, res: Response) => {
       state as string
     );
 
-    console.log(`✅ Meta account connected via ${mode} redirect`);
+    console.log('✅ Meta account connected via redirect');
 
     // Redirect to success page
-    res.redirect(`${config.frontendUrl}/dashboard/settings?meta_connected=true`);
+    res.redirect(`${config.frontendUrl}/dashboard/settings?tab=whatsapp&meta_connected=true`);
   } catch (error: any) {
     console.error('❌ Callback redirect error:', error);
     const errorMsg = encodeURIComponent(error.message || 'Connection failed');
@@ -203,13 +160,13 @@ export const handleAuthCallback = async (req: Request, res: Response) => {
 };
 
 /**
- * Alias for handleAuthCallback (GET version)
+ * Alias for handleAuthCallback
  */
 export const handleCallbackRedirect = handleAuthCallback;
 
 /**
  * POST /api/v1/meta/auth/callback
- * Handle OAuth callback from frontend popup (receives code and state in body)
+ * Handle OAuth callback from frontend popup
  */
 export const handleAuthCallbackPost = async (req: AuthRequest, res: Response) => {
   try {
@@ -219,9 +176,7 @@ export const handleAuthCallbackPost = async (req: AuthRequest, res: Response) =>
     console.log('🔗 Meta OAuth callback received (POST)');
     console.log('   Organization:', organizationId);
     console.log('   Code:', code ? code.substring(0, 20) + '...' : 'missing');
-    console.log('   State:', state ? 'present' : 'missing');
 
-    // Handle OAuth errors
     if (error) {
       return sendError(res, error_description || error, 400);
     }
@@ -234,36 +189,13 @@ export const handleAuthCallbackPost = async (req: AuthRequest, res: Response) =>
       return sendError(res, 'Organization ID is required', 400);
     }
 
-    // Verify state token and extract mode if provided
-    let mode = 'embedded';
-    if (state) {
-      try {
-        const decodedState = JSON.parse(
-          Buffer.from(state, 'base64').toString()
-        );
-        mode = decodedState.mode || 'embedded';
-        
-        if (
-          decodedState.organizationId &&
-          decodedState.organizationId !== organizationId
-        ) {
-          console.warn('⚠️ State organization mismatch, using auth token org');
-        }
-      } catch (e) {
-        console.warn('⚠️ State verification skipped (invalid format)');
-      }
-    }
-
-    console.log(`🔗 Processing ${mode} OAuth callback`);
-
-    // Connect via embedded signup
     const connection = await MetaService.connectEmbeddedSignup(
       organizationId,
       code,
       state
     );
 
-    console.log(`✅ Meta account connected via ${mode} POST callback`);
+    console.log('✅ Meta account connected via POST callback');
 
     sendSuccess(res, connection, 'Meta account connected successfully');
   } catch (error: any) {
@@ -278,7 +210,7 @@ export const handleAuthCallbackPost = async (req: AuthRequest, res: Response) =>
 
 /**
  * POST /api/v1/meta/connect
- * Connect Meta account via Embedded Signup or Standard OAuth
+ * Connect Meta account
  */
 export const connectMeta = async (req: AuthRequest, res: Response) => {
   try {
@@ -288,36 +220,15 @@ export const connectMeta = async (req: AuthRequest, res: Response) => {
     console.log('🔗 Meta connect request received:');
     console.log('   Organization:', organizationId);
     console.log('   Code:', code ? code.substring(0, 20) + '...' : 'MISSING');
-    console.log('   State:', state ? state.substring(0, 20) + '...' : 'MISSING');
 
-    // Validate organization
     if (!organizationId) {
-      console.error('❌ No organization ID');
       return sendError(res, 'Organization ID is required', 400);
     }
 
-    // Validate code
     if (!code) {
-      console.error('❌ No code provided');
       return sendError(res, 'Authorization code is required', 400);
     }
 
-    // Extract mode from state if provided
-    let mode = 'embedded';
-    if (state) {
-      try {
-        const decodedState = JSON.parse(
-          Buffer.from(state, 'base64').toString()
-        );
-        mode = decodedState.mode || 'embedded';
-      } catch (e) {
-        console.warn('⚠️ Could not extract mode from state');
-      }
-    }
-
-    console.log(`🔗 Using ${mode} mode for connection`);
-
-    // Connect with detailed logging
     const connection = await MetaService.connectEmbeddedSignup(
       organizationId,
       code,
@@ -332,13 +243,7 @@ export const connectMeta = async (req: AuthRequest, res: Response) => {
     sendSuccess(res, connection, 'Meta account connected successfully');
   } catch (error: any) {
     console.error('❌ Meta connect error:', error);
-    console.error('   Error message:', error.message);
-    console.error('   Error stack:', error.stack);
-
-    const statusCode = error.statusCode || 500;
-    const message = error.message || 'Failed to connect Meta account';
-
-    sendError(res, message, statusCode);
+    sendError(res, error.message || 'Failed to connect Meta account', error.statusCode || 500);
   }
 };
 
@@ -364,13 +269,8 @@ export const getConnectionStatus = async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     console.error('❌ Get connection status error:', error);
 
-    // Handle database timeout gracefully
     if (error.code === 'P2024') {
-      return sendError(
-        res,
-        'Database temporarily unavailable. Please try again.',
-        503
-      );
+      return sendError(res, 'Database temporarily unavailable. Please try again.', 503);
     }
 
     sendError(res, error.message || 'Failed to get connection status', 500);
