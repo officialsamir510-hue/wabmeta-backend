@@ -59,7 +59,7 @@ export const config = {
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
   },
   
-  // ✅ Meta/WhatsApp - OPTIMIZED Configuration
+  // ✅ Meta/WhatsApp - Standard OAuth Configuration
   meta: {
     // App credentials
     appId: process.env.META_APP_ID || '',
@@ -69,7 +69,7 @@ export const config = {
     redirectUri: process.env.META_REDIRECT_URI || 
       `${process.env.FRONTEND_URL || 'https://wabmeta.com'}/meta/callback`,
     
-    // ✅ Config ID (optional - only needed for Embedded Signup)
+    // ✅ Config ID (optional - NOT required for Standard OAuth)
     configId: process.env.META_CONFIG_ID || '',
     
     // ✅ API Version - Using latest stable
@@ -78,7 +78,7 @@ export const config = {
     
     // ✅ Webhooks - Points to backend webhook endpoint
     webhookVerifyToken: process.env.META_WEBHOOK_VERIFY_TOKEN || '',
-    webhookSecret: process.env.META_WEBHOOK_SECRET || '', // For signature verification
+    webhookSecret: process.env.META_WEBHOOK_SECRET || '',
     
     // Webhook URL (for Meta dashboard configuration)
     webhookUrl: process.env.META_WEBHOOK_URL || 
@@ -134,7 +134,7 @@ export const config = {
 // Type export for config
 export type Config = typeof config;
 
-// Validate required config on startup
+// ✅ Validate required config on startup (UPDATED - No configId check)
 const validateConfig = () => {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -149,7 +149,7 @@ const validateConfig = () => {
     warnings.push('Using default JWT secret. Set JWT_SECRET in production!');
   }
   
-  // Production-specific checks
+  // ✅ Production-specific checks (No configId required)
   if (config.nodeEnv === 'production') {
     if (!config.meta.appId) {
       errors.push('META_APP_ID is required for WhatsApp features');
@@ -157,6 +157,7 @@ const validateConfig = () => {
     if (!config.meta.appSecret) {
       errors.push('META_APP_SECRET is required for WhatsApp OAuth');
     }
+    // ✅ CONFIG_ID is optional - removed from required checks
     if (!config.meta.webhookVerifyToken) {
       warnings.push('META_WEBHOOK_VERIFY_TOKEN not set - Webhooks will not work');
     }
@@ -208,10 +209,9 @@ if (process.env.NODE_ENV !== 'test') {
   console.log(`║ JWT Secret:      ${(config.jwt.secret && config.jwt.secret !== 'your-secret-key' ? '✅ Set' : '⚠️ Default').padEnd(28)}║`);
   console.log(`║ Email (SMTP):    ${(config.email.user ? '✅ Configured' : '⚠️ Missing').padEnd(28)}║`);
   console.log('╠════════════════════════════════════════════════╣');
-  console.log('║ Meta/WhatsApp Configuration                    ║');
+  console.log('║ Meta/WhatsApp (Standard OAuth)                 ║');
   console.log(`║ App ID:          ${(config.meta.appId ? '✅ Set' : '❌ Missing').padEnd(28)}║`);
   console.log(`║ App Secret:      ${(config.meta.appSecret ? '✅ Set' : '❌ Missing').padEnd(28)}║`);
-  console.log(`║ Config ID:       ${(config.meta.configId ? '✅ Set' : '⚠️ Optional').padEnd(28)}║`);
   console.log(`║ Redirect URI:    ${config.meta.redirectUri.substring(0, 28).padEnd(28)}║`);
   console.log(`║ Webhook Token:   ${(config.meta.webhookVerifyToken ? '✅ Set' : '⚠️ Missing').padEnd(28)}║`);
   console.log(`║ Graph API:       ${config.meta.graphApiVersion.padEnd(28)}║`);

@@ -20,14 +20,14 @@ interface AuthRequest extends Request {
 
 /**
  * GET /api/v1/meta/auth/url
- * Generate Meta OAuth URL with mode selection
+ * Generate Meta OAuth URL (Standard OAuth)
  */
 export const getAuthUrl = async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user?.organizationId;
     
-    // ✅ Get mode from query param (new/existing/both)
-    const mode = (req.query.mode as string) || 'both';
+    // Optional mode parameter (for future use)
+    const mode = (req.query.mode as string) || 'standard';
 
     if (!organizationId) {
       return sendError(res, 'Organization ID is required', 400);
@@ -48,61 +48,29 @@ export const getAuthUrl = async (req: AuthRequest, res: Response) => {
       })
     ).toString('base64');
 
-    const version = config.meta.graphApiVersion.replace(/^v/, '');
+    const version = config.meta.graphApiVersion?.replace(/^v/, '') || '21.0';
     const redirectUri = encodeURIComponent(
       config.meta.redirectUri || `${config.frontendUrl}/meta/callback`
     );
 
-    // ✅ Base OAuth URL
-    let authUrl = `https://www.facebook.com/v${version}/dialog/oauth` +
+    // ✅ STANDARD OAUTH URL (No config_id for flexibility)
+    const authUrl = `https://www.facebook.com/v${version}/dialog/oauth` +
       `?client_id=${config.meta.appId}` +
       `&redirect_uri=${redirectUri}` +
       `&state=${state}` +
       `&response_type=code` +
-      `&scope=whatsapp_business_management,whatsapp_business_messaging,business_management`;
+      `&scope=whatsapp_business_management,whatsapp_business_messaging,business_management` +
+      `&display=popup`;
 
-    // ✅ MODE-BASED URL GENERATION
-    if (mode === 'new') {
-      // Force new setup with Embedded Signup
-      if (config.meta.configId) {
-        authUrl += `&config_id=${config.meta.configId}`;
-        authUrl += `&extras=${encodeURIComponent(JSON.stringify({
-          setup: {},
-          feature: 'whatsapp_embedded_signup',
-          featureType: 'whatsapp_embedded_signup'
-        }))}`;
-        console.log('🆕 New WhatsApp setup URL (Embedded Signup)');
-      } else {
-        console.warn('⚠️ Config ID not set, falling back to standard OAuth');
-        authUrl += `&display=popup`;
-      }
-      
-    } else if (mode === 'existing') {
-      // Standard OAuth - shows existing accounts
-      // NO config_id - important!
-      authUrl += `&display=popup`;
-      console.log('📱 Existing WhatsApp connection URL');
-      
-    } else {
-      // Default: Standard OAuth (shows both options)
-      // NO config_id - user can choose
-      authUrl += `&display=popup`;
-      authUrl += `&auth_type=rerequest`; // Re-ask for permissions
-      console.log('🔄 Both options URL (Standard OAuth)');
-    }
-
-    console.log('🔗 Generated Meta auth URL:');
+    console.log('🔗 Generated Standard OAuth URL');
     console.log('   Mode:', mode);
     console.log('   Version:', version);
     console.log('   App ID:', config.meta.appId);
-    if (mode === 'new' && config.meta.configId) {
-      console.log('   Config ID:', config.meta.configId);
-    }
     console.log('   Redirect:', config.meta.redirectUri);
 
     sendSuccess(res, { 
       url: authUrl,
-      authUrl,
+      authUrl, // Include both for compatibility
       state,
       mode,
       redirectUri: config.meta.redirectUri
@@ -114,66 +82,13 @@ export const getAuthUrl = async (req: AuthRequest, res: Response) => {
   }
 };
 
-/**
- * GET /api/v1/meta/auth/url/fallback
- * Get fallback URL (Standard OAuth)
- */
-export const getFallbackUrl = async (req: AuthRequest, res: Response) => {
-  try {
-    const organizationId = req.user?.organizationId;
-
-    if (!organizationId) {
-      return sendError(res, 'Organization ID is required', 400);
-    }
-
-    if (!config.meta?.appId) {
-      return sendError(res, 'Meta app not configured', 500);
-    }
-
-    const state = Buffer.from(
-      JSON.stringify({
-        organizationId,
-        timestamp: Date.now(),
-        random: Math.random().toString(36).substring(7),
-        mode: 'standard'
-      })
-    ).toString('base64');
-
-    const version = config.meta.graphApiVersion.replace(/^v/, '');
-    const redirectUri = encodeURIComponent(
-      config.meta.redirectUri || `${config.frontendUrl}/meta/callback`
-    );
-
-    // Standard OAuth Only
-    const authUrl = `https://www.facebook.com/v${version}/dialog/oauth` +
-      `?client_id=${config.meta.appId}` +
-      `&redirect_uri=${redirectUri}` +
-      `&state=${state}` +
-      `&response_type=code` +
-      `&scope=whatsapp_business_management,whatsapp_business_messaging,business_management` +
-      `&display=popup`;
-
-    console.log('🔄 Fallback URL generated (Standard OAuth)');
-
-    sendSuccess(res, { 
-      url: authUrl,
-      state,
-      mode: 'standard'
-    }, 'Fallback URL generated');
-
-  } catch (error: any) {
-    console.error('❌ Get fallback URL error:', error);
-    sendError(res, error.message || 'Failed to generate fallback URL', 500);
-  }
-};
-
 // ============================================
 // OAUTH CALLBACKS
 // ============================================
 
 /**
  * GET /api/v1/meta/callback
- * Handle OAuth callback via redirect
+ * Handle OAuth callback via redirect (from Meta)
  */
 export const handleAuthCallback = async (req: Request, res: Response) => {
   try {
@@ -204,14 +119,14 @@ export const handleAuthCallback = async (req: Request, res: Response) => {
 
     // Decode state to get organization ID
     let organizationId: string;
-    let mode = 'both';
+    let mode = 'standard';
     
     try {
       const decodedState = JSON.parse(
         Buffer.from(state as string, 'base64').toString()
       );
       organizationId = decodedState.organizationId;
-      mode = decodedState.mode || 'both';
+      mode = decodedState.mode || 'standard';
 
       if (!organizationId) {
         throw new Error('Organization ID not found in state');
@@ -244,8 +159,13 @@ export const handleAuthCallback = async (req: Request, res: Response) => {
 };
 
 /**
+ * Alias for handleAuthCallback (for route registration)
+ */
+export const handleCallbackRedirect = handleAuthCallback;
+
+/**
  * POST /api/v1/meta/auth/callback
- * Handle OAuth callback from frontend popup
+ * Handle OAuth callback from frontend (via AJAX)
  */
 export const handleAuthCallbackPost = async (req: AuthRequest, res: Response) => {
   try {
@@ -256,6 +176,7 @@ export const handleAuthCallbackPost = async (req: AuthRequest, res: Response) =>
     console.log('   Organization:', organizationId);
     console.log('   Code:', code ? code.substring(0, 20) + '...' : 'missing');
 
+    // Handle OAuth errors
     if (error) {
       return sendError(res, error_description || error, 400);
     }
@@ -268,6 +189,7 @@ export const handleAuthCallbackPost = async (req: AuthRequest, res: Response) =>
       return sendError(res, 'Organization ID is required', 400);
     }
 
+    // Connect via service
     const connection = await MetaService.connectEmbeddedSignup(
       organizationId,
       code,
@@ -289,7 +211,7 @@ export const handleAuthCallbackPost = async (req: AuthRequest, res: Response) =>
 
 /**
  * POST /api/v1/meta/connect
- * Connect Meta account (Standard Endpoint)
+ * Connect Meta account (main endpoint)
  */
 export const connectMeta = async (req: AuthRequest, res: Response) => {
   try {
@@ -348,6 +270,7 @@ export const getConnectionStatus = async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     console.error('❌ Get connection status error:', error);
 
+    // Handle database timeout gracefully
     if (error.code === 'P2024') {
       return sendError(res, 'Database temporarily unavailable. Please try again.', 503);
     }
@@ -521,7 +444,3 @@ export const sendTestMessage = async (req: AuthRequest, res: Response) => {
     sendError(res, error.message || 'Failed to send test message', 500);
   }
 };
-
-export function handleCallbackRedirect(arg0: string, handleCallbackRedirect: any) {
-  throw new Error('Function not implemented.');
-}
