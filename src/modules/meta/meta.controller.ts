@@ -521,3 +521,7 @@ export const sendTestMessage = async (req: AuthRequest, res: Response) => {
     sendError(res, error.message || 'Failed to send test message', 500);
   }
 };
+
+export function handleCallbackRedirect(arg0: string, handleCallbackRedirect: any) {
+  throw new Error('Function not implemented.');
+}
