@@ -59,28 +59,28 @@ export const config = {
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
   },
   
-  // ✅ Meta/WhatsApp - COMPLETE Configuration
+  // ✅ Meta/WhatsApp - OPTIMIZED Configuration
   meta: {
     // App credentials
     appId: process.env.META_APP_ID || '',
     appSecret: process.env.META_APP_SECRET || '',
     
-    // OAuth - Dynamic redirect URI with fallback
+    // ✅ OAuth redirect URI - Points to frontend callback page
     redirectUri: process.env.META_REDIRECT_URI || 
       `${process.env.FRONTEND_URL || 'https://wabmeta.com'}/meta/callback`,
     
-    // WhatsApp Embedded Signup config ID (from Meta Business)
+    // ✅ Config ID (optional - only needed for Embedded Signup)
     configId: process.env.META_CONFIG_ID || '',
     
-    // API Version - Updated to latest stable
-    graphApiVersion: process.env.META_GRAPH_API_VERSION || 'v21.0',
+    // ✅ API Version - Using latest stable
+    graphApiVersion: process.env.META_GRAPH_API_VERSION || 'v23.0',
     graphApiUrl: process.env.META_GRAPH_API_URL || 'https://graph.facebook.com',
     
-    // Webhooks
+    // ✅ Webhooks - Points to backend webhook endpoint
     webhookVerifyToken: process.env.META_WEBHOOK_VERIFY_TOKEN || '',
-    webhookSecret: process.env.META_WEBHOOK_SECRET || '', // For payload signature verification
+    webhookSecret: process.env.META_WEBHOOK_SECRET || '', // For signature verification
     
-    // Webhook URL (for reference in Meta dashboard)
+    // Webhook URL (for Meta dashboard configuration)
     webhookUrl: process.env.META_WEBHOOK_URL || 
       `${process.env.BACKEND_URL || 'https://wabmeta-api.onrender.com'}/webhooks/meta`,
     
@@ -152,19 +152,28 @@ const validateConfig = () => {
   // Production-specific checks
   if (config.nodeEnv === 'production') {
     if (!config.meta.appId) {
-      warnings.push('META_APP_ID not set - WhatsApp features will not work');
+      errors.push('META_APP_ID is required for WhatsApp features');
     }
     if (!config.meta.appSecret) {
-      warnings.push('META_APP_SECRET not set - WhatsApp OAuth will not work');
+      errors.push('META_APP_SECRET is required for WhatsApp OAuth');
     }
     if (!config.meta.webhookVerifyToken) {
       warnings.push('META_WEBHOOK_VERIFY_TOKEN not set - Webhooks will not work');
     }
-    if (!config.meta.configId) {
-      warnings.push('META_CONFIG_ID not set - Embedded Signup will not work');
-    }
     if (!config.email.user || !config.email.pass) {
       warnings.push('SMTP credentials not set - Email features will not work');
+    }
+  }
+  
+  // ✅ Validate Meta redirect URI format
+  if (config.meta.redirectUri) {
+    try {
+      const url = new URL(config.meta.redirectUri);
+      if (!url.pathname.includes('/meta/callback')) {
+        warnings.push('META_REDIRECT_URI should point to /meta/callback endpoint');
+      }
+    } catch (e) {
+      errors.push('META_REDIRECT_URI is not a valid URL');
     }
   }
   
@@ -199,10 +208,11 @@ if (process.env.NODE_ENV !== 'test') {
   console.log(`║ JWT Secret:      ${(config.jwt.secret && config.jwt.secret !== 'your-secret-key' ? '✅ Set' : '⚠️ Default').padEnd(28)}║`);
   console.log(`║ Email (SMTP):    ${(config.email.user ? '✅ Configured' : '⚠️ Missing').padEnd(28)}║`);
   console.log('╠════════════════════════════════════════════════╣');
-  console.log('║ Meta/WhatsApp                                  ║');
-  console.log(`║ App ID:          ${(config.meta.appId ? '✅ Set' : '⚠️ Missing').padEnd(28)}║`);
-  console.log(`║ App Secret:      ${(config.meta.appSecret ? '✅ Set' : '⚠️ Missing').padEnd(28)}║`);
-  console.log(`║ Config ID:       ${(config.meta.configId ? '✅ Set' : '⚠️ Missing').padEnd(28)}║`);
+  console.log('║ Meta/WhatsApp Configuration                    ║');
+  console.log(`║ App ID:          ${(config.meta.appId ? '✅ Set' : '❌ Missing').padEnd(28)}║`);
+  console.log(`║ App Secret:      ${(config.meta.appSecret ? '✅ Set' : '❌ Missing').padEnd(28)}║`);
+  console.log(`║ Config ID:       ${(config.meta.configId ? '✅ Set' : '⚠️ Optional').padEnd(28)}║`);
+  console.log(`║ Redirect URI:    ${config.meta.redirectUri.substring(0, 28).padEnd(28)}║`);
   console.log(`║ Webhook Token:   ${(config.meta.webhookVerifyToken ? '✅ Set' : '⚠️ Missing').padEnd(28)}║`);
   console.log(`║ Graph API:       ${config.meta.graphApiVersion.padEnd(28)}║`);
   console.log('╠════════════════════════════════════════════════╣');
