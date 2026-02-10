@@ -20,11 +20,14 @@ interface AuthRequest extends Request {
 
 /**
  * GET /api/v1/meta/auth/url
- * Generate Meta OAuth URL for Standard OAuth
+ * Generate Meta OAuth URL with mode selection
  */
 export const getAuthUrl = async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user?.organizationId;
+    
+    // ✅ Get mode from query param (new/existing/both)
+    const mode = (req.query.mode as string) || 'both';
 
     if (!organizationId) {
       return sendError(res, 'Organization ID is required', 400);
@@ -35,48 +38,74 @@ export const getAuthUrl = async (req: AuthRequest, res: Response) => {
       return sendError(res, 'Meta app not configured', 500);
     }
 
-    // ✅ Generate state for CSRF protection
+    // Generate state for CSRF protection
     const state = Buffer.from(
       JSON.stringify({
         organizationId,
         timestamp: Date.now(),
         random: Math.random().toString(36).substring(7),
+        mode
       })
     ).toString('base64');
 
-    // ✅ API Version - Use latest
-    const version = 'v23.0';
+    const version = config.meta.graphApiVersion.replace(/^v/, '');
+    const redirectUri = encodeURIComponent(
+      config.meta.redirectUri || `${config.frontendUrl}/meta/callback`
+    );
 
-    // ✅ Redirect URI
-    const redirectUri = config.meta.redirectUri || `${config.frontendUrl}/meta/callback`;
-
-    // ✅ Scopes
-    const scopes = [
-      'business_management',
-      'whatsapp_business_management',
-      'whatsapp_business_messaging',
-    ].join(',');
-
-    // ✅ Build OAuth URL (Standard - no config_id)
-    const authUrl = 
-      `https://www.facebook.com/${version}/dialog/oauth` +
+    // ✅ Base OAuth URL
+    let authUrl = `https://www.facebook.com/v${version}/dialog/oauth` +
       `?client_id=${config.meta.appId}` +
-      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-      `&response_type=code` +
-      `&scope=${encodeURIComponent(scopes)}` +
+      `&redirect_uri=${redirectUri}` +
       `&state=${state}` +
-      `&display=popup`;
+      `&response_type=code` +
+      `&scope=whatsapp_business_management,whatsapp_business_messaging,business_management`;
 
-    console.log('🔗 Standard OAuth URL generated:');
+    // ✅ MODE-BASED URL GENERATION
+    if (mode === 'new') {
+      // Force new setup with Embedded Signup
+      if (config.meta.configId) {
+        authUrl += `&config_id=${config.meta.configId}`;
+        authUrl += `&extras=${encodeURIComponent(JSON.stringify({
+          setup: {},
+          feature: 'whatsapp_embedded_signup',
+          featureType: 'whatsapp_embedded_signup'
+        }))}`;
+        console.log('🆕 New WhatsApp setup URL (Embedded Signup)');
+      } else {
+        console.warn('⚠️ Config ID not set, falling back to standard OAuth');
+        authUrl += `&display=popup`;
+      }
+      
+    } else if (mode === 'existing') {
+      // Standard OAuth - shows existing accounts
+      // NO config_id - important!
+      authUrl += `&display=popup`;
+      console.log('📱 Existing WhatsApp connection URL');
+      
+    } else {
+      // Default: Standard OAuth (shows both options)
+      // NO config_id - user can choose
+      authUrl += `&display=popup`;
+      authUrl += `&auth_type=rerequest`; // Re-ask for permissions
+      console.log('🔄 Both options URL (Standard OAuth)');
+    }
+
+    console.log('🔗 Generated Meta auth URL:');
+    console.log('   Mode:', mode);
+    console.log('   Version:', version);
     console.log('   App ID:', config.meta.appId);
-    console.log('   Redirect:', redirectUri);
-    console.log('   Scopes:', scopes);
+    if (mode === 'new' && config.meta.configId) {
+      console.log('   Config ID:', config.meta.configId);
+    }
+    console.log('   Redirect:', config.meta.redirectUri);
 
     sendSuccess(res, { 
       url: authUrl,
       authUrl,
       state,
-      redirectUri,
+      mode,
+      redirectUri: config.meta.redirectUri
     }, 'Auth URL generated successfully');
 
   } catch (error: any) {
@@ -109,25 +138,27 @@ export const handleAuthCallback = async (req: Request, res: Response) => {
         String(error_description || error || 'Authorization denied')
       );
       return res.redirect(
-        `${config.frontendUrl}/dashboard/settings?error=${errorMsg}`
+        `${config.frontendUrl}/dashboard/settings?tab=whatsapp&error=${errorMsg}`
       );
     }
 
     if (!code || !state) {
       console.error('❌ Missing code or state in callback');
       return res.redirect(
-        `${config.frontendUrl}/dashboard/settings?error=missing_params`
+        `${config.frontendUrl}/dashboard/settings?tab=whatsapp&error=missing_params`
       );
     }
 
     // Decode state to get organization ID
     let organizationId: string;
+    let mode = 'both';
     
     try {
       const decodedState = JSON.parse(
         Buffer.from(state as string, 'base64').toString()
       );
       organizationId = decodedState.organizationId;
+      mode = decodedState.mode || 'both';
 
       if (!organizationId) {
         throw new Error('Organization ID not found in state');
@@ -135,11 +166,11 @@ export const handleAuthCallback = async (req: Request, res: Response) => {
     } catch (e) {
       console.error('❌ Failed to decode state:', e);
       return res.redirect(
-        `${config.frontendUrl}/dashboard/settings?error=invalid_state`
+        `${config.frontendUrl}/dashboard/settings?tab=whatsapp&error=invalid_state`
       );
     }
 
-    console.log('🔗 Processing OAuth redirect for org:', organizationId);
+    console.log(`🔗 Processing ${mode} OAuth redirect for org:`, organizationId);
 
     // Connect Meta account
     await MetaService.connectEmbeddedSignup(
@@ -155,7 +186,7 @@ export const handleAuthCallback = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('❌ Callback redirect error:', error);
     const errorMsg = encodeURIComponent(error.message || 'Connection failed');
-    res.redirect(`${config.frontendUrl}/dashboard/settings?error=${errorMsg}`);
+    res.redirect(`${config.frontendUrl}/dashboard/settings?tab=whatsapp&error=${errorMsg}`);
   }
 };
 
