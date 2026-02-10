@@ -5,9 +5,30 @@ import { config } from '../../config';
 import { AppError } from '../../middleware/errorHandler';
 import { MetaGraphAPI } from './meta.api';
 
+// Helper function to format connection response
+function formatConnectionResponse(connection: any) {
+  return {
+    id: connection.id,
+    organizationId: connection.organizationId,
+    wabaId: connection.wabaId,
+    wabaName: connection.wabaName,
+    status: connection.status,
+    phoneNumbers: (connection.phoneNumbers || []).map((p: any) => ({
+      id: p.id,
+      phoneNumberId: p.phoneNumberId,
+      phoneNumber: p.phoneNumber,
+      displayName: p.displayName,
+      isPrimary: p.isPrimary,
+      isActive: p.isActive,
+    })),
+    lastSyncedAt: connection.lastSyncedAt,
+    webhookVerified: connection.webhookVerified,
+  };
+}
+
 export class MetaService {
   /**
-   * ✅ Connect via Embedded Signup (WITH DUPLICATE PREVENTION)
+   * ✅ Connect via Embedded Signup (WITH DUPLICATE PREVENTION & UPSERT)
    */
   static async connectEmbeddedSignup(
     organizationId: string,
@@ -22,35 +43,26 @@ export class MetaService {
       // ✅ CHECK: If already connected recently (within last 5 minutes)
       const existingConnection = await prisma.metaConnection.findUnique({
         where: { organizationId },
-        include: { phoneNumbers: true }
+        include: { 
+          phoneNumbers: { 
+            where: { isActive: true },
+            orderBy: { isPrimary: 'desc' }
+          } 
+        }
       });
 
-      if (existingConnection && 
-          existingConnection.status === 'CONNECTED' &&
-          existingConnection.lastSyncedAt &&
-          (Date.now() - existingConnection.lastSyncedAt.getTime()) < 5 * 60 * 1000) {
+      if (existingConnection?.status === 'CONNECTED' && 
+          existingConnection.phoneNumbers.length > 0) {
         
-        console.log('✅ Already connected recently, returning existing connection');
-        console.log('   Last synced:', existingConnection.lastSyncedAt);
-        console.log('   Phone numbers:', existingConnection.phoneNumbers.length);
+        const lastSync = existingConnection.lastSyncedAt?.getTime() || 0;
+        const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
         
-        return {
-          id: existingConnection.id,
-          organizationId: existingConnection.organizationId,
-          wabaId: existingConnection.wabaId,
-          wabaName: existingConnection.wabaName,
-          status: existingConnection.status,
-          phoneNumbers: existingConnection.phoneNumbers.map(phone => ({
-            id: phone.id,
-            phoneNumberId: phone.phoneNumberId,
-            phoneNumber: phone.phoneNumber,
-            displayName: phone.displayName,
-            isPrimary: phone.isPrimary,
-            isActive: phone.isActive,
-          })),
-          lastSyncedAt: existingConnection.lastSyncedAt,
-          webhookVerified: existingConnection.webhookVerified,
-        };
+        if (lastSync > fiveMinutesAgo) {
+          console.log('✅ Already connected recently, returning existing connection');
+          console.log('   Last synced:', existingConnection.lastSyncedAt);
+          console.log('   Phone numbers:', existingConnection.phoneNumbers.length);
+          return formatConnectionResponse(existingConnection);
+        }
       }
 
       // Initialize Meta API
@@ -155,71 +167,62 @@ export class MetaService {
 
       console.log(`✅ Found ${phoneNumbers.length} phone number(s)`);
 
-      // 7. Save to database using transaction
+      // 7. Save to database using transaction with UPSERT
       console.log('💾 Saving Meta connection to database...');
 
       const result = await prisma.$transaction(async (tx) => {
-        // Check if connection already exists
-        const existingConnection = await tx.metaConnection.findUnique({
-          where: { organizationId }
+        // ✅ UPSERT MetaConnection
+        const metaConnection = await tx.metaConnection.upsert({
+          where: { organizationId },
+          update: {
+            accessToken,
+            accessTokenExpiresAt: tokenExpiresAt,
+            wabaId,
+            wabaName: wabaDetails.name || null,
+            businessId: wabaDetails.owner_business_info?.id || null,
+            status: 'CONNECTED',
+            lastSyncedAt: new Date(),
+            errorMessage: null,
+            webhookVerified: true,
+            messagingLimit: wabaDetails.messaging_limit_tier || null,
+            qualityRating: wabaDetails.quality_rating || null,
+          },
+          create: {
+            organizationId,
+            accessToken,
+            accessTokenExpiresAt: tokenExpiresAt,
+            wabaId,
+            wabaName: wabaDetails.name || null,
+            businessId: wabaDetails.owner_business_info?.id || null,
+            status: 'CONNECTED',
+            lastSyncedAt: new Date(),
+            webhookVerified: true,
+            messagingLimit: wabaDetails.messaging_limit_tier || null,
+            qualityRating: wabaDetails.quality_rating || null,
+          },
         });
 
-        let metaConnection;
+        console.log('✅ MetaConnection saved:', metaConnection.id);
 
-        if (existingConnection) {
-          console.log('🔄 Updating existing Meta connection...');
-          
-          // Delete old phone numbers first
-          await tx.phoneNumber.deleteMany({
-            where: { metaConnectionId: existingConnection.id }
-          });
-          
-          // Update connection
-          metaConnection = await tx.metaConnection.update({
-            where: { organizationId },
-            data: {
-              accessToken,
-              accessTokenExpiresAt: tokenExpiresAt,
-              wabaId,
-              wabaName: wabaDetails.name || null,
-              businessId: wabaDetails.owner_business_info?.id || null,
-              status: 'CONNECTED',
-              lastSyncedAt: new Date(),
-              errorMessage: null,
-              webhookVerified: true,
-              messagingLimit: wabaDetails.messaging_limit_tier || null,
-              qualityRating: wabaDetails.quality_rating || null,
-            },
-          });
-        } else {
-          console.log('✨ Creating new Meta connection...');
-          
-          metaConnection = await tx.metaConnection.create({
-            data: {
-              organizationId,
-              accessToken,
-              accessTokenExpiresAt: tokenExpiresAt,
-              wabaId,
-              wabaName: wabaDetails.name || null,
-              businessId: wabaDetails.owner_business_info?.id || null,
-              status: 'CONNECTED',
-              lastSyncedAt: new Date(),
-              webhookVerified: true,
-              messagingLimit: wabaDetails.messaging_limit_tier || null,
-              qualityRating: wabaDetails.quality_rating || null,
-            },
-          });
-        }
-
-        // 8. Save phone numbers
-        console.log('💾 Saving phone numbers...');
+        // 8. ✅ UPSERT phone numbers (prevents duplicate key errors)
+        console.log('💾 Upserting phone numbers...');
         
         const savedPhoneNumbers = [];
         for (let i = 0; i < phoneNumbers.length; i++) {
           const phone = phoneNumbers[i];
           
-          const savedPhone = await tx.phoneNumber.create({
-            data: {
+          const savedPhone = await tx.phoneNumber.upsert({
+            where: { phoneNumberId: phone.id },
+            update: {
+              metaConnectionId: metaConnection.id,
+              phoneNumber: phone.display_phone_number || phone.verified_name || '',
+              displayName: phone.verified_name || null,
+              qualityRating: phone.quality_rating || null,
+              verifiedName: phone.verified_name || null,
+              isActive: true,
+              isPrimary: i === 0,
+            },
+            create: {
               metaConnectionId: metaConnection.id,
               phoneNumberId: phone.id,
               phoneNumber: phone.display_phone_number || phone.verified_name || '',
@@ -232,10 +235,10 @@ export class MetaService {
           });
           
           savedPhoneNumbers.push(savedPhone);
-          console.log(`   ✅ Saved phone: ${phone.display_phone_number || phone.id}`);
+          console.log(`   ✅ Phone upserted: ${phone.display_phone_number || phone.id}`);
         }
 
-        // ✅ Create/Update WhatsAppAccount for backward compatibility
+        // ✅ UPSERT WhatsAppAccount for backward compatibility
         if (savedPhoneNumbers.length > 0) {
           const primaryPhone = savedPhoneNumbers[0];
           
@@ -294,28 +297,29 @@ export class MetaService {
       console.log('   WABA ID:', result.metaConnection.wabaId);
       console.log('   Phone Count:', result.phoneNumbers.length);
 
-      // Return formatted response
-      return {
-        id: result.metaConnection.id,
-        organizationId: result.metaConnection.organizationId,
-        wabaId: result.metaConnection.wabaId,
-        wabaName: result.metaConnection.wabaName,
-        status: result.metaConnection.status,
-        phoneNumbers: result.phoneNumbers.map(phone => ({
-          id: phone.id,
-          phoneNumberId: phone.phoneNumberId,
-          phoneNumber: phone.phoneNumber,
-          displayName: phone.displayName,
-          isPrimary: phone.isPrimary,
-          isActive: phone.isActive,
-        })),
-        lastSyncedAt: result.metaConnection.lastSyncedAt,
-        webhookVerified: result.metaConnection.webhookVerified,
-      };
+      return formatConnectionResponse({
+        ...result.metaConnection,
+        phoneNumbers: result.phoneNumbers,
+      });
 
     } catch (error: any) {
       console.error('❌ Meta connection error:', error);
       console.error('Error stack:', error.stack);
+
+      // ✅ Handle Prisma unique constraint errors
+      if (error.code === 'P2002' || error.message?.includes('Unique constraint')) {
+        console.log('⚠️ Duplicate key error, fetching existing connection...');
+        
+        const existing = await prisma.metaConnection.findUnique({
+          where: { organizationId },
+          include: { phoneNumbers: { where: { isActive: true } } }
+        });
+
+        if (existing?.status === 'CONNECTED') {
+          console.log('✅ Returning existing connection');
+          return formatConnectionResponse(existing);
+        }
+      }
 
       // ✅ Handle "code already used" error gracefully
       if (error.message?.includes('authorization code has been used') ||
@@ -324,32 +328,14 @@ export class MetaService {
         
         console.log('⚠️ Code already used, checking if connection exists...');
         
-        // Check if connection was created
         const existingConnection = await prisma.metaConnection.findUnique({
           where: { organizationId },
-          include: { phoneNumbers: true }
+          include: { phoneNumbers: { where: { isActive: true } } }
         });
 
         if (existingConnection && existingConnection.status === 'CONNECTED') {
           console.log('✅ Connection exists despite error, returning it');
-          
-          return {
-            id: existingConnection.id,
-            organizationId: existingConnection.organizationId,
-            wabaId: existingConnection.wabaId,
-            wabaName: existingConnection.wabaName,
-            status: existingConnection.status,
-            phoneNumbers: existingConnection.phoneNumbers.map(phone => ({
-              id: phone.id,
-              phoneNumberId: phone.phoneNumberId,
-              phoneNumber: phone.phoneNumber,
-              displayName: phone.displayName,
-              isPrimary: phone.isPrimary,
-              isActive: phone.isActive,
-            })),
-            lastSyncedAt: existingConnection.lastSyncedAt,
-            webhookVerified: existingConnection.webhookVerified,
-          };
+          return formatConnectionResponse(existingConnection);
         }
         
         throw new AppError(
@@ -390,13 +376,12 @@ export class MetaService {
   }
 
   /**
-   * ✅ Get current Meta connection status (UPDATED)
+   * ✅ Get current Meta connection status
    */
   static async getConnectionStatus(organizationId: string) {
     try {
       console.log('🔍 Checking connection status for org:', organizationId);
 
-      // Check MetaConnection first
       const connection = await prisma.metaConnection.findUnique({
         where: { organizationId },
         include: {
@@ -407,7 +392,6 @@ export class MetaService {
         }
       });
 
-      // ✅ Also check WhatsAppAccount for backward compatibility
       const whatsappAccounts = await prisma.whatsAppAccount.findMany({
         where: { 
           organizationId,
@@ -428,11 +412,9 @@ export class MetaService {
       console.log('   MetaConnection:', connection ? 'Found' : 'Not found');
       console.log('   WhatsApp Accounts:', whatsappAccounts.length);
 
-      // ✅ If WhatsApp accounts exist, we're connected!
       if (whatsappAccounts.length > 0) {
         console.log('✅ Found', whatsappAccounts.length, 'connected WhatsApp account(s)');
         
-        // If MetaConnection has error but WhatsApp accounts exist, fix it
         if (connection && connection.status === 'ERROR') {
           await prisma.metaConnection.update({
             where: { organizationId },
@@ -460,9 +442,7 @@ export class MetaService {
         };
       }
 
-      // Check MetaConnection
       if (connection) {
-        // Check token expiry
         if (connection.accessTokenExpiresAt && connection.accessTokenExpiresAt < new Date()) {
           await prisma.metaConnection.update({
             where: { organizationId },
@@ -496,7 +476,6 @@ export class MetaService {
         };
       }
 
-      // No connection found
       console.log('⚠️ No connection found');
       return {
         isConnected: false,
@@ -510,7 +489,6 @@ export class MetaService {
     } catch (error: any) {
       console.error('❌ Get connection status error:', error);
       
-      // ✅ On error, still try to check WhatsApp accounts (fallback)
       try {
         const whatsappAccounts = await prisma.whatsAppAccount.findMany({
           where: { 
@@ -548,8 +526,8 @@ export class MetaService {
     }
   }
 
-  // ... rest of the methods remain the same ...
-  
+  // ... (rest of the methods remain exactly the same)
+
   static async getPhoneNumbers(organizationId: string) {
     const connection = await prisma.metaConnection.findUnique({
       where: { organizationId },
