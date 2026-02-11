@@ -1,12 +1,16 @@
 // src/app.ts
 
-import express, { Express, Request, Response, NextFunction } from 'express';
+import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
+import crypto from 'crypto';
 import { config } from './config';
+import prisma from './config/database';
+import { rateLimit, authRateLimit } from './middleware/rateLimit';
+import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 
 // ============================================
 // IMPORT ROUTES (Only existing ones)
@@ -34,29 +38,26 @@ app.set('trust proxy', 1);
 // ============================================
 // CORS CONFIGURATION
 // ============================================
+const normalizeOrigin = (o?: string | null) => (o || '').replace(/\/$/, '');
+const allowedOrigins = Array.from(
+  new Set((config.frontend?.corsOrigins || []).map(normalizeOrigin))
+).filter(Boolean);
+
 const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:5173',
-      'http://localhost:5174',
-      'https://wabmeta.com',
-      'https://www.wabmeta.com',
-      config.frontendUrl,
-    ];
-
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.includes(origin)) {
+
+    const normalized = normalizeOrigin(origin);
+    if (allowedOrigins.includes(normalized)) {
       return callback(null, true);
     }
-    
+
     // In development, allow all
     if (config.nodeEnv === 'development') {
       return callback(null, true);
     }
-    
+
     callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
@@ -101,20 +102,41 @@ app.post('/webhooks/meta',
   express.raw({ type: 'application/json', limit: '10mb' }),
   async (req: Request, res: Response) => {
     try {
-      // Respond immediately to Meta
+      // Verify signature
+      const signature = req.header('x-hub-signature-256') || '';
+      const body = req.body as Buffer;
+      const appSecret = config.meta.appSecret || process.env.META_APP_SECRET || '';
+
+      if (!appSecret) {
+        console.error('Webhook Error: META_APP_SECRET missing');
+        return res.sendStatus(500);
+      }
+
+      const expected = 'sha256=' + crypto.createHmac('sha256', appSecret).update(body).digest('hex');
+      let valid = false;
+      try {
+        valid = signature.length === expected.length && crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+      } catch {
+        valid = false;
+      }
+
+      if (!valid) {
+        console.warn('Webhook Error: Invalid signature');
+        return res.sendStatus(403);
+      }
+
+      // Acknowledge first
       res.sendStatus(200);
 
       // Process asynchronously
-      const payload = JSON.parse(req.body.toString());
-      
-      // Import webhook service dynamically to avoid circular deps
+      const payload = JSON.parse(body.toString());
       const { webhookService } = await import('./modules/webhooks/webhook.service');
       setImmediate(() => {
         webhookService.processWebhook(payload).catch(console.error);
       });
     } catch (error) {
       console.error('Webhook Error:', error);
-      return res.sendStatus(200); // Still return 200 to prevent retries
+      return res.sendStatus(200); // Avoid retries on unexpected errors
     }
   }
 );
@@ -126,6 +148,12 @@ app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
+
+// ============================================
+// RATE LIMITING
+// ============================================
+app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: config.rateLimit.max }));
+app.use('/api/auth', authRateLimit);
 
 // ============================================
 // LOGGING MIDDLEWARE
@@ -150,12 +178,8 @@ app.get('/', (req: Request, res: Response) => {
 
 app.get('/health', async (req: Request, res: Response) => {
   try {
-    const { PrismaClient } = await import('@prisma/client');
-    const prisma = new PrismaClient();
-    
-    // Check database
+    // Check database with shared prisma
     await prisma.$queryRaw`SELECT 1`;
-    await prisma.$disconnect();
 
     res.json({
       status: 'healthy',
@@ -210,50 +234,9 @@ try {
 // ============================================
 
 // 404 Handler
-app.use((req: Request, res: Response) => {
-  res.status(404).json({
-    success: false,
-    message: `Route ${req.method} ${req.path} not found`,
-  });
-});
+app.use(notFoundHandler);
 
 // Global Error Handler
-app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-  const status = err.status || err.statusCode || 500;
-  const message = err.message || 'Internal Server Error';
-
-  console.error('Error:', {
-    status,
-    message,
-    stack: config.nodeEnv === 'development' ? err.stack : undefined,
-    path: req.path,
-    method: req.method,
-  });
-
-  res.status(status).json({
-    success: false,
-    message,
-    ...(config.nodeEnv === 'development' && { stack: err.stack }),
-  });
-});
-
-// ============================================
-// GRACEFUL SHUTDOWN
-// ============================================
-process.on('SIGTERM', async () => {
-  console.log('SIGTERM received, closing server...');
-  const { PrismaClient } = await import('@prisma/client');
-  const prisma = new PrismaClient();
-  await prisma.$disconnect();
-  process.exit(0);
-});
-
-process.on('SIGINT', async () => {
-  console.log('SIGINT received, closing server...');
-  const { PrismaClient } = await import('@prisma/client');
-  const prisma = new PrismaClient();
-  await prisma.$disconnect();
-  process.exit(0);
-});
+app.use(errorHandler);
 
 export default app;

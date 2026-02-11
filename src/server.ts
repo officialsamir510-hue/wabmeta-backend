@@ -4,9 +4,7 @@ import http from 'http';
 import app from './app';
 import { config } from './config';
 import { initializeSocket } from './socket';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from './config/database';
 
 async function bootstrap() {
   try {

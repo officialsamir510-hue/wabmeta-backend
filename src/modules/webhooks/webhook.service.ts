@@ -1,10 +1,9 @@
 // src/modules/webhooks/webhook.service.ts
 
-import { PrismaClient, MessageStatus, MessageDirection, MessageType } from '@prisma/client';
+import { MessageStatus, MessageDirection, MessageType } from '@prisma/client';
 import { decrypt } from '../../utils/encryption';
 import { EventEmitter } from 'events';
-
-const prisma = new PrismaClient();
+import prisma from '../../config/database';
 
 export const webhookEvents = new EventEmitter();
 
