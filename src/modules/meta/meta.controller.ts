@@ -20,14 +20,14 @@ interface AuthRequest extends Request {
 
 /**
  * GET /api/v1/meta/auth/url
- * Generate Meta OAuth URL (Standard OAuth)
+ * Generate Meta OAuth URL (BotBee-Style with Embedded Signup)
  */
 export const getAuthUrl = async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user?.organizationId;
     
-    // Optional mode parameter (for future use)
-    const mode = (req.query.mode as string) || 'standard';
+    // Optional mode parameter
+    const mode = (req.query.mode as string) || 'embedded';
 
     if (!organizationId) {
       return sendError(res, 'Organization ID is required', 400);
@@ -36,6 +36,12 @@ export const getAuthUrl = async (req: AuthRequest, res: Response) => {
     if (!config.meta?.appId) {
       console.error('❌ Meta app ID missing');
       return sendError(res, 'Meta app not configured', 500);
+    }
+
+    // Check for config ID when using embedded mode
+    if (mode === 'embedded' && !config.meta?.configId) {
+      console.error('❌ Meta config ID missing for embedded signup');
+      return sendError(res, 'Meta embedded signup not configured', 500);
     }
 
     // Generate state for CSRF protection
@@ -48,21 +54,48 @@ export const getAuthUrl = async (req: AuthRequest, res: Response) => {
       })
     ).toString('base64');
 
-    const version = config.meta.graphApiVersion?.replace(/^v/, '') || '21.0';
+    const version = 'v23.0'; // Latest version for embedded signup
     const redirectUri = encodeURIComponent(
       config.meta.redirectUri || `${config.frontendUrl}/meta/callback`
     );
 
-    // ✅ STANDARD OAUTH URL (No config_id for flexibility)
-    const authUrl = `https://www.facebook.com/v${version}/dialog/oauth` +
-      `?client_id=${config.meta.appId}` +
-      `&redirect_uri=${redirectUri}` +
-      `&state=${state}` +
-      `&response_type=code` +
-      `&scope=whatsapp_business_management,whatsapp_business_messaging,business_management` +
-      `&display=popup`;
+    let authUrl: string;
 
-    console.log('🔗 Generated Standard OAuth URL');
+    if (mode === 'embedded') {
+      // ✅ EMBEDDED SIGNUP URL (BotBee-Style with magic parameters)
+      const extras = JSON.stringify({
+        version: 3,
+        feature: "whatsapp_embedded_signup",
+        featureType: "whatsapp_business_app_onboarding",
+        sessionInfoVersion: "3"
+      });
+
+      authUrl = `https://www.facebook.com/${version}/dialog/oauth` +
+        `?client_id=${config.meta.appId}` +
+        `&redirect_uri=${redirectUri}` +
+        `&state=${state}` +
+        `&response_type=code` +
+        `&config_id=${config.meta.configId}` + // ✅ Config ID required for embedded
+        `&extras=${encodeURIComponent(extras)}` + // ✅ Magic extras for embedded signup
+        `&scope=whatsapp_business_management,whatsapp_business_messaging,business_management` +
+        `&display=popup`; // ✅ Popup mode for embedded
+
+      console.log('🔗 Generated Embedded Signup URL (BotBee-Style)');
+      console.log('   Config ID:', config.meta.configId);
+      console.log('   Extras:', extras);
+    } else {
+      // Standard OAuth URL (fallback)
+      authUrl = `https://www.facebook.com/${version}/dialog/oauth` +
+        `?client_id=${config.meta.appId}` +
+        `&redirect_uri=${redirectUri}` +
+        `&state=${state}` +
+        `&response_type=code` +
+        `&scope=whatsapp_business_management,whatsapp_business_messaging,business_management` +
+        `&display=popup`;
+
+      console.log('🔗 Generated Standard OAuth URL');
+    }
+
     console.log('   Mode:', mode);
     console.log('   Version:', version);
     console.log('   App ID:', config.meta.appId);
@@ -73,7 +106,8 @@ export const getAuthUrl = async (req: AuthRequest, res: Response) => {
       authUrl, // Include both for compatibility
       state,
       mode,
-      redirectUri: config.meta.redirectUri
+      redirectUri: config.meta.redirectUri,
+      isEmbedded: mode === 'embedded'
     }, 'Auth URL generated successfully');
 
   } catch (error: any) {
