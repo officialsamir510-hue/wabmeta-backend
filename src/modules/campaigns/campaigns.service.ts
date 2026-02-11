@@ -237,7 +237,8 @@ export class CampaignsService {
       waAccount = await prisma.whatsAppAccount.findFirst({
         where: {
           organizationId,
-          status: { in: ['CONNECTED', 'ACTIVE', 'VERIFIED'] },
+          // ✅ Fixed - only use valid enum values
+        status: 'CONNECTED',
         },
         orderBy: [
           { isDefault: 'desc' },
