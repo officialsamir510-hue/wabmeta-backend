@@ -1,64 +1,92 @@
 // src/utils/response.ts
-
 import { Response } from 'express';
 
-interface ApiResponse<T = any> {
+export interface ApiResponse<T = any> {
   success: boolean;
   message?: string;
   data?: T;
-  error?: string;
+  error?: any;
   errors?: any[];
-  meta?: PaginationMeta;
+  meta?: {
+    page?: number;
+    limit?: number;
+    total?: number;
+    totalPages?: number;
+  };
 }
 
-interface PaginationMeta {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
-}
-
-export const sendSuccess = <T>(
+export const successResponse = <T = any>(
   res: Response,
-  data: T,
-  message: string = 'Success',
-  statusCode: number = 200
-): void => {
-  res.status(statusCode).json({
-    success: true,
-    message,
-    data,
-  });
-};
+  options: {
+    data?: T;
+    message?: string;
+    meta?: any;
+    statusCode?: number;
+  }
+): Response => {
+  const { data, message = 'Success', meta, statusCode = 200 } = options;
 
-export const sendPaginated = <T>(
-  res: Response,
-  data: T[],
-  meta: PaginationMeta,
-  message: string = 'Success'
-): void => {
-  res.status(200).json({
+  const response: ApiResponse<T> = {
     success: true,
     message,
     data,
     meta,
-  });
-};
-
-export const sendError = (
-  res: Response,
-  message: string = 'Error',
-  statusCode: number = 500,
-  errors?: any[]
-): void => {
-  const response: ApiResponse = {
-    success: false,
-    error: message,
   };
 
-  if (errors) {
-    response.errors = errors;
-  }
+  return res.status(statusCode).json(response);
+};
 
-  res.status(statusCode).json(response);
+export const errorResponse = (
+  res: Response,
+  message: string = 'An error occurred',
+  statusCode: number = 400,
+  error?: any
+): Response => {
+  const response: ApiResponse = {
+    success: false,
+    message,
+    error: error?.message || error,
+  };
+
+  return res.status(statusCode).json(response);
+};
+
+export const validationErrorResponse = (
+  res: Response,
+  errors: any[]
+): Response => {
+  const response: ApiResponse = {
+    success: false,
+    message: 'Validation failed',
+    errors,
+  };
+
+  return res.status(422).json(response);
+};
+
+export const paginatedResponse = <T = any>(
+  res: Response,
+  options: {
+    data: T[];
+    page: number;
+    limit: number;
+    total: number;
+    message?: string;
+  }
+): Response => {
+  const { data, page, limit, total, message = 'Success' } = options;
+
+  const response: ApiResponse<T[]> = {
+    success: true,
+    message,
+    data,
+    meta: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
+  };
+
+  return res.status(200).json(response);
 };
