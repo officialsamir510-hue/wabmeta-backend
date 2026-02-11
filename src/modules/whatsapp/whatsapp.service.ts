@@ -1,725 +1,495 @@
 // src/modules/whatsapp/whatsapp.service.ts
 
-import prisma from "../../config/database";
-import { config } from "../../config";
-import { AppError } from "../../middleware/errorHandler";
-import { whatsappApi } from "./whatsapp.api";
-import { MessageType } from "@prisma/client";
+import { PrismaClient, MessageStatus, MessageDirection, MessageType } from '@prisma/client';
+import { metaApi } from '../meta/meta.api';
+import { decrypt } from '../../utils/encryption';
 
-export class WhatsAppService {
-  getConnectionStatus: any;
-  processWebhook: any;
-  // ============================================
-  // CONNECT ACCOUNT (OAuth)
-  // ============================================
-  async connectAccount(organizationId: string, code: string, redirectUri: string) {
-    if (!config.meta.appId || !config.meta.appSecret) {
-      throw new AppError("Meta app credentials missing on server", 500);
-    }
+const prisma = new PrismaClient();
 
-    console.log("🔄 Exchanging OAuth code for token...");
-    const shortTokenRes = await whatsappApi.exchangeCodeForToken(code, redirectUri);
-    const shortToken = shortTokenRes.access_token;
+interface SendMessageOptions {
+  accountId: string;
+  to: string;
+  type: 'text' | 'template' | 'image' | 'document' | 'video' | 'audio';
+  content: any;
+  conversationId?: string;
+}
 
-    let accessToken = shortToken;
-    let tokenExpiresAt: Date | null = null;
+interface SendTemplateOptions {
+  accountId: string;
+  to: string;
+  templateName: string;
+  templateLanguage: string;
+  components?: any[];
+  conversationId?: string;
+}
 
-    try {
-      console.log("🔄 Exchanging for long-lived token...");
-      const longTokenRes = await whatsappApi.exchangeForLongLivedToken(shortToken);
-      accessToken = longTokenRes.access_token;
-      if (longTokenRes.expires_in) {
-        tokenExpiresAt = new Date(Date.now() + longTokenRes.expires_in * 1000);
-        console.log("✅ Got long-lived token, expires:", tokenExpiresAt);
-      }
-    } catch (e: any) {
-      console.warn("⚠️ Could not get long-lived token, using short-lived:", e?.message);
-      if (shortTokenRes.expires_in) {
-        tokenExpiresAt = new Date(Date.now() + shortTokenRes.expires_in * 1000);
-      }
-    }
-
-    // Verify token & permissions
-    try {
-      const me = await whatsappApi.getMe(accessToken);
-      const debug = await whatsappApi.debugToken(accessToken);
-
-      console.log("✅ META /me:", me);
-      
-      const scopes: string[] = debug?.data?.scopes || [];
-      const requiredScopes = [
-        "business_management",
-        "whatsapp_business_management",
-        "whatsapp_business_messaging",
-      ];
-      const hasRequiredScope = requiredScopes.some((scope) => scopes.includes(scope));
-
-      if (!hasRequiredScope) {
-        throw new AppError(
-          `Meta token missing required permissions. Current scopes: [${scopes.join(", ")}].`,
-          400
-        );
-      }
-    } catch (e: any) {
-      if (e instanceof AppError) throw e;
-      throw new AppError(`Token validation failed: ${e?.message}`, 400);
-    }
-
-    // Fetch businesses & WABAs
-    console.log("🔄 Fetching user businesses...");
-    const businesses = await whatsappApi.getUserBusinesses(accessToken);
-    
-    if (!businesses.length) {
-      throw new AppError("No Meta Business found for this user.", 400);
-    }
-
-    let waba: any = null;
-    let phone: any = null;
-
-    for (const b of businesses) {
-      const wabas = await whatsappApi.getOwnedWabas(b.id, accessToken);
-      if (!wabas.length) continue;
-
-      for (const w of wabas) {
-        const phones = await whatsappApi.getWabaPhoneNumbers(w.id, accessToken);
-        if (phones.length) {
-          waba = w;
-          phone = phones[0];
-          break;
-        }
-      }
-      if (waba && phone) break;
-    }
-
-    if (!waba || !phone) {
-      throw new AppError("No WhatsApp Business Account or Phone Number found.", 400);
-    }
-
-    // Subscribe app to WABA webhooks
-    try {
-      await whatsappApi.subscribeAppToWaba(waba.id, accessToken);
-      console.log("✅ App subscribed to WABA webhooks");
-    } catch (e: any) {
-      console.warn("⚠️ Failed to subscribe app to WABA:", e?.message);
-    }
-
-    // Upsert account in DB
-    const account = await prisma.whatsAppAccount.upsert({
-      where: { phoneNumberId: String(phone.id) },
-      update: {
-        organizationId,
-        wabaId: String(waba.id),
-        phoneNumber: String(phone.display_phone_number || phone.phone_number || ""),
-        displayName: String(phone.verified_name || phone.name || "WhatsApp"),
-        accessToken,
-        tokenExpiresAt,
-        status: "CONNECTED",
-        isDefault: true,
-      },
-      create: {
-        organizationId,
-        phoneNumberId: String(phone.id),
-        wabaId: String(waba.id),
-        phoneNumber: String(phone.display_phone_number || phone.phone_number || ""),
-        displayName: String(phone.verified_name || phone.name || "WhatsApp"),
-        accessToken,
-        tokenExpiresAt,
-        status: "CONNECTED",
-        isDefault: true,
-      },
-    });
-
-    return account;
-  }
-
-  // ============================================
-  // DISCONNECT ACCOUNT
-  // ============================================
-  async disconnectAccount(organizationId: string, accountId: string) {
-    const account = await prisma.whatsAppAccount.findFirst({
-      where: { id: accountId, organizationId },
-    });
-
-    if (!account) throw new AppError("WhatsApp account not found", 404);
-
-    await prisma.whatsAppAccount.update({
-      where: { id: accountId },
-      data: {
-        status: "DISCONNECTED",
-        accessToken: null,
-        tokenExpiresAt: null,
-      },
-    });
-
-    return { message: "WhatsApp account disconnected successfully" };
-  }
-
-  // ============================================
-  // GET ACCOUNTS (Updated for dual system)
-  // ============================================
-  async getAccounts(organizationId: string) {
-    console.log('📱 Fetching WhatsApp accounts for org:', organizationId);
-
-    // Check new MetaConnection system first
-    const metaConnection = await prisma.metaConnection.findUnique({
-      where: { organizationId },
-      include: {
-        phoneNumbers: {
-          where: { isActive: true },
-          orderBy: { isPrimary: 'desc' }
-        }
-      }
-    });
-
-    if (metaConnection && metaConnection.status === 'CONNECTED') {
-      console.log('✅ Found Meta connection with', metaConnection.phoneNumbers.length, 'phone(s)');
-      
-      // Convert to WhatsApp account format for compatibility
-      return metaConnection.phoneNumbers.map((phone, index) => ({
-        id: phone.id,
-        phoneNumber: phone.phoneNumber,
-        displayName: phone.displayName || phone.verifiedName || 'WhatsApp',
-        status: 'CONNECTED',
-        isDefault: phone.isPrimary || index === 0,
-        wabaId: metaConnection.wabaId,
-        phoneNumberId: phone.phoneNumberId,
-        tokenExpiresAt: metaConnection.accessTokenExpiresAt,
-        qualityRating: phone.qualityRating,
-        verifiedName: phone.verifiedName,
-        createdAt: phone.createdAt,
-        updatedAt: phone.updatedAt,
-        // Additional meta info
-        metaConnectionId: metaConnection.id,
-        wabaName: metaConnection.wabaName,
-        businessId: metaConnection.businessId,
-      }));
-    }
-
-    // Fallback to old WhatsAppAccount table
-    const accounts = await prisma.whatsAppAccount.findMany({
-      where: { organizationId },
-      select: {
-        id: true,
-        phoneNumber: true,
-        displayName: true,
-        status: true,
-        isDefault: true,
-        wabaId: true,
-        phoneNumberId: true,
-        tokenExpiresAt: true,
-        qualityRating: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    console.log('✅ Accounts found (legacy):', accounts.length);
-    return accounts;
-  }
-
-  // ============================================
-  // GET SINGLE ACCOUNT
-  // ============================================
-  async getAccountById(organizationId: string, accountId: string) {
-    // First check MetaConnection phone numbers
-    const phoneNumber = await prisma.phoneNumber.findFirst({
-      where: { 
-        id: accountId,
-        metaConnection: { organizationId }
-      },
-      include: {
-        metaConnection: true
-      }
-    });
-
-    if (phoneNumber) {
-      return {
-        id: phoneNumber.id,
-        phoneNumber: phoneNumber.phoneNumber,
-        displayName: phoneNumber.displayName || phoneNumber.verifiedName || 'WhatsApp',
-        status: phoneNumber.metaConnection.status,
-        isDefault: phoneNumber.isPrimary,
-        wabaId: phoneNumber.metaConnection.wabaId,
-        phoneNumberId: phoneNumber.phoneNumberId,
-        tokenExpiresAt: phoneNumber.metaConnection.accessTokenExpiresAt,
-        qualityRating: phoneNumber.qualityRating,
-        verifiedName: phoneNumber.verifiedName,
-        createdAt: phoneNumber.createdAt,
-        updatedAt: phoneNumber.updatedAt,
-      };
-    }
-
-    // Fallback to WhatsAppAccount
-    const account = await prisma.whatsAppAccount.findFirst({
-      where: { id: accountId, organizationId },
-    });
-
-    if (!account) throw new AppError("WhatsApp account not found", 404);
-    return account;
-  }
-
-  // ============================================
-  // SET DEFAULT ACCOUNT
-  // ============================================
-  async setDefaultAccount(organizationId: string, accountId: string) {
-    // Check if it's a PhoneNumber from MetaConnection
-    const phoneNumber = await prisma.phoneNumber.findFirst({
-      where: { 
-        id: accountId,
-        metaConnection: { organizationId }
-      },
-      include: { metaConnection: true }
-    });
-
-    if (phoneNumber) {
-      await prisma.$transaction([
-        prisma.phoneNumber.updateMany({
-          where: { metaConnectionId: phoneNumber.metaConnectionId },
-          data: { isPrimary: false },
-        }),
-        prisma.phoneNumber.update({
-          where: { id: accountId },
-          data: { isPrimary: true },
-        }),
-      ]);
-
-      return { message: "Default phone number updated successfully" };
-    }
-
-    // Fallback to WhatsAppAccount
-    const account = await prisma.whatsAppAccount.findFirst({
-      where: { id: accountId, organizationId },
-    });
-
-    if (!account) throw new AppError("WhatsApp account not found", 404);
-
-    await prisma.$transaction([
-      prisma.whatsAppAccount.updateMany({
-        where: { organizationId },
-        data: { isDefault: false },
-      }),
-      prisma.whatsAppAccount.update({
-        where: { id: accountId },
-        data: { isDefault: true },
-      }),
-    ]);
-
-    return { message: "Default account updated successfully" };
-  }
-
-  // ============================================
-  // GET VALID ACCOUNT (Internal helper)
-  // ============================================
-  private async getAccount(organizationId: string, whatsappAccountId: string) {
-    // First try to find in PhoneNumber (new system)
-    const phoneNumber = await prisma.phoneNumber.findFirst({
-      where: { 
-        OR: [
-          { id: whatsappAccountId },
-          { phoneNumberId: whatsappAccountId }
-        ],
-        metaConnection: { 
-          organizationId,
-          status: 'CONNECTED'
-        }
-      },
-      include: { metaConnection: true }
-    });
-
-    if (phoneNumber && phoneNumber.metaConnection.accessToken) {
-      // Check expiry
-      if (phoneNumber.metaConnection.accessTokenExpiresAt && 
-          phoneNumber.metaConnection.accessTokenExpiresAt < new Date()) {
-        throw new AppError("WhatsApp access token has expired. Please reconnect.", 400);
-      }
-
-      return {
-        id: phoneNumber.id,
-        phoneNumberId: phoneNumber.phoneNumberId,
-        accessToken: phoneNumber.metaConnection.accessToken,
-        wabaId: phoneNumber.metaConnection.wabaId,
-        phoneNumber: phoneNumber.phoneNumber,
-        displayName: phoneNumber.displayName,
-      };
-    }
-
-    // Fallback to WhatsAppAccount
-    const account = await prisma.whatsAppAccount.findFirst({
-      where: { 
-        OR: [
-          { id: whatsappAccountId },
-          { phoneNumberId: whatsappAccountId }
-        ],
-        organizationId 
-      },
-    });
-
-    if (!account) throw new AppError("WhatsApp account not found", 404);
-    if (!account.accessToken) throw new AppError("WhatsApp account token missing. Please reconnect.", 400);
-    
-    if (account.tokenExpiresAt && account.tokenExpiresAt < new Date()) {
-      throw new AppError("WhatsApp access token has expired. Please reconnect.", 400);
-    }
-
-    return {
-      id: account.id,
-      phoneNumberId: account.phoneNumberId,
-      accessToken: account.accessToken,
-      wabaId: account.wabaId,
-      phoneNumber: account.phoneNumber,
-      displayName: account.displayName,
-    };
-  }
-
-  // ============================================
-  // MESSAGING METHODS
-  // ============================================
-
+class WhatsAppService {
+  /**
+   * Send a text message
+   */
   async sendTextMessage(
-    organizationId: string, 
-    whatsappAccountId: string, 
-    to: string, 
-    message: string, 
-    replyToMessageId?: string
-  ) {
-    const account = await this.getAccount(organizationId, whatsappAccountId);
-    
-    const payload: any = {
-      messaging_product: "whatsapp",
-      to: this.formatPhoneNumber(to),
-      type: "text",
-      text: { body: message, preview_url: true },
-    };
-    
-    if (replyToMessageId) {
-      payload.context = { message_id: replyToMessageId };
-    }
-
-    const result = await whatsappApi.sendMessage(
-      account.phoneNumberId, 
-      account.accessToken, 
-      payload
-    );
-    
-    return result;
-  }
-
-  async sendMediaMessage(
-    organizationId: string, 
-    whatsappAccountId: string, 
-    to: string, 
-    mediaType: string, 
-    mediaUrl: string, 
-    caption?: string, 
-    filename?: string
-  ) {
-    const account = await this.getAccount(organizationId, whatsappAccountId);
-    const type = mediaType.toLowerCase();
-    
-    const mediaObj: any = { link: mediaUrl };
-    if (caption) mediaObj.caption = caption;
-    if (filename && type === "document") mediaObj.filename = filename;
-
-    const payload = {
-      messaging_product: "whatsapp",
-      to: this.formatPhoneNumber(to),
-      type,
-      [type]: mediaObj,
-    };
-
-    const result = await whatsappApi.sendMessage(
-      account.phoneNumberId, 
-      account.accessToken, 
-      payload
-    );
-    
-    return result;
-  }
-
-  async sendTemplateMessage(
-    organizationId: string,
-    whatsappAccountId: string,
+    accountId: string,
     to: string,
-    templateName: string,
-    languageCode: string,
-    components?: any[]
+    text: string,
+    conversationId?: string
   ) {
-    const account = await this.getAccount(organizationId, whatsappAccountId);
-    
-    const payload: any = {
-      messaging_product: "whatsapp",
-      to: this.formatPhoneNumber(to),
-      type: "template",
-      template: {
-        name: templateName,
-        language: { code: languageCode || "en_US" },
+    return this.sendMessage({
+      accountId,
+      to,
+      type: 'text',
+      content: { text: { body: text } },
+      conversationId,
+    });
+  }
+
+  /**
+   * Send a template message
+   */
+  async sendTemplateMessage(options: SendTemplateOptions) {
+    const { accountId, to, templateName, templateLanguage, components, conversationId } =
+      options;
+
+    return this.sendMessage({
+      accountId,
+      to,
+      type: 'template',
+      content: {
+        template: {
+          name: templateName,
+          language: { code: templateLanguage },
+          components: components || [],
+        },
+      },
+      conversationId,
+    });
+  }
+
+  /**
+   * Send a media message
+   */
+  async sendMediaMessage(
+    accountId: string,
+    to: string,
+    mediaType: 'image' | 'document' | 'video' | 'audio',
+    mediaUrl: string,
+    caption?: string,
+    conversationId?: string
+  ) {
+    const content: any = {
+      [mediaType]: {
+        link: mediaUrl,
       },
     };
-    
-    if (components?.length) {
-      payload.template.components = components;
+
+    if (caption && ['image', 'document', 'video'].includes(mediaType)) {
+      content[mediaType].caption = caption;
     }
 
-    const result = await whatsappApi.sendMessage(
-      account.phoneNumberId, 
-      account.accessToken, 
-      payload
-    );
-    
-    return result;
+    return this.sendMessage({
+      accountId,
+      to,
+      type: mediaType,
+      content,
+      conversationId,
+    });
   }
 
-  async sendInteractiveMessage(
-    organizationId: string,
-    whatsappAccountId: string,
-    to: string,
-    interactiveType: 'button' | 'list',
-    bodyText: string,
-    configObj: {
-      headerText?: string;
-      footerText?: string;
-      buttons?: Array<{ id: string; title: string }>;
-      sections?: Array<{
-        title: string;
-        rows: Array<{ id: string; title: string; description?: string }>;
-      }>;
-      buttonText?: string;
+  /**
+   * Core send message function
+   */
+  async sendMessage(options: SendMessageOptions) {
+    const { accountId, to, type, content, conversationId } = options;
+
+    // Get account with access token
+    const account = await prisma.whatsAppAccount.findUnique({
+      where: { id: accountId },
+      include: { organization: true },
+    });
+
+    if (!account) {
+      throw new Error('WhatsApp account not found');
     }
-  ) {
-    const account = await this.getAccount(organizationId, whatsappAccountId);
-    
-    const interactive: any = {
-      type: interactiveType,
-      body: { text: bodyText },
+
+    if (account.status !== 'ACTIVE') {
+      throw new Error('WhatsApp account is not active');
+    }
+
+    const accessToken = decrypt(account.accessToken);
+
+    // Format phone number (remove + and spaces)
+    const formattedTo = to.replace(/[^0-9]/g, '');
+
+    // Prepare message payload
+    const messagePayload: any = {
+      type,
+      ...content,
     };
 
-    if (configObj.headerText) {
-      interactive.header = { type: 'text', text: configObj.headerText };
-    }
-
-    if (configObj.footerText) {
-      interactive.footer = { text: configObj.footerText };
-    }
-
-    if (interactiveType === 'button' && configObj.buttons) {
-      interactive.action = {
-        buttons: configObj.buttons.slice(0, 3).map(btn => ({
-          type: 'reply',
-          reply: { id: btn.id, title: btn.title.substring(0, 20) }
-        }))
-      };
-    }
-
-    if (interactiveType === 'list' && configObj.sections) {
-      interactive.action = {
-        button: configObj.buttonText || 'Select Option',
-        sections: configObj.sections.map(section => ({
-          title: section.title,
-          rows: section.rows.map(row => ({
-            id: row.id,
-            title: row.title.substring(0, 24),
-            description: row.description?.substring(0, 72)
-          }))
-        }))
-      };
-    }
-
-    const payload = {
-      messaging_product: "whatsapp",
-      to: this.formatPhoneNumber(to),
-      type: "interactive",
-      interactive,
-    };
-
-    const result = await whatsappApi.sendMessage(
-      account.phoneNumberId, 
-      account.accessToken, 
-      payload
-    );
-    
-    return result;
-  }
-
-  async markMessageAsRead(
-    organizationId: string, 
-    whatsappAccountId: string, 
-    messageId: string
-  ) {
-    const account = await this.getAccount(organizationId, whatsappAccountId);
-    return whatsappApi.markAsRead(account.phoneNumberId, account.accessToken, messageId);
-  }
-
-  // ============================================
-  // TEMPLATE METHODS
-  // ============================================
-
-  async getTemplates(whatsappAccountId: string, organizationId: string) {
-    const account = await this.getAccount(organizationId, whatsappAccountId);
-    
     try {
-      const templates = await whatsappApi.getMessageTemplate(
-        account.wabaId, 
-        account.accessToken
-      );
-      
-      return templates.data || [];
-    } catch (error: any) {
-      console.error('❌ Failed to fetch templates:', error);
-      throw new AppError(error.message || 'Failed to fetch templates', 500);
-    }
-  }
-
-  async syncTemplates(whatsappAccountId: string, organizationId: string) {
-    const account = await this.getAccount(organizationId, whatsappAccountId);
-    
-    try {
-      console.log('🔄 Syncing templates for WABA:', account.wabaId);
-      
-      const templates = await whatsappApi.getMessageTemplate(
-        account.wabaId, 
-        account.accessToken
+      // Send via Meta API
+      const result = await metaApi.sendMessage(
+        account.phoneNumberId,
+        accessToken,
+        formattedTo,
+        messagePayload
       );
 
-      const templateData = templates.data || [];
-      let synced = 0;
-      let failed = 0;
+      // Find or create contact
+      let contact = await prisma.contact.findUnique({
+        where: {
+          organizationId_phone: {
+            organizationId: account.organizationId,
+            phone: to.startsWith('+') ? to : `+${formattedTo}`,
+          },
+        },
+      });
 
-      for (const template of templateData) {
-        try {
-          await prisma.template.upsert({
+      if (!contact) {
+        contact = await prisma.contact.create({
+          data: {
+            organizationId: account.organizationId,
+            phone: to.startsWith('+') ? to : `+${formattedTo}`,
+            waId: formattedTo,
+            source: 'MANUAL',
+          },
+        });
+      }
+
+      // Find or create conversation
+      let conversation = conversationId
+        ? await prisma.conversation.findUnique({ where: { id: conversationId } })
+        : await prisma.conversation.findUnique({
             where: {
-              organizationId_name_language: {
-                organizationId,
-                name: template.name,
-                language: template.language,
-              }
-            },
-            update: {
-              metaTemplateId: template.id,
-              category: this.mapTemplateCategory(template.category),
-              status: this.mapTemplateStatus(template.status),
-              bodyText: this.extractBodyText(template.components),
-              headerType: this.extractHeaderType(template.components),
-              headerContent: this.extractHeaderContent(template.components),
-              footerText: this.extractFooterText(template.components),
-              buttons: this.extractButtons(template.components),
-              updatedAt: new Date(),
-            },
-            create: {
-              organizationId,
-              metaTemplateId: template.id,
-              name: template.name,
-              language: template.language,
-              category: this.mapTemplateCategory(template.category),
-              status: this.mapTemplateStatus(template.status),
-              bodyText: this.extractBodyText(template.components),
-              headerType: this.extractHeaderType(template.components),
-              headerContent: this.extractHeaderContent(template.components),
-              footerText: this.extractFooterText(template.components),
-              buttons: this.extractButtons(template.components),
-              variables: this.extractVariables(template.components),
+              whatsappAccountId_contactId: {
+                whatsappAccountId: accountId,
+                contactId: contact.id,
+              },
             },
           });
-          synced++;
-        } catch (err) {
-          console.error(`Failed to sync template ${template.name}:`, err);
-          failed++;
-        }
+
+      if (!conversation) {
+        conversation = await prisma.conversation.create({
+          data: {
+            organizationId: account.organizationId,
+            whatsappAccountId: accountId,
+            contactId: contact.id,
+            status: 'OPEN',
+            lastMessageAt: new Date(),
+            lastMessageText: this.getMessagePreview(type, content),
+          },
+        });
+      } else {
+        await prisma.conversation.update({
+          where: { id: conversation.id },
+          data: {
+            lastMessageAt: new Date(),
+            lastMessageText: this.getMessagePreview(type, content),
+          },
+        });
       }
 
-      console.log(`✅ Synced ${synced} templates, ${failed} failed`);
+      // Save message to database
+      const message = await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          whatsappAccountId: accountId,
+          wamId: result.messageId,
+          direction: 'OUTBOUND',
+          type: this.mapMessageType(type),
+          content: content,
+          status: 'SENT',
+          sentAt: new Date(),
+        },
+        include: {
+          conversation: {
+            include: {
+              contact: true,
+            },
+          },
+        },
+      });
 
       return {
-        total: templateData.length,
-        synced,
-        failed,
-        templates: templateData,
+        success: true,
+        messageId: result.messageId,
+        message,
       };
     } catch (error: any) {
-      console.error('❌ Template sync error:', error);
-      throw new AppError(error.message || 'Failed to sync templates', 500);
+      console.error('Failed to send message:', error);
+
+      // Still save the failed message for tracking
+      if (conversationId) {
+        await prisma.message.create({
+          data: {
+            conversationId,
+            whatsappAccountId: accountId,
+            direction: 'OUTBOUND',
+            type: this.mapMessageType(type),
+            content: content,
+            status: 'FAILED',
+            errorMessage: error.message,
+          },
+        });
+      }
+
+      throw new Error(error.message || 'Failed to send message');
     }
   }
 
-  // Template helper methods
-  private mapTemplateCategory(category: string): 'MARKETING' | 'UTILITY' | 'AUTHENTICATION' {
-    const map: Record<string, 'MARKETING' | 'UTILITY' | 'AUTHENTICATION'> = {
-      'MARKETING': 'MARKETING',
-      'UTILITY': 'UTILITY',
-      'AUTHENTICATION': 'AUTHENTICATION',
+  /**
+   * Send bulk campaign messages
+   */
+  async sendCampaignMessages(
+    campaignId: string,
+    batchSize: number = 50,
+    delayMs: number = 1000
+  ) {
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      include: {
+        template: true,
+        whatsappAccount: true,
+        recipients: {
+          where: { status: 'PENDING' },
+          include: { contact: true },
+          take: batchSize,
+        },
+      },
+    });
+
+    if (!campaign) {
+      throw new Error('Campaign not found');
+    }
+
+    if (campaign.status !== 'RUNNING') {
+      throw new Error('Campaign is not running');
+    }
+
+    const accessToken = decrypt(campaign.whatsappAccount.accessToken);
+    const results = {
+      sent: 0,
+      failed: 0,
+      errors: [] as string[],
     };
-    return map[category?.toUpperCase()] || 'MARKETING';
-  }
 
-  private mapTemplateStatus(status: string): 'PENDING' | 'APPROVED' | 'REJECTED' {
-    const map: Record<string, 'PENDING' | 'APPROVED' | 'REJECTED'> = {
-      'APPROVED': 'APPROVED',
-      'REJECTED': 'REJECTED',
-      'PENDING': 'PENDING',
-      'IN_APPEAL': 'PENDING',
-      'PENDING_DELETION': 'APPROVED',
-      'DELETED': 'REJECTED',
-      'DISABLED': 'REJECTED',
-    };
-    return map[status?.toUpperCase()] || 'PENDING';
-  }
+    for (const recipient of campaign.recipients) {
+      try {
+        // Build template components with variables
+        const components = this.buildTemplateComponents(
+          campaign.template,
+          recipient.variables as any
+        );
 
-  private extractBodyText(components: any[]): string {
-    const body = components?.find(c => c.type === 'BODY');
-    return body?.text || '';
-  }
+        // Send message
+        const messageResult = await metaApi.sendMessage(
+          campaign.whatsappAccount.phoneNumberId,
+          accessToken,
+          recipient.contact.phone.replace(/[^0-9]/g, ''),
+          {
+            type: 'template',
+            template: {
+              name: campaign.template.name,
+              language: { code: campaign.template.language },
+              components,
+            },
+          }
+        );
 
-  private extractHeaderType(components: any[]): string | null {
-    const header = components?.find(c => c.type === 'HEADER');
-    return header?.format?.toLowerCase() || null;
-  }
+        // Update recipient status
+        await prisma.campaignRecipient.update({
+          where: { id: recipient.id },
+          data: {
+            status: 'SENT',
+            wamId: messageResult.messageId,
+            sentAt: new Date(),
+          },
+        });
 
-  private extractHeaderContent(components: any[]): string | null {
-    const header = components?.find(c => c.type === 'HEADER');
-    return header?.text || header?.example?.header_handle?.[0] || null;
-  }
+        // Update campaign stats
+        await prisma.campaign.update({
+          where: { id: campaignId },
+          data: {
+            sent: { increment: 1 },
+          },
+        });
 
-  private extractFooterText(components: any[]): string | null {
-    const footer = components?.find(c => c.type === 'FOOTER');
-    return footer?.text || null;
-  }
+        results.sent++;
 
-  private extractButtons(components: any[]): any[] {
-    const buttons = components?.find(c => c.type === 'BUTTONS');
-    return buttons?.buttons || [];
-  }
+        // Delay between messages
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      } catch (error: any) {
+        console.error(`Failed to send to ${recipient.contact.phone}:`, error);
 
-  private extractVariables(components: any[]): any[] {
-    const variables: any[] = [];
-    const body = components?.find(c => c.type === 'BODY');
-    
-    if (body?.example?.body_text?.[0]) {
-      body.example.body_text[0].forEach((val: string, idx: number) => {
-        variables.push({ index: idx + 1, example: val });
+        // Update recipient as failed
+        await prisma.campaignRecipient.update({
+          where: { id: recipient.id },
+          data: {
+            status: 'FAILED',
+            failedAt: new Date(),
+            errorMessage: error.message,
+          },
+        });
+
+        await prisma.campaign.update({
+          where: { id: campaignId },
+          data: {
+            failed: { increment: 1 },
+          },
+        });
+
+        results.failed++;
+        results.errors.push(`${recipient.contact.phone}: ${error.message}`);
+      }
+    }
+
+    // Check if campaign is complete
+    const remainingRecipients = await prisma.campaignRecipient.count({
+      where: {
+        campaignId,
+        status: 'PENDING',
+      },
+    });
+
+    if (remainingRecipients === 0) {
+      await prisma.campaign.update({
+        where: { id: campaignId },
+        data: {
+          status: 'COMPLETED',
+          completedAt: new Date(),
+        },
       });
     }
-    
-    return variables;
+
+    return results;
   }
 
-  // ============================================
-  // UTILITY METHODS
-  // ============================================
+  /**
+   * Mark messages as read
+   */
+  async markAsRead(accountId: string, messageId: string) {
+    const account = await prisma.whatsAppAccount.findUnique({
+      where: { id: accountId },
+    });
 
-  private formatPhoneNumber(phone: string): string {
-    let cleaned = phone.replace(/[^\d]/g, "");
-    
-    // Remove leading zeros
-    cleaned = cleaned.replace(/^0+/, '');
-    
-    // Add country code if missing (assuming Indian numbers)
-    if (cleaned.length === 10) {
-      cleaned = '91' + cleaned;
+    if (!account) {
+      throw new Error('Account not found');
     }
-    
-    return cleaned;
+
+    const accessToken = decrypt(account.accessToken);
+
+    try {
+      await metaApi.sendMessage(account.phoneNumberId, accessToken, '', {
+        messaging_product: 'whatsapp',
+        status: 'read',
+        message_id: messageId,
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to mark as read:', error);
+      return { success: false };
+    }
+  }
+
+  private buildTemplateComponents(template: any, variables: Record<string, string>) {
+    const components: any[] = [];
+
+    // Header component
+    if (template.headerType) {
+      if (template.headerType === 'TEXT' && template.headerContent) {
+        components.push({
+          type: 'header',
+          parameters: this.extractVariables(template.headerContent, variables),
+        });
+      } else if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(template.headerType)) {
+        components.push({
+          type: 'header',
+          parameters: [
+            {
+              type: template.headerType.toLowerCase(),
+              [template.headerType.toLowerCase()]: {
+                link: variables.header_media || template.headerMediaUrl,
+              },
+            },
+          ],
+        });
+      }
+    }
+
+    // Body component
+    if (template.bodyVariables && template.bodyVariables.length > 0) {
+      const bodyParams = template.bodyVariables.map((varName: string, index: number) => ({
+        type: 'text',
+        text: variables[varName] || variables[`body_${index + 1}`] || `{{${index + 1}}}`,
+      }));
+
+      components.push({
+        type: 'body',
+        parameters: bodyParams,
+      });
+    }
+
+    // Button components
+    if (template.buttons) {
+      const buttons = template.buttons as any[];
+      buttons.forEach((button: any, index: number) => {
+        if (button.type === 'URL' && button.url?.includes('{{')) {
+          components.push({
+            type: 'button',
+            sub_type: 'url',
+            index,
+            parameters: [
+              {
+                type: 'text',
+                text: variables[`button_${index}`] || '',
+              },
+            ],
+          });
+        }
+      });
+    }
+
+    return components;
+  }
+
+  private extractVariables(text: string, variables: Record<string, string>) {
+    const matches = text.match(/\{\{(\d+)\}\}/g) || [];
+    return matches.map((match, index) => ({
+      type: 'text',
+      text: variables[`var_${index + 1}`] || match,
+    }));
+  }
+
+  private getMessagePreview(type: string, content: any): string {
+    switch (type) {
+      case 'text':
+        return content.text?.body?.substring(0, 100) || '';
+      case 'template':
+        return `📋 Template: ${content.template?.name}`;
+      case 'image':
+        return '📷 Image';
+      case 'video':
+        return '🎥 Video';
+      case 'audio':
+        return '🎵 Audio';
+      case 'document':
+        return '📄 Document';
+      default:
+        return 'Message';
+    }
+  }
+
+  private mapMessageType(type: string): MessageType {
+    const map: Record<string, MessageType> = {
+      text: 'TEXT',
+      template: 'TEMPLATE',
+      image: 'IMAGE',
+      video: 'VIDEO',
+      audio: 'AUDIO',
+      document: 'DOCUMENT',
+    };
+    return map[type] || 'TEXT';
   }
 }
 
 export const whatsappService = new WhatsAppService();
+export default whatsappService;

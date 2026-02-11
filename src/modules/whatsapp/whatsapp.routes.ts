@@ -1,16 +1,41 @@
+// src/modules/whatsapp/whatsapp.routes.ts
+
 import { Router } from 'express';
-import { whatsappController } from './whatsapp.controller'; // Import instance
+import { whatsappController } from './whatsapp.controller';
 import { authenticate } from '../../middleware/auth';
+import { validate } from '../../middleware/validate';
+import { rateLimit } from '../../middleware/rateLimit';
 
 const router = Router();
+
+// All routes require authentication
 router.use(authenticate);
 
-router.get('/accounts', whatsappController.getAccounts.bind(whatsappController));
-router.get('/accounts/:id', whatsappController.getAccount.bind(whatsappController));
-router.post('/connect', whatsappController.connectAccount.bind(whatsappController)); // Notice name matches controller
-router.delete('/accounts/:id', whatsappController.disconnectAccount.bind(whatsappController));
-router.post('/accounts/:id/default', whatsappController.setDefaultAccount.bind(whatsappController));
-router.post('/send/text', whatsappController.sendText.bind(whatsappController));
-router.post('/send/template', whatsappController.sendTemplate.bind(whatsappController));
+// Rate limit for sending messages
+const sendRateLimit = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 60, // 60 messages per minute
+  message: 'Too many messages sent. Please wait a moment.',
+});
+
+// Send text message
+router.post('/send/text', sendRateLimit, whatsappController.sendText.bind(whatsappController));
+
+// Send template message
+router.post(
+  '/send/template',
+  sendRateLimit,
+  whatsappController.sendTemplate.bind(whatsappController)
+);
+
+// Send media message
+router.post(
+  '/send/media',
+  sendRateLimit,
+  whatsappController.sendMedia.bind(whatsappController)
+);
+
+// Mark message as read
+router.post('/read', whatsappController.markAsRead.bind(whatsappController));
 
 export default router;

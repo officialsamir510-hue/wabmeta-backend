@@ -1,383 +1,587 @@
-import axios from 'axios';
-import prisma from '../../config/database';
+// src/modules/meta/meta.service.ts
+
+import { PrismaClient, WhatsAppAccountStatus, ConnectionStatus } from '@prisma/client';
+import { metaApi } from './meta.api';
 import { config } from '../../config';
-import { AppError } from '../../middleware/errorHandler';
+import { encrypt, decrypt } from '../../utils/encryption';
+import { v4 as uuidv4 } from 'uuid';
+import {
+  ConnectionProgress,
+  SharedWABAInfo,
+  PhoneNumberInfo,
+} from './meta.types';
 
-const GRAPH_API_VERSION = config.meta?.graphApiVersion || 'v21.0';
-const GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
+const prisma = new PrismaClient();
 
-type Waba = { id: string; name?: string; business?: { id: string } };
-type PhoneNumber = {
-  id: string; // phone_number_id
-  display_phone_number?: string;
-  verified_name?: string;
-  quality_rating?: string;
-  status?: string;
-};
+class MetaService {
+  /**
+   * Generate OAuth URL for Meta login
+   */
+  getOAuthUrl(state: string): string {
+    const baseUrl = 'https://www.facebook.com/v18.0/dialog/oauth';
+    const params = new URLSearchParams({
+      client_id: config.meta.appId,
+      redirect_uri: config.meta.redirectUri,
+      state: state,
+      scope: [
+        'whatsapp_business_management',
+        'whatsapp_business_messaging',
+        'business_management',
+      ].join(','),
+      response_type: 'code',
+    });
 
-const digitsOnly = (v: string) => String(v || '').replace(/\D/g, '');
+    return `${baseUrl}?${params.toString()}`;
+  }
 
-export class MetaService {
-  // =========================================================
-  // OAuth: exchange code for token
-  // =========================================================
-  static async exchangeCodeForToken(code: string) {
+  /**
+   * Get Embedded Signup configuration
+   */
+  getEmbeddedSignupConfig() {
+    return {
+      appId: config.meta.appId,
+      configId: config.meta.configId,
+      version: config.meta.graphApiVersion,
+      features: ['WHATSAPP_EMBEDDED_SIGNUP'],
+    };
+  }
+
+  /**
+   * Complete Meta connection flow
+   */
+  async completeConnection(
+    code: string,
+    organizationId: string,
+    userId: string,
+    onProgress?: (progress: ConnectionProgress) => void
+  ): Promise<{ success: boolean; account?: any; error?: string }> {
     try {
-      const response = await axios.get(`${GRAPH_API_BASE}/oauth/access_token`, {
-        params: {
-          client_id: config.meta.appId,
-          client_secret: config.meta.appSecret,
-          redirect_uri: config.meta.redirectUri,
-          code,
+      // Step 1: Exchange code for access token
+      onProgress?.({
+        step: 'TOKEN_EXCHANGE',
+        status: 'in_progress',
+        message: 'Exchanging authorization code for access token...',
+      });
+
+      const tokenResponse = await metaApi.exchangeCodeForToken(code);
+      let accessToken = tokenResponse.accessToken;
+
+      // Get long-lived token
+      try {
+        const longLivedTokenResponse = await metaApi.getLongLivedToken(accessToken);
+        accessToken = longLivedTokenResponse.accessToken;
+      } catch (error) {
+        console.log('Could not get long-lived token, using short-lived token');
+      }
+
+      onProgress?.({
+        step: 'TOKEN_EXCHANGE',
+        status: 'completed',
+        message: 'Access token obtained successfully',
+      });
+
+      // Step 2: Debug token to get permissions and WABA IDs
+      onProgress?.({
+        step: 'FETCHING_WABA',
+        status: 'in_progress',
+        message: 'Fetching WhatsApp Business Accounts...',
+      });
+
+      const debugInfo = await metaApi.debugToken(accessToken);
+      
+      // Get WABAs from granular scopes
+      let wabaId: string | null = null;
+      let businessId: string | null = null;
+      
+      const granularScopes = debugInfo.data.granular_scopes || [];
+      for (const scope of granularScopes) {
+        if (scope.scope === 'whatsapp_business_management' && scope.target_ids?.length) {
+          wabaId = scope.target_ids[0];
+          break;
+        }
+        if (scope.scope === 'business_management' && scope.target_ids?.length) {
+          businessId = scope.target_ids[0];
+        }
+      }
+
+      if (!wabaId) {
+        // Try getting WABAs through business
+        const wabas = await metaApi.getSharedWABAs(accessToken);
+        if (wabas.length > 0) {
+          wabaId = wabas[0].id;
+          businessId = wabas[0].owner_business_info?.id || businessId;
+        }
+      }
+
+      if (!wabaId) {
+        throw new Error('No WhatsApp Business Account found. Please complete the WhatsApp signup process.');
+      }
+
+      // Get WABA details
+      const wabaDetails = await metaApi.getWABADetails(wabaId, accessToken);
+
+      onProgress?.({
+        step: 'FETCHING_WABA',
+        status: 'completed',
+        message: `Found WABA: ${wabaDetails.name}`,
+        data: { wabaId, wabaName: wabaDetails.name },
+      });
+
+      // Step 3: Get phone numbers
+      onProgress?.({
+        step: 'FETCHING_PHONE',
+        status: 'in_progress',
+        message: 'Fetching phone numbers...',
+      });
+
+      const phoneNumbers = await metaApi.getPhoneNumbers(wabaId, accessToken);
+      
+      if (phoneNumbers.length === 0) {
+        throw new Error('No phone numbers found in your WhatsApp Business Account.');
+      }
+
+      const primaryPhone = phoneNumbers[0];
+
+      onProgress?.({
+        step: 'FETCHING_PHONE',
+        status: 'completed',
+        message: `Found phone: ${primaryPhone.displayPhoneNumber}`,
+        data: { phoneNumber: primaryPhone.displayPhoneNumber },
+      });
+
+      // Step 4: Subscribe to webhooks
+      onProgress?.({
+        step: 'SUBSCRIBE_WEBHOOK',
+        status: 'in_progress',
+        message: 'Setting up webhooks...',
+      });
+
+      try {
+        await metaApi.subscribeToWebhooks(wabaId, accessToken);
+      } catch (error) {
+        console.error('Webhook subscription failed, continuing anyway:', error);
+      }
+
+      onProgress?.({
+        step: 'SUBSCRIBE_WEBHOOK',
+        status: 'completed',
+        message: 'Webhooks configured',
+      });
+
+      // Step 5: Save to database
+      onProgress?.({
+        step: 'SAVING',
+        status: 'in_progress',
+        message: 'Saving account information...',
+      });
+
+      // Check if this WABA or phone is already connected
+      const existingAccount = await prisma.whatsAppAccount.findFirst({
+        where: {
+          OR: [
+            { wabaId: wabaId },
+            { phoneNumberId: primaryPhone.id },
+          ],
         },
       });
 
-      return response.data as { access_token: string; token_type?: string; expires_in?: number };
+      if (existingAccount) {
+        if (existingAccount.organizationId === organizationId) {
+          // Update existing account
+          const updatedAccount = await prisma.whatsAppAccount.update({
+            where: { id: existingAccount.id },
+            data: {
+              accessToken: encrypt(accessToken),
+              tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), // 60 days
+              verifiedName: primaryPhone.verifiedName,
+              qualityRating: primaryPhone.qualityRating,
+              status: WhatsAppAccountStatus.ACTIVE,
+              connectionStatus: ConnectionStatus.CONNECTED,
+              lastConnectedAt: new Date(),
+              lastSyncedAt: new Date(),
+            },
+          });
+
+          onProgress?.({
+            step: 'COMPLETED',
+            status: 'completed',
+            message: 'Account reconnected successfully!',
+          });
+
+          return { success: true, account: this.sanitizeAccount(updatedAccount) };
+        } else {
+          throw new Error('This WhatsApp number is already connected to another organization.');
+        }
+      }
+
+      // Generate webhook verify token
+      const webhookVerifyToken = uuidv4();
+
+      // Check if this is the first account (make it default)
+      const accountCount = await prisma.whatsAppAccount.count({
+        where: { organizationId },
+      });
+
+      // Create new account
+      const newAccount = await prisma.whatsAppAccount.create({
+        data: {
+          organizationId,
+          wabaId,
+          phoneNumberId: primaryPhone.id,
+          businessId: businessId || wabaDetails.owner_business_info?.id,
+          phoneNumber: primaryPhone.displayPhoneNumber.replace(/\D/g, ''),
+          displayPhoneNumber: primaryPhone.displayPhoneNumber,
+          verifiedName: primaryPhone.verifiedName,
+          qualityRating: primaryPhone.qualityRating,
+          accessToken: encrypt(accessToken),
+          tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), // 60 days
+          webhookVerifyToken,
+          webhookConfigured: true,
+          status: WhatsAppAccountStatus.ACTIVE,
+          connectionStatus: ConnectionStatus.CONNECTED,
+          lastConnectedAt: new Date(),
+          lastSyncedAt: new Date(),
+          isDefault: accountCount === 0,
+        },
+      });
+
+      onProgress?.({
+        step: 'COMPLETED',
+        status: 'completed',
+        message: 'WhatsApp account connected successfully!',
+      });
+
+      // Sync templates in background
+      this.syncTemplatesBackground(newAccount.id, wabaId, accessToken);
+
+      return { success: true, account: this.sanitizeAccount(newAccount) };
     } catch (error: any) {
-      const msg = error?.response?.data?.error?.message || error.message || 'Token exchange failed';
-      throw new AppError(msg, 400);
+      console.error('Meta connection error:', error);
+      
+      onProgress?.({
+        step: 'COMPLETED',
+        status: 'error',
+        message: error.message || 'Failed to connect WhatsApp account',
+      });
+
+      return { success: false, error: error.message };
     }
   }
 
-  // =========================================================
-  // Read WABA IDs from debug_token granular scopes
-  // =========================================================
-  private static async getWabaIdsFromToken(accessToken: string): Promise<string[]> {
-    const resp = await axios.get(`${GRAPH_API_BASE}/debug_token`, {
-      params: {
-        input_token: accessToken,
-        access_token: `${config.meta.appId}|${config.meta.appSecret}`,
+  /**
+   * Get accounts for organization
+   */
+  async getAccounts(organizationId: string) {
+    const accounts = await prisma.whatsAppAccount.findMany({
+      where: { organizationId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return accounts.map((account) => this.sanitizeAccount(account));
+  }
+
+  /**
+   * Get single account
+   */
+  async getAccount(accountId: string, organizationId: string) {
+    const account = await prisma.whatsAppAccount.findFirst({
+      where: {
+        id: accountId,
+        organizationId,
       },
     });
 
-    const granular = resp.data?.data?.granular_scopes || [];
-    const wabaScope = granular.find((s: any) => s.scope === 'whatsapp_business_management');
-    const ids = wabaScope?.target_ids || [];
-    return Array.isArray(ids) ? ids : [];
+    if (!account) {
+      throw new Error('Account not found');
+    }
+
+    return this.sanitizeAccount(account);
   }
 
-  static async getWhatsAppBusinessAccounts(accessToken: string): Promise<Waba[]> {
-    const wabaIds = await this.getWabaIdsFromToken(accessToken);
+  /**
+   * Get account with decrypted token (internal use)
+   */
+  async getAccountWithToken(accountId: string): Promise<{
+    account: any;
+    accessToken: string;
+  } | null> {
+    const account = await prisma.whatsAppAccount.findUnique({
+      where: { id: accountId },
+    });
 
-    if (!wabaIds.length) return [];
+    if (!account) {
+      return null;
+    }
 
-    const wabas = await Promise.all(
-      wabaIds.map(async (wabaId) => {
-        const r = await axios.get(`${GRAPH_API_BASE}/${wabaId}`, {
-          params: { access_token: accessToken, fields: 'id,name,business' },
-        });
-        return r.data as Waba;
-      })
-    );
-
-    return wabas.filter(Boolean);
+    return {
+      account,
+      accessToken: decrypt(account.accessToken),
+    };
   }
 
-  private static async getPhoneNumbersForWaba(wabaId: string, accessToken: string): Promise<PhoneNumber[]> {
-    try {
-      const r = await axios.get(`${GRAPH_API_BASE}/${wabaId}/phone_numbers`, {
-        params: {
-          access_token: accessToken,
-          fields: 'id,display_phone_number,verified_name,quality_rating,status',
+  /**
+   * Disconnect account
+   */
+  async disconnectAccount(accountId: string, organizationId: string) {
+    const account = await prisma.whatsAppAccount.findFirst({
+      where: {
+        id: accountId,
+        organizationId,
+      },
+    });
+
+    if (!account) {
+      throw new Error('Account not found');
+    }
+
+    // Update status
+    await prisma.whatsAppAccount.update({
+      where: { id: accountId },
+      data: {
+        status: WhatsAppAccountStatus.DISCONNECTED,
+        connectionStatus: ConnectionStatus.DISCONNECTED,
+        accessToken: '', // Clear token
+      },
+    });
+
+    // If this was default, set another as default
+    if (account.isDefault) {
+      const anotherAccount = await prisma.whatsAppAccount.findFirst({
+        where: {
+          organizationId,
+          id: { not: accountId },
+          status: WhatsAppAccountStatus.ACTIVE,
         },
       });
-      return (r.data?.data || []) as PhoneNumber[];
-    } catch (e) {
-      return [];
-    }
-  }
 
-  // =========================================================
-  // CONNECT (Embedded Signup / OAuth code)
-  // =========================================================
-  static async connectEmbeddedSignup(organizationId: string, code: string, _state?: string) {
-    if (!organizationId) throw new AppError('Organization ID is required', 400);
-
-    const token = await this.exchangeCodeForToken(code);
-    const accessToken = token.access_token;
-
-    if (!accessToken) throw new AppError('Access token missing from Meta', 400);
-
-    const wabas = await this.getWhatsAppBusinessAccounts(accessToken);
-    if (!wabas.length) throw new AppError('No WhatsApp Business Account found', 400);
-
-    const primaryWaba = wabas[0];
-
-    // ✅ IMPORTANT: only use fields that exist in your schema
-    const metaConnection = await prisma.metaConnection.upsert({
-      where: { organizationId },
-      create: {
-        organizationId,
-        accessToken, // string (non-null)
-        status: 'CONNECTED',
-        wabaId: primaryWaba.id,
-      },
-      update: {
-        accessToken,
-        status: 'CONNECTED',
-        wabaId: primaryWaba.id,
-      },
-    });
-
-    // phone numbers from WABA(s)
-    const allPhones: Array<PhoneNumber & { wabaId: string; wabaName?: string }> = [];
-    for (const waba of wabas) {
-      const nums = await this.getPhoneNumbersForWaba(waba.id, accessToken);
-      nums.forEach((p) => allPhones.push({ ...p, wabaId: waba.id, wabaName: waba.name }));
-    }
-
-    if (!allPhones.length) {
-      throw new AppError('No phone numbers found in your WhatsApp Business Account', 400);
-    }
-
-    // Create/update WhatsApp accounts in DB (organization-scoped)
-    const saved: any[] = [];
-
-    for (let i = 0; i < allPhones.length; i++) {
-      const p = allPhones[i];
-      const isFirst = i === 0;
-
-      // phoneNumberId should be unique in ideal schema; if not, we still "findFirst"
-      const existing = await prisma.whatsAppAccount.findFirst({
-        where: { phoneNumberId: p.id },
-      });
-
-      const phoneNumber = p.display_phone_number || '';
-      const displayName = p.verified_name || p.wabaName || 'WhatsApp Business';
-
-      if (existing) {
-        const updated = await prisma.whatsAppAccount.update({
-          where: { id: existing.id },
-          data: {
-            organizationId, // ✅ enforce correct org
-            phoneNumber,
-            displayName,
-            wabaId: p.wabaId,
-            accessToken, // string
-            status: 'CONNECTED',
-            isDefault: existing.isDefault || isFirst,
-          },
+      if (anotherAccount) {
+        await prisma.whatsAppAccount.update({
+          where: { id: anotherAccount.id },
+          data: { isDefault: true },
         });
-
-        saved.push(updated);
-      } else {
-        const created = await prisma.whatsAppAccount.create({
-          data: {
-            organizationId,
-            phoneNumberId: p.id,
-            phoneNumber,
-            displayName,
-            wabaId: p.wabaId,
-            accessToken,
-            status: 'CONNECTED',
-            isDefault: isFirst,
-          },
-        });
-
-        saved.push(created);
       }
     }
 
-    // Ensure there is a default account for this org
-    const hasDefault = await prisma.whatsAppAccount.findFirst({
-      where: { organizationId, isDefault: true },
-    });
-
-    if (!hasDefault && saved.length) {
-      await prisma.whatsAppAccount.update({
-        where: { id: saved[0].id },
-        data: { isDefault: true },
-      });
-    }
-
-    return {
-      id: metaConnection.id,
-      isConnected: true,
-      status: 'CONNECTED',
-      wabaId: metaConnection.wabaId,
-      connectedAt: metaConnection.updatedAt, // derived (schema me connectedAt nahi hai)
-      accounts: saved.map((a) => ({
-        id: a.id,
-        phoneNumberId: a.phoneNumberId,
-        phoneNumber: a.phoneNumber,
-        displayName: a.displayName,
-        status: a.status,
-        isDefault: a.isDefault,
-        wabaId: a.wabaId,
-      })),
-    };
+    return { success: true };
   }
 
-  // =========================================================
-  // STATUS
-  // =========================================================
-  static async getConnectionStatus(organizationId: string) {
-    const connection = await prisma.metaConnection.findFirst({
-      where: { organizationId },
-    });
-
-    const accounts = await prisma.whatsAppAccount.findMany({
-      where: { organizationId },
-      orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
-    });
-
-    const connectedAccounts = accounts.filter((a) => a.status === 'CONNECTED');
-    const isConnected = (connection?.status === 'CONNECTED') && connectedAccounts.length > 0;
-
-    return {
-      isConnected,
-      status: connection?.status || 'DISCONNECTED',
-      wabaId: connection?.wabaId || null,
-      connectedAt: connection?.updatedAt || null, // derived
-      accounts: accounts.map((a) => ({
-        id: a.id,
-        phoneNumberId: a.phoneNumberId,
-        phoneNumber: a.phoneNumber,
-        displayName: a.displayName,
-        status: a.status,
-        isDefault: a.isDefault,
-        wabaId: a.wabaId,
-      })),
-    };
-  }
-
-  // =========================================================
-  // PHONE NUMBERS (Public for controller)
-  // =========================================================
-  static async getPhoneNumbers(organizationId: string) {
-    const accounts = await prisma.whatsAppAccount.findMany({
-      where: { organizationId },
-      orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
-    });
-
-    return accounts.map((a) => ({
-      id: a.id,
-      phoneNumberId: a.phoneNumberId,
-      phoneNumber: a.phoneNumber,
-      displayName: a.displayName,
-      status: a.status,
-      isDefault: a.isDefault,
-      wabaId: a.wabaId,
-    }));
-  }
-
-  // =========================================================
-  // REGISTER PHONE NUMBER
-  // =========================================================
-  static async registerPhoneNumber(organizationId: string, phoneNumberId: string, pin: string) {
-    const connection = await prisma.metaConnection.findFirst({
-      where: { organizationId, status: 'CONNECTED' },
-    });
-
-    if (!connection?.accessToken) throw new AppError('Meta connection not found', 404);
-
-    try {
-      const r = await axios.post(
-        `${GRAPH_API_BASE}/${phoneNumberId}/register`,
-        { messaging_product: 'whatsapp', pin },
-        { headers: { Authorization: `Bearer ${connection.accessToken}` } }
-      );
-      return r.data;
-    } catch (error: any) {
-      const msg = error?.response?.data?.error?.message || error.message || 'Register failed';
-      throw new AppError(msg, 400);
-    }
-  }
-
-  // =========================================================
-  // BUSINESS ACCOUNTS
-  // =========================================================
-  static async getBusinessAccounts(organizationId: string) {
-    const connection = await prisma.metaConnection.findFirst({
-      where: { organizationId, status: 'CONNECTED' },
-    });
-
-    if (!connection?.accessToken) throw new AppError('Meta connection not found', 404);
-
-    const wabas = await this.getWhatsAppBusinessAccounts(connection.accessToken);
-    return wabas.map((w) => ({ id: w.id, name: w.name || 'WABA' }));
-  }
-
-  // =========================================================
-  // SEND TEST MESSAGE
-  // =========================================================
-  static async sendTestMessage(organizationId: string, phoneNumberId: string, to: string, message: string) {
-    const wa = await prisma.whatsAppAccount.findFirst({
-      where: { organizationId, phoneNumberId, status: 'CONNECTED' },
-    });
-
-    if (!wa?.accessToken) throw new AppError('WhatsApp account not found', 404);
-
-    try {
-      const r = await axios.post(
-        `${GRAPH_API_BASE}/${phoneNumberId}/messages`,
-        {
-          messaging_product: 'whatsapp',
-          to: digitsOnly(to),
-          type: 'text',
-          text: { body: message },
-        },
-        { headers: { Authorization: `Bearer ${wa.accessToken}` } }
-      );
-
-      return { success: true, messageId: r.data?.messages?.[0]?.id || null };
-    } catch (error: any) {
-      const msg = error?.response?.data?.error?.message || error.message || 'Send failed';
-      throw new AppError(msg, 400);
-    }
-  }
-
-  // =========================================================
-  // DISCONNECT (no null tokens because schema string)
-  // =========================================================
-  static async disconnect(organizationId: string) {
-    await prisma.metaConnection.updateMany({
-      where: { organizationId },
-      data: {
-        status: 'DISCONNECTED',
-        accessToken: '', // ✅ schema me string hai
-      },
-    });
-
+  /**
+   * Set default account
+   */
+  async setDefaultAccount(accountId: string, organizationId: string) {
+    // Remove default from all
     await prisma.whatsAppAccount.updateMany({
       where: { organizationId },
-      data: {
-        status: 'DISCONNECTED',
-        accessToken: '', // ✅ schema me string hai
-        isDefault: false,
-      },
+      data: { isDefault: false },
     });
 
-    return { success: true, message: 'Disconnected successfully' };
+    // Set new default
+    await prisma.whatsAppAccount.update({
+      where: { id: accountId },
+      data: { isDefault: true },
+    });
+
+    return { success: true };
   }
 
-  // =========================================================
-  // REFRESH CONNECTION (token validity)
-  // =========================================================
-  static async refreshConnection(organizationId: string) {
-    const connection = await prisma.metaConnection.findFirst({
-      where: { organizationId, status: 'CONNECTED' },
-    });
+  /**
+   * Refresh account health/status
+   */
+  async refreshAccountHealth(accountId: string, organizationId: string) {
+    const result = await this.getAccountWithToken(accountId);
+    
+    if (!result) {
+      throw new Error('Account not found');
+    }
 
-    if (!connection?.accessToken) return { isConnected: false, status: 'DISCONNECTED' };
+    const { account, accessToken } = result;
+
+    if (account.organizationId !== organizationId) {
+      throw new Error('Unauthorized');
+    }
 
     try {
-      const resp = await axios.get(`${GRAPH_API_BASE}/debug_token`, {
-        params: {
-          input_token: connection.accessToken,
-          access_token: `${config.meta.appId}|${config.meta.appSecret}`,
+      // Verify token is still valid
+      const debugInfo = await metaApi.debugToken(accessToken);
+      
+      if (!debugInfo.data.is_valid) {
+        await prisma.whatsAppAccount.update({
+          where: { id: accountId },
+          data: {
+            status: WhatsAppAccountStatus.ERROR,
+            connectionStatus: ConnectionStatus.ERROR,
+          },
+        });
+        
+        return { healthy: false, reason: 'Token expired' };
+      }
+
+      // Get phone number health
+      const phoneNumbers = await metaApi.getPhoneNumbers(account.wabaId, accessToken);
+      const phone = phoneNumbers.find((p) => p.id === account.phoneNumberId);
+
+      if (phone) {
+        await prisma.whatsAppAccount.update({
+          where: { id: accountId },
+          data: {
+            qualityRating: phone.qualityRating,
+            status: WhatsAppAccountStatus.ACTIVE,
+            connectionStatus: ConnectionStatus.CONNECTED,
+            lastSyncedAt: new Date(),
+          },
+        });
+
+        return {
+          healthy: true,
+          qualityRating: phone.qualityRating,
+          verifiedName: phone.verifiedName,
+        };
+      }
+
+      return { healthy: false, reason: 'Phone number not found' };
+    } catch (error: any) {
+      await prisma.whatsAppAccount.update({
+        where: { id: accountId },
+        data: {
+          status: WhatsAppAccountStatus.ERROR,
+          connectionStatus: ConnectionStatus.ERROR,
         },
       });
 
-      const isValid = !!resp.data?.data?.is_valid;
-      if (!isValid) {
-        await this.disconnect(organizationId);
-        return { isConnected: false, status: 'TOKEN_EXPIRED' };
-      }
-
-      return await this.getConnectionStatus(organizationId);
-    } catch {
-      return { isConnected: false, status: 'ERROR' };
+      return { healthy: false, reason: error.message };
     }
   }
+
+  /**
+   * Sync templates from Meta
+   */
+  async syncTemplates(accountId: string, organizationId: string) {
+    const result = await this.getAccountWithToken(accountId);
+    
+    if (!result) {
+      throw new Error('Account not found');
+    }
+
+    const { account, accessToken } = result;
+
+    if (account.organizationId !== organizationId) {
+      throw new Error('Unauthorized');
+    }
+
+    const templates = await metaApi.getTemplates(account.wabaId, accessToken);
+
+    // Upsert templates
+    for (const template of templates) {
+      await prisma.template.upsert({
+        where: {
+          organizationId_name_language: {
+            organizationId,
+            name: template.name,
+            language: template.language,
+          },
+        },
+        create: {
+          organizationId,
+          whatsappAccountId: accountId,
+          metaTemplateId: template.id,
+          name: template.name,
+          language: template.language,
+          category: this.mapCategory(template.category),
+          status: this.mapTemplateStatus(template.status),
+          bodyText: this.extractBodyText(template.components),
+          headerType: this.extractHeaderType(template.components),
+          headerContent: this.extractHeaderContent(template.components),
+          footerText: this.extractFooterText(template.components),
+          buttons: this.extractButtons(template.components),
+          lastSyncedAt: new Date(),
+        },
+        update: {
+          status: this.mapTemplateStatus(template.status),
+          lastSyncedAt: new Date(),
+        },
+      });
+    }
+
+    await prisma.whatsAppAccount.update({
+      where: { id: accountId },
+      data: { lastSyncedAt: new Date() },
+    });
+
+    return { synced: templates.length };
+  }
+
+  /**
+   * Background template sync
+   */
+  private async syncTemplatesBackground(
+    accountId: string,
+    wabaId: string,
+    accessToken: string
+  ) {
+    try {
+      const templates = await metaApi.getTemplates(wabaId, accessToken);
+      console.log(`Synced ${templates.length} templates for account ${accountId}`);
+    } catch (error) {
+      console.error('Background template sync failed:', error);
+    }
+  }
+
+  /**
+   * Remove sensitive data from account
+   */
+  private sanitizeAccount(account: any) {
+    const { accessToken, systemUserAccessToken, webhookSecret, ...safe } = account;
+    return {
+      ...safe,
+      hasAccessToken: !!accessToken,
+    };
+  }
+
+  // Helper methods for template parsing
+  private mapCategory(category: string): 'MARKETING' | 'UTILITY' | 'AUTHENTICATION' {
+    const map: Record<string, 'MARKETING' | 'UTILITY' | 'AUTHENTICATION'> = {
+      MARKETING: 'MARKETING',
+      UTILITY: 'UTILITY',
+      AUTHENTICATION: 'AUTHENTICATION',
+    };
+    return map[category] || 'UTILITY';
+  }
+
+  private mapTemplateStatus(status: string): 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' {
+    const map: Record<string, 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED'> = {
+      APPROVED: 'APPROVED',
+      PENDING: 'PENDING',
+      REJECTED: 'REJECTED',
+    };
+    return map[status] || 'PENDING';
+  }
+
+  private extractBodyText(components: any[]): string {
+    const body = components?.find((c: any) => c.type === 'BODY');
+    return body?.text || '';
+  }
+
+  private extractHeaderType(components: any[]): 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT' | null {
+    const header = components?.find((c: any) => c.type === 'HEADER');
+    if (!header) return null;
+    return header.format as any;
+  }
+
+  private extractHeaderContent(components: any[]): string | null {
+    const header = components?.find((c: any) => c.type === 'HEADER');
+    return header?.text || null;
+  }
+
+  private extractFooterText(components: any[]): string | null {
+    const footer = components?.find((c: any) => c.type === 'FOOTER');
+    return footer?.text || null;
+  }
+
+  private extractButtons(components: any[]): any {
+    const buttons = components?.find((c: any) => c.type === 'BUTTONS');
+    return buttons?.buttons || null;
+  }
 }
+
+export const metaService = new MetaService();
+export default metaService;
