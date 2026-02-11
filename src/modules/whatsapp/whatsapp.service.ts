@@ -7,6 +7,8 @@ import { whatsappApi } from "./whatsapp.api";
 import { MessageType } from "@prisma/client";
 
 export class WhatsAppService {
+  getConnectionStatus: any;
+  processWebhook: any;
   // ============================================
   // CONNECT ACCOUNT (OAuth)
   // ============================================

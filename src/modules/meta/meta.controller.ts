@@ -20,13 +20,11 @@ interface AuthRequest extends Request {
 
 /**
  * GET /api/v1/meta/auth/url
- * Generate Meta OAuth URL (BotBee-Style with Embedded Signup)
+ * Generate Meta OAuth URL for WhatsApp Embedded Signup
  */
 export const getAuthUrl = async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user?.organizationId;
-    
-    // Optional mode parameter
     const mode = (req.query.mode as string) || 'embedded';
 
     if (!organizationId) {
@@ -36,12 +34,6 @@ export const getAuthUrl = async (req: AuthRequest, res: Response) => {
     if (!config.meta?.appId) {
       console.error('❌ Meta app ID missing');
       return sendError(res, 'Meta app not configured', 500);
-    }
-
-    // Check for config ID when using embedded mode
-    if (mode === 'embedded' && !config.meta?.configId) {
-      console.error('❌ Meta config ID missing for embedded signup');
-      return sendError(res, 'Meta embedded signup not configured', 500);
     }
 
     // Generate state for CSRF protection
@@ -54,35 +46,25 @@ export const getAuthUrl = async (req: AuthRequest, res: Response) => {
       })
     ).toString('base64');
 
-    const version = 'v23.0'; // Latest version for embedded signup
+    const version = 'v21.0'; // ✅ Stable version
     const redirectUri = encodeURIComponent(
       config.meta.redirectUri || `${config.frontendUrl}/meta/callback`
     );
 
     let authUrl: string;
 
-    if (mode === 'embedded') {
-      // ✅ EMBEDDED SIGNUP URL (BotBee-Style with magic parameters)
-      const extras = JSON.stringify({
-        version: 3,
-        feature: "whatsapp_embedded_signup",
-        featureType: "whatsapp_business_app_onboarding",
-        sessionInfoVersion: "3"
-      });
-
+    if (mode === 'embedded' && config.meta?.configId) {
+      // ✅ EMBEDDED SIGNUP URL (with config_id)
       authUrl = `https://www.facebook.com/${version}/dialog/oauth` +
         `?client_id=${config.meta.appId}` +
         `&redirect_uri=${redirectUri}` +
         `&state=${state}` +
+        `&config_id=${config.meta.configId}` + // ✅ Config ID for embedded signup
         `&response_type=code` +
-        `&config_id=${config.meta.configId}` + // ✅ Config ID required for embedded
-        `&extras=${encodeURIComponent(extras)}` + // ✅ Magic extras for embedded signup
-        `&scope=whatsapp_business_management,whatsapp_business_messaging,business_management` +
-        `&display=popup`; // ✅ Popup mode for embedded
+        `&scope=whatsapp_business_management,whatsapp_business_messaging,business_management`;
 
-      console.log('🔗 Generated Embedded Signup URL (BotBee-Style)');
+      console.log('🔗 Generated Embedded Signup URL');
       console.log('   Config ID:', config.meta.configId);
-      console.log('   Extras:', extras);
     } else {
       // Standard OAuth URL (fallback)
       authUrl = `https://www.facebook.com/${version}/dialog/oauth` +
@@ -99,15 +81,15 @@ export const getAuthUrl = async (req: AuthRequest, res: Response) => {
     console.log('   Mode:', mode);
     console.log('   Version:', version);
     console.log('   App ID:', config.meta.appId);
-    console.log('   Redirect:', config.meta.redirectUri);
+    console.log('   Redirect URI:', decodeURIComponent(redirectUri));
 
     sendSuccess(res, { 
       url: authUrl,
-      authUrl, // Include both for compatibility
+      authUrl,
       state,
       mode,
       redirectUri: config.meta.redirectUri,
-      isEmbedded: mode === 'embedded'
+      isEmbedded: mode === 'embedded' && !!config.meta?.configId
     }, 'Auth URL generated successfully');
 
   } catch (error: any) {
@@ -476,5 +458,33 @@ export const sendTestMessage = async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     console.error('❌ Send test message error:', error);
     sendError(res, error.message || 'Failed to send test message', 500);
+  }
+};
+
+// ============================================
+// DEBUG / HEALTH CHECK
+// ============================================
+
+/**
+ * GET /api/v1/meta/debug/config
+ * Get Meta configuration (for debugging - hide sensitive data)
+ */
+export const getDebugConfig = async (req: AuthRequest, res: Response) => {
+  try {
+    const debugInfo = {
+      appIdConfigured: !!config.meta?.appId,
+      appIdPrefix: config.meta?.appId?.substring(0, 5) + '...',
+      configIdConfigured: !!config.meta?.configId,
+      configIdPrefix: config.meta?.configId?.substring(0, 5) + '...',
+      redirectUri: config.meta?.redirectUri,
+      graphApiVersion: config.meta?.graphApiVersion,
+      frontendUrl: config.frontendUrl,
+      webhookConfigured: !!config.meta?.webhookVerifyToken
+    };
+
+    sendSuccess(res, debugInfo, 'Debug config retrieved');
+  } catch (error: any) {
+    console.error('❌ Debug config error:', error);
+    sendError(res, error.message, 500);
   }
 };
