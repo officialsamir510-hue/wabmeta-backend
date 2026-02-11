@@ -1,0 +1,77 @@
+export interface FlowNode {
+    id: string;
+    type: 'start' | 'message' | 'button' | 'condition' | 'delay' | 'action';
+    position: {
+        x: number;
+        y: number;
+    };
+    data: {
+        label?: string;
+        message?: string;
+        buttons?: Array<{
+            id: string;
+            text: string;
+            type: 'reply' | 'url' | 'phone';
+            value?: string;
+        }>;
+        condition?: {
+            type: 'keyword' | 'contains' | 'exact' | 'regex';
+            value: string;
+        };
+        delay?: number;
+        action?: {
+            type: 'assign' | 'tag' | 'webhook' | 'variable';
+            value: string;
+        };
+    };
+}
+export interface FlowEdge {
+    id: string;
+    source: string;
+    target: string;
+    sourceHandle?: string;
+    targetHandle?: string;
+    label?: string;
+}
+export interface FlowData {
+    nodes: FlowNode[];
+    edges: FlowEdge[];
+}
+export interface ChatbotInput {
+    name: string;
+    description?: string;
+    flowData?: FlowData;
+    triggerKeywords?: string[];
+    isDefault?: boolean;
+    welcomeMessage?: string;
+    fallbackMessage?: string;
+    status?: 'DRAFT' | 'ACTIVE' | 'PAUSED';
+}
+export interface ChatbotResponse {
+    id: string;
+    name: string;
+    description: string | null;
+    flowData: FlowData;
+    triggerKeywords: string[];
+    isDefault: boolean;
+    welcomeMessage: string | null;
+    fallbackMessage: string | null;
+    status: 'DRAFT' | 'ACTIVE' | 'PAUSED';
+    createdAt: Date;
+    updatedAt: Date;
+}
+export interface ChatbotStats {
+    totalConversations: number;
+    messagesHandled: number;
+    fallbackTriggered: number;
+    avgResponseTime: number;
+}
+export interface ChatbotSession {
+    conversationId: string;
+    chatbotId: string;
+    currentNodeId: string;
+    variables: Record<string, any>;
+    lastInteractionAt: Date;
+    messageCount: number;
+}
+//# sourceMappingURL=chatbot.types.d.ts.map

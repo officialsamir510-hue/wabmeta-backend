@@ -2,28 +2,14 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { adminService } from './admin.service';
-import { sendSuccess } from '../../utils/response';
-import { AppError } from '../../middleware/errorHandler';
-import {
-  AdminLoginInput,
-  CreateAdminInput,
-  UpdateAdminInput,
-  UsersQueryInput,
-  UpdateUserInput,
-  OrganizationsQueryInput,
-  UpdateOrganizationInput,
-  UpdateSubscriptionInput,
-  CreatePlanInput,
-  UpdatePlanInput,
-  SystemSettingsInput,
-} from './admin.types';
+
+// Response helper
+const sendSuccess = (res: Response, data: any, message: string, statusCode: number = 200) => {
+  return res.status(statusCode).json({ success: true, message, data });
+};
 
 interface AdminRequest extends Request {
-  admin?: {
-    id: string;
-    email: string;
-    role: string;
-  };
+  admin?: { id: string; email: string; role: string };
 }
 
 export class AdminController {
@@ -32,8 +18,7 @@ export class AdminController {
   // ==========================================
   async login(req: Request, res: Response, next: NextFunction) {
     try {
-      const input: AdminLoginInput = req.body;
-      const result = await adminService.login(input);
+      const result = await adminService.login(req.body);
       return sendSuccess(res, result, 'Login successful');
     } catch (error) {
       next(error);
@@ -43,7 +28,7 @@ export class AdminController {
   async getProfile(req: AdminRequest, res: Response, next: NextFunction) {
     try {
       const admins = await adminService.getAdmins();
-      const admin = admins.find((a) => a.id === req.admin!.id);
+      const admin = admins.find((a) => a.id === req.admin?.id);
       return sendSuccess(res, admin, 'Profile fetched');
     } catch (error) {
       next(error);
@@ -52,8 +37,7 @@ export class AdminController {
 
   async createAdmin(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const input: CreateAdminInput = req.body;
-      const admin = await adminService.createAdmin(input);
+      const admin = await adminService.createAdmin(req.body);
       return sendSuccess(res, admin, 'Admin created successfully', 201);
     } catch (error) {
       next(error);
@@ -62,9 +46,7 @@ export class AdminController {
 
   async updateAdmin(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const { id } = req.params;
-      const input: UpdateAdminInput = req.body;
-      const admin = await adminService.updateAdmin(id, input);
+      const admin = await adminService.updateAdmin(req.params.id, req.body);
       return sendSuccess(res, admin, 'Admin updated successfully');
     } catch (error) {
       next(error);
@@ -82,8 +64,7 @@ export class AdminController {
 
   async deleteAdmin(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const { id } = req.params;
-      const result = await adminService.deleteAdmin(id);
+      const result = await adminService.deleteAdmin(req.params.id);
       return sendSuccess(res, result, result.message);
     } catch (error) {
       next(error);
@@ -107,26 +88,22 @@ export class AdminController {
   // ==========================================
   async getUsers(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const query: UsersQueryInput = {
-        page: parseInt(req.query.page as string) || 1,
-        limit: parseInt(req.query.limit as string) || 20,
-        search: req.query.search as string,
-        status: req.query.status as any,
-        sortBy: (req.query.sortBy as any) || 'createdAt',
-        sortOrder: (req.query.sortOrder as any) || 'desc',
-      };
+      // ✅ Fix: Access query params safely
+      const q = req.query;
+      const page = Number(q.page) || 1;
+      const limit = Number(q.limit) || 20;
+      const search = typeof q.search === 'string' ? q.search : undefined;
+      const status = typeof q.status === 'string' ? q.status : undefined;
+      const sortBy = typeof q.sortBy === 'string' ? q.sortBy : 'createdAt';
+      const sortOrder = typeof q.sortOrder === 'string' ? q.sortOrder : 'desc';
 
-      const result = await adminService.getUsers(query);
+      const result = await adminService.getUsers({ page, limit, search, status, sortBy, sortOrder });
+      
       return res.json({
         success: true,
         message: 'Users fetched successfully',
         data: result.users,
-        meta: {
-          total: result.total,
-          page: query.page,
-          limit: query.limit,
-          totalPages: Math.ceil(result.total / (query.limit || 20)),
-        },
+        meta: { total: result.total, page, limit, totalPages: Math.ceil(result.total / limit) },
       });
     } catch (error) {
       next(error);
@@ -135,8 +112,7 @@ export class AdminController {
 
   async getUserById(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const { id } = req.params;
-      const user = await adminService.getUserById(id);
+      const user = await adminService.getUserById(req.params.id);
       return sendSuccess(res, user, 'User fetched successfully');
     } catch (error) {
       next(error);
@@ -145,9 +121,7 @@ export class AdminController {
 
   async updateUser(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const { id } = req.params;
-      const input: UpdateUserInput = req.body;
-      const user = await adminService.updateUser(id, input);
+      const user = await adminService.updateUser(req.params.id, req.body);
       return sendSuccess(res, user, 'User updated successfully');
     } catch (error) {
       next(error);
@@ -156,8 +130,7 @@ export class AdminController {
 
   async deleteUser(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const { id } = req.params;
-      const result = await adminService.deleteUser(id);
+      const result = await adminService.deleteUser(req.params.id);
       return sendSuccess(res, result, result.message);
     } catch (error) {
       next(error);
@@ -166,8 +139,7 @@ export class AdminController {
 
   async suspendUser(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const { id } = req.params;
-      const user = await adminService.suspendUser(id);
+      const user = await adminService.suspendUser(req.params.id);
       return sendSuccess(res, user, 'User suspended successfully');
     } catch (error) {
       next(error);
@@ -176,8 +148,7 @@ export class AdminController {
 
   async activateUser(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const { id } = req.params;
-      const user = await adminService.activateUser(id);
+      const user = await adminService.activateUser(req.params.id);
       return sendSuccess(res, user, 'User activated successfully');
     } catch (error) {
       next(error);
@@ -189,26 +160,22 @@ export class AdminController {
   // ==========================================
   async getOrganizations(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const query: OrganizationsQueryInput = {
-        page: parseInt(req.query.page as string) || 1,
-        limit: parseInt(req.query.limit as string) || 20,
-        search: req.query.search as string,
-        planType: req.query.planType as any,
-        sortBy: (req.query.sortBy as any) || 'createdAt',
-        sortOrder: (req.query.sortOrder as any) || 'desc',
-      };
+      // ✅ Fix: Access query params safely
+      const q = req.query;
+      const page = Number(q.page) || 1;
+      const limit = Number(q.limit) || 20;
+      const search = typeof q.search === 'string' ? q.search : undefined;
+      const planType = typeof q.planType === 'string' ? q.planType : undefined;
+      const sortBy = typeof q.sortBy === 'string' ? q.sortBy : 'createdAt';
+      const sortOrder = typeof q.sortOrder === 'string' ? q.sortOrder : 'desc';
 
-      const result = await adminService.getOrganizations(query);
+      const result = await adminService.getOrganizations({ page, limit, search, planType, sortBy, sortOrder });
+      
       return res.json({
         success: true,
         message: 'Organizations fetched successfully',
         data: result.organizations,
-        meta: {
-          total: result.total,
-          page: query.page,
-          limit: query.limit,
-          totalPages: Math.ceil(result.total / (query.limit || 20)),
-        },
+        meta: { total: result.total, page, limit, totalPages: Math.ceil(result.total / limit) },
       });
     } catch (error) {
       next(error);
@@ -217,8 +184,7 @@ export class AdminController {
 
   async getOrganizationById(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const { id } = req.params;
-      const org = await adminService.getOrganizationById(id);
+      const org = await adminService.getOrganizationById(req.params.id);
       return sendSuccess(res, org, 'Organization fetched successfully');
     } catch (error) {
       next(error);
@@ -227,9 +193,7 @@ export class AdminController {
 
   async updateOrganization(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const { id } = req.params;
-      const input: UpdateOrganizationInput = req.body;
-      const org = await adminService.updateOrganization(id, input);
+      const org = await adminService.updateOrganization(req.params.id, req.body);
       return sendSuccess(res, org, 'Organization updated successfully');
     } catch (error) {
       next(error);
@@ -238,8 +202,7 @@ export class AdminController {
 
   async deleteOrganization(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const { id } = req.params;
-      const result = await adminService.deleteOrganization(id);
+      const result = await adminService.deleteOrganization(req.params.id);
       return sendSuccess(res, result, result.message);
     } catch (error) {
       next(error);
@@ -248,9 +211,7 @@ export class AdminController {
 
   async updateSubscription(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const { id } = req.params;
-      const input: UpdateSubscriptionInput = req.body;
-      const org = await adminService.updateSubscription(id, input);
+      const org = await adminService.updateSubscription(req.params.id, req.body);
       return sendSuccess(res, org, 'Subscription updated successfully');
     } catch (error) {
       next(error);
@@ -271,8 +232,7 @@ export class AdminController {
 
   async createPlan(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const input: CreatePlanInput = req.body;
-      const plan = await adminService.createPlan(input);
+      const plan = await adminService.createPlan(req.body);
       return sendSuccess(res, plan, 'Plan created successfully', 201);
     } catch (error) {
       next(error);
@@ -281,9 +241,7 @@ export class AdminController {
 
   async updatePlan(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const { id } = req.params;
-      const input: UpdatePlanInput = req.body;
-      const plan = await adminService.updatePlan(id, input);
+      const plan = await adminService.updatePlan(req.params.id, req.body);
       return sendSuccess(res, plan, 'Plan updated successfully');
     } catch (error) {
       next(error);
@@ -295,27 +253,23 @@ export class AdminController {
   // ==========================================
   async getActivityLogs(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const query = {
-        page: parseInt(req.query.page as string) || 1,
-        limit: parseInt(req.query.limit as string) || 50,
-        action: req.query.action as string,
-        userId: req.query.userId as string,
-        organizationId: req.query.organizationId as string,
-        startDate: req.query.startDate as string,
-        endDate: req.query.endDate as string,
-      };
+      // ✅ Fix: Access query params safely
+      const q = req.query;
+      const page = Number(q.page) || 1;
+      const limit = Number(q.limit) || 50;
+      const action = typeof q.action === 'string' ? q.action : undefined;
+      const userId = typeof q.userId === 'string' ? q.userId : undefined;
+      const organizationId = typeof q.organizationId === 'string' ? q.organizationId : undefined;
+      const startDate = typeof q.startDate === 'string' ? q.startDate : undefined;
+      const endDate = typeof q.endDate === 'string' ? q.endDate : undefined;
 
-      const result = await adminService.getActivityLogs(query);
+      const result = await adminService.getActivityLogs({ page, limit, action, userId, organizationId, startDate, endDate });
+      
       return res.json({
         success: true,
         message: 'Activity logs fetched',
         data: result.logs,
-        meta: {
-          total: result.total,
-          page: query.page,
-          limit: query.limit,
-          totalPages: Math.ceil(result.total / query.limit),
-        },
+        meta: { total: result.total, page, limit, totalPages: Math.ceil(result.total / limit) },
       });
     } catch (error) {
       next(error);
@@ -336,8 +290,7 @@ export class AdminController {
 
   async updateSystemSettings(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const input: SystemSettingsInput = req.body;
-      const settings = adminService.updateSystemSettings(input);
+      const settings = adminService.updateSystemSettings(req.body);
       return sendSuccess(res, settings, 'Settings updated successfully');
     } catch (error) {
       next(error);
@@ -345,5 +298,4 @@ export class AdminController {
   }
 }
 
-// Export singleton instance
 export const adminController = new AdminController();
