@@ -130,7 +130,149 @@ const toJsonValue = (value: any): Prisma.InputJsonValue | undefined => {
 
 export class CampaignsService {
   // ==========================================
-  // CREATE CAMPAIGN
+  // ✅ FIXED: FIND WHATSAPP ACCOUNT (ROBUST)
+  // ==========================================
+  private async findWhatsAppAccount(
+    organizationId: string,
+    whatsappAccountId?: string,
+    phoneNumberId?: string
+  ): Promise<any> {
+    console.log('🔍 Finding WhatsApp account:', {
+      organizationId,
+      whatsappAccountId,
+      phoneNumberId,
+    });
+
+    let waAccount = null;
+
+    // Method 1: Try exact match (id + organizationId)
+    if (whatsappAccountId) {
+      waAccount = await prisma.whatsAppAccount.findFirst({
+        where: { 
+          id: whatsappAccountId, 
+          organizationId 
+        },
+      });
+
+      if (waAccount) {
+        console.log('✅ Found by exact match (id + org):', waAccount.id);
+        return waAccount;
+      }
+    }
+
+    // Method 2: Try by ID only (check if organizationId is missing/null)
+    if (!waAccount && whatsappAccountId) {
+      const byIdOnly = await prisma.whatsAppAccount.findUnique({
+        where: { id: whatsappAccountId },
+      });
+
+      console.log('🔍 WhatsApp account by ID only:', byIdOnly ? {
+        id: byIdOnly.id,
+        organizationId: byIdOnly.organizationId,
+        status: byIdOnly.status,
+        phoneNumber: byIdOnly.phoneNumber,
+      } : 'NOT FOUND');
+
+      if (byIdOnly) {
+        // Case A: organizationId is null/missing -> backfill it
+        if (!byIdOnly.organizationId) {
+          console.log('⚠️ WhatsApp account has no organizationId, backfilling...');
+          waAccount = await prisma.whatsAppAccount.update({
+            where: { id: byIdOnly.id },
+            data: { organizationId },
+          });
+          console.log('✅ Backfilled organizationId:', waAccount.id);
+          return waAccount;
+        }
+
+        // Case B: organizationId exists but different -> security block
+        if (byIdOnly.organizationId !== organizationId) {
+          console.error('❌ WhatsApp account belongs to different org:', {
+            accountOrg: byIdOnly.organizationId,
+            requestOrg: organizationId,
+          });
+          throw new AppError('WhatsApp account belongs to another organization', 403);
+        }
+
+        // Case C: organizationId matches (shouldn't reach here, but just in case)
+        waAccount = byIdOnly;
+        return waAccount;
+      }
+    }
+
+    // Method 3: Try by phoneNumberId
+    if (!waAccount && phoneNumberId) {
+      waAccount = await prisma.whatsAppAccount.findFirst({
+        where: { 
+          phoneNumberId,
+          organizationId 
+        },
+      });
+
+      if (waAccount) {
+        console.log('✅ Found by phoneNumberId:', waAccount.id);
+        return waAccount;
+      }
+
+      // Try phoneNumberId without org filter
+      const byPhoneNumberId = await prisma.whatsAppAccount.findFirst({
+        where: { phoneNumberId },
+      });
+
+      if (byPhoneNumberId && !byPhoneNumberId.organizationId) {
+        console.log('⚠️ Found by phoneNumberId, backfilling org...');
+        waAccount = await prisma.whatsAppAccount.update({
+          where: { id: byPhoneNumberId.id },
+          data: { organizationId },
+        });
+        console.log('✅ Backfilled organizationId:', waAccount.id);
+        return waAccount;
+      }
+    }
+
+    // Method 4: Fallback - get default/first connected account for this org
+    if (!waAccount) {
+      console.log('🔍 Trying fallback: default/connected account for org...');
+      
+      waAccount = await prisma.whatsAppAccount.findFirst({
+        where: {
+          organizationId,
+          status: { in: ['CONNECTED', 'ACTIVE', 'VERIFIED'] },
+        },
+        orderBy: [
+          { isDefault: 'desc' },
+          { createdAt: 'desc' },
+        ],
+      });
+
+      if (waAccount) {
+        console.log('✅ Found by fallback (default/connected):', waAccount.id);
+        return waAccount;
+      }
+    }
+
+    // Method 5: Last resort - any account for this org
+    if (!waAccount) {
+      console.log('🔍 Trying last resort: any account for org...');
+      
+      waAccount = await prisma.whatsAppAccount.findFirst({
+        where: { organizationId },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (waAccount) {
+        console.log('✅ Found by last resort:', waAccount.id);
+        return waAccount;
+      }
+    }
+
+    // Nothing found
+    console.error('❌ No WhatsApp account found for org:', organizationId);
+    return null;
+  }
+
+  // ==========================================
+  // ✅ FIXED: CREATE CAMPAIGN
   // ==========================================
   async create(organizationId: string, input: CreateCampaignInput): Promise<CampaignResponse> {
     const {
@@ -138,11 +280,21 @@ export class CampaignsService {
       description,
       templateId,
       whatsappAccountId,
+      phoneNumberId,
       contactGroupId,
       contactIds,
       audienceFilter,
       scheduledAt,
-    } = input;
+    } = input as any; // Cast to any to accept phoneNumberId
+
+    console.log('📦 Campaign create request:', {
+      organizationId,
+      name,
+      templateId,
+      whatsappAccountId,
+      phoneNumberId,
+      contactIdsCount: contactIds?.length || 0,
+    });
 
     // Validate template
     const template = await prisma.template.findFirst({
@@ -153,14 +305,25 @@ export class CampaignsService {
       throw new AppError('Template not found', 404);
     }
 
-    // Validate WhatsApp account
-    const waAccount = await prisma.whatsAppAccount.findFirst({
-      where: { id: whatsappAccountId, organizationId },
-    });
+    // ✅ FIXED: Robust WhatsApp account lookup
+    const waAccount = await this.findWhatsAppAccount(
+      organizationId,
+      whatsappAccountId,
+      phoneNumberId
+    );
 
     if (!waAccount) {
-      throw new AppError('WhatsApp account not found', 404);
+      throw new AppError(
+        'WhatsApp account not found. Please connect WhatsApp first in Settings → WhatsApp.',
+        404
+      );
     }
+
+    console.log('✅ Using WhatsApp account:', {
+      id: waAccount.id,
+      phoneNumber: waAccount.phoneNumber,
+      status: waAccount.status,
+    });
 
     // Validate contact group if provided
     if (contactGroupId) {
@@ -240,7 +403,7 @@ export class CampaignsService {
           name,
           description,
           templateId,
-          whatsappAccountId,
+          whatsappAccountId: waAccount.id, // ✅ Use found account ID
           contactGroupId,
           audienceFilter: toJsonValue(audienceFilter),
           status: scheduledAt ? 'SCHEDULED' : 'DRAFT',
@@ -473,6 +636,10 @@ export class CampaignsService {
     
     if (!['DRAFT', 'SCHEDULED', 'PAUSED'].includes(campaign.status)) {
       throw new AppError(`Cannot start campaign with status: ${campaign.status}`, 400);
+    }
+
+    if (!campaign.whatsappAccount) {
+      throw new AppError('WhatsApp account not found for this campaign', 400);
     }
 
     if (campaign.whatsappAccount.status !== 'CONNECTED') {
@@ -793,13 +960,12 @@ export class CampaignsService {
   }
 
   // ==========================================
-  // GET CAMPAIGN STATS (✅ OPTIMIZED)
+  // GET CAMPAIGN STATS
   // ==========================================
   async getStats(organizationId: string): Promise<CampaignStats> {
     try {
       console.log('📊 Fetching campaign stats for org:', organizationId);
 
-      // Single query for aggregates
       const stats = await prisma.campaign.aggregate({
         where: { organizationId },
         _count: { id: true },
@@ -812,7 +978,6 @@ export class CampaignsService {
         }
       });
 
-      // Get status counts separately
       const statusCounts = await prisma.campaign.groupBy({
         by: ['status'],
         where: { organizationId },
@@ -824,7 +989,6 @@ export class CampaignsService {
       const totalDelivered = stats._sum.deliveredCount || 0;
       const totalRead = stats._sum.readCount || 0;
 
-      // Map status counts
       const getStatusCount = (status: CampaignStatus) =>
         statusCounts.find(s => s.status === status)?._count || 0;
 
@@ -853,7 +1017,6 @@ export class CampaignsService {
     } catch (error: any) {
       console.error('❌ Get campaign stats error:', error);
       
-      // Return empty stats on database timeout
       if (error.code === 'P2024') {
         console.warn('⚠️ Database timeout, returning empty stats');
         return {
@@ -951,7 +1114,6 @@ export class CampaignsService {
       data: updateData,
     });
 
-    // Update campaign counters
     const countField = `${status.toLowerCase()}Count`;
     if (['SENT', 'DELIVERED', 'READ', 'FAILED'].includes(status)) {
       await prisma.campaign.update({
@@ -1026,7 +1188,6 @@ export class CampaignsService {
     console.log(`🚀 Sending campaign ${campaignId} to pending contacts...`);
 
     while (true) {
-      // Check if campaign is still running
       const currentCampaign = await prisma.campaign.findUnique({
         where: { id: campaignId },
         select: { status: true },
@@ -1037,7 +1198,6 @@ export class CampaignsService {
         break;
       }
 
-      // Get batch of pending contacts
       const pending = await prisma.campaignContact.findMany({
         where: { campaignId, status: 'PENDING' },
         take: 25,
@@ -1085,7 +1245,6 @@ export class CampaignsService {
           await this.updateContactStatus(campaignId, cc.contactId, 'SENT', waMessageId);
           console.log('✅ Sent:', { campaignId, contactId: cc.contactId, waMessageId });
 
-          // Rate limiting: 80ms delay between messages
           await new Promise((r) => setTimeout(r, 80));
         } catch (e: any) {
           const reason = e?.response?.data?.error?.message || e?.message || 'Send failed';
