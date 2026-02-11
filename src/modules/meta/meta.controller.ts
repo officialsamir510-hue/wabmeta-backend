@@ -5,6 +5,13 @@ import { metaService } from './meta.service';
 import { successResponse, errorResponse } from '../../utils/response';
 import { v4 as uuidv4 } from 'uuid';
 
+// Helper function to safely get string from params/query
+const getString = (value: unknown): string => {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value) && typeof value[0] === 'string') return value[0];
+  return '';
+};
+
 class MetaController {
   /**
    * Get Embedded Signup config
@@ -27,7 +34,7 @@ class MetaController {
    */
   async getOAuthUrl(req: Request, res: Response, next: NextFunction) {
     try {
-      const { organizationId } = req.query;
+      const organizationId = getString(req.query.organizationId);
       
       if (!organizationId) {
         return errorResponse(res, 'Organization ID required', 400);
@@ -65,14 +72,14 @@ class MetaController {
       }
 
       // Verify user has access to organization
-      const hasAccess = await this.verifyOrgAccess(req.user!.id, organizationId);
+      const hasAccess = await this.verifyOrgAccess(req.user!.id, String(organizationId));
       if (!hasAccess) {
         return errorResponse(res, 'You do not have access to this organization', 403);
       }
 
       const result = await metaService.completeConnection(
-        code,
-        organizationId,
+        String(code),
+        String(organizationId),
         req.user!.id
       );
 
@@ -94,7 +101,7 @@ class MetaController {
    */
   async getAccounts(req: Request, res: Response, next: NextFunction) {
     try {
-      const { organizationId } = req.params;
+      const organizationId = getString(req.params.organizationId);
 
       const hasAccess = await this.verifyOrgAccess(req.user!.id, organizationId);
       if (!hasAccess) {
@@ -117,7 +124,8 @@ class MetaController {
    */
   async getAccount(req: Request, res: Response, next: NextFunction) {
     try {
-      const { organizationId, accountId } = req.params;
+      const organizationId = getString(req.params.organizationId);
+      const accountId = getString(req.params.accountId);
 
       const hasAccess = await this.verifyOrgAccess(req.user!.id, organizationId);
       if (!hasAccess) {
@@ -140,7 +148,8 @@ class MetaController {
    */
   async disconnectAccount(req: Request, res: Response, next: NextFunction) {
     try {
-      const { organizationId, accountId } = req.params;
+      const organizationId = getString(req.params.organizationId);
+      const accountId = getString(req.params.accountId);
 
       const hasAccess = await this.verifyOrgAccess(req.user!.id, organizationId);
       if (!hasAccess) {
@@ -162,7 +171,8 @@ class MetaController {
    */
   async setDefaultAccount(req: Request, res: Response, next: NextFunction) {
     try {
-      const { organizationId, accountId } = req.params;
+      const organizationId = getString(req.params.organizationId);
+      const accountId = getString(req.params.accountId);
 
       const hasAccess = await this.verifyOrgAccess(req.user!.id, organizationId);
       if (!hasAccess) {
@@ -184,7 +194,8 @@ class MetaController {
    */
   async refreshHealth(req: Request, res: Response, next: NextFunction) {
     try {
-      const { organizationId, accountId } = req.params;
+      const organizationId = getString(req.params.organizationId);
+      const accountId = getString(req.params.accountId);
 
       const hasAccess = await this.verifyOrgAccess(req.user!.id, organizationId);
       if (!hasAccess) {
@@ -207,7 +218,8 @@ class MetaController {
    */
   async syncTemplates(req: Request, res: Response, next: NextFunction) {
     try {
-      const { organizationId, accountId } = req.params;
+      const organizationId = getString(req.params.organizationId);
+      const accountId = getString(req.params.accountId);
 
       const hasAccess = await this.verifyOrgAccess(req.user!.id, organizationId);
       if (!hasAccess) {

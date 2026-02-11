@@ -88,7 +88,7 @@ export class TemplatesController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string; // ✅ Fixed
       const template = await templatesService.getById(organizationId, id);
       return sendSuccess(res, template, 'Template fetched successfully');
     } catch (error) {
@@ -106,7 +106,7 @@ export class TemplatesController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string; // ✅ Fixed
       const input: UpdateTemplateInput = req.body;
       const template = await templatesService.update(organizationId, id, input);
       return sendSuccess(res, template, 'Template updated successfully');
@@ -125,7 +125,7 @@ export class TemplatesController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string; // ✅ Fixed
       const result = await templatesService.delete(organizationId, id);
       return sendSuccess(res, result, result.message);
     } catch (error) {
@@ -143,7 +143,7 @@ export class TemplatesController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string; // ✅ Fixed
       const { name } = req.body;
       const template = await templatesService.duplicate(organizationId, id, name);
       return sendSuccess(res, template, 'Template duplicated successfully', 201);
@@ -235,7 +235,7 @@ export class TemplatesController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string; // ✅ Fixed
       const { whatsappAccountId } = req.body;
       
       const result = await templatesService.submitToMeta(organizationId, id, whatsappAccountId);

@@ -3,7 +3,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../../types/express';
 import { contactsService } from './contacts.service';
-import { sendSuccess, sendPaginated } from '../../utils/response';
+import { sendSuccess } from '../../utils/response';
 import { AppError } from '../../middleware/errorHandler';
 import {
   CreateContactInput,
@@ -77,7 +77,7 @@ export class ContactsController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string; // ✅ Fixed
       const contact = await contactsService.getById(organizationId, id);
       sendSuccess(res, contact, 'Contact fetched successfully');
     } catch (error) {
@@ -95,7 +95,7 @@ export class ContactsController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string; // ✅ Fixed
       const input: UpdateContactInput = req.body;
       const contact = await contactsService.update(organizationId, id, input);
       sendSuccess(res, contact, 'Contact updated successfully');
@@ -114,7 +114,7 @@ export class ContactsController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string; // ✅ Fixed
       const result = await contactsService.delete(organizationId, id);
       sendSuccess(res, result, result.message);
     } catch (error) {
@@ -290,7 +290,7 @@ export class ContactsController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { groupId } = req.params;
+      const groupId = req.params.groupId as string; // ✅ Fixed
       const group = await contactsService.getGroupById(organizationId, groupId);
       sendSuccess(res, group, 'Group fetched successfully');
     } catch (error) {
@@ -306,7 +306,7 @@ export class ContactsController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { groupId } = req.params;
+      const groupId = req.params.groupId as string; // ✅ Fixed
       const input: UpdateContactGroupInput = req.body;
       const group = await contactsService.updateGroup(organizationId, groupId, input);
       sendSuccess(res, group, 'Group updated successfully');
@@ -323,7 +323,7 @@ export class ContactsController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { groupId } = req.params;
+      const groupId = req.params.groupId as string; // ✅ Fixed
       const result = await contactsService.deleteGroup(organizationId, groupId);
       sendSuccess(res, result, result.message);
     } catch (error) {
@@ -339,7 +339,7 @@ export class ContactsController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { groupId } = req.params;
+      const groupId = req.params.groupId as string; // ✅ Fixed
       const { contactIds } = req.body;
       const result = await contactsService.addContactsToGroup(organizationId, groupId, contactIds);
       sendSuccess(res, result, result.message);
@@ -356,7 +356,7 @@ export class ContactsController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { groupId } = req.params;
+      const groupId = req.params.groupId as string; // ✅ Fixed
       const { contactIds } = req.body;
       const result = await contactsService.removeContactsFromGroup(organizationId, groupId, contactIds);
       sendSuccess(res, result, result.message);
@@ -373,7 +373,7 @@ export class ContactsController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { groupId } = req.params;
+      const groupId = req.params.groupId as string; // ✅ Fixed
       const query: ContactsQueryInput = {
         page: parseInt(req.query.page as string) || 1,
         limit: parseInt(req.query.limit as string) || 20,

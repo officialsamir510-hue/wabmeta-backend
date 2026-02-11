@@ -123,7 +123,7 @@ export class BillingController {
       const organizationId = req.user?.organizationId;
       if (!organizationId) throw new AppError('Organization context required', 400);
 
-      const { id } = req.params;
+      const id = req.params.id as string;
       const data = await billingService.deletePaymentMethod(organizationId, id);
       return sendSuccess(res, data, data.message);
     } catch (e) {
@@ -136,7 +136,7 @@ export class BillingController {
       const organizationId = req.user?.organizationId;
       if (!organizationId) throw new AppError('Organization context required', 400);
 
-      const { id } = req.params;
+      const id = req.params.id as string;
       const data = await billingService.setDefaultPaymentMethod(organizationId, id);
       return sendSuccess(res, data, data.message);
     } catch (e) {

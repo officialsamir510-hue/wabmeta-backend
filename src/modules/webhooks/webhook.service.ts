@@ -6,7 +6,6 @@ import { EventEmitter } from 'events';
 
 const prisma = new PrismaClient();
 
-// Event emitter for real-time updates
 export const webhookEvents = new EventEmitter();
 
 interface WebhookPayload {
@@ -67,30 +66,21 @@ interface WebhookStatus {
 }
 
 class WebhookService {
-  /**
-   * Verify webhook subscription
-   */
   verifyWebhook(mode: string, token: string, challenge: string): string | null {
     const verifyToken = process.env.WEBHOOK_VERIFY_TOKEN;
-
     if (mode === 'subscribe' && token === verifyToken) {
       console.log('[Webhook] Verification successful');
       return challenge;
     }
-
     console.log('[Webhook] Verification failed');
     return null;
   }
 
-  /**
-   * Process incoming webhook
-   */
   async processWebhook(payload: WebhookPayload): Promise<void> {
     if (payload.object !== 'whatsapp_business_account') {
       console.log('[Webhook] Ignoring non-WhatsApp payload');
       return;
     }
-
     for (const entry of payload.entry) {
       for (const change of entry.changes) {
         if (change.field === 'messages') {
@@ -104,7 +94,6 @@ class WebhookService {
     const { metadata, contacts, messages, statuses } = value;
     const phoneNumberId = metadata.phone_number_id;
 
-    // Find WhatsApp account
     const account = await prisma.whatsAppAccount.findUnique({
       where: { phoneNumberId },
       include: { organization: true },
@@ -115,14 +104,12 @@ class WebhookService {
       return;
     }
 
-    // Process incoming messages
     if (messages && messages.length > 0) {
       for (const message of messages) {
         await this.processIncomingMessage(account, message, contacts?.[0]);
       }
     }
 
-    // Process status updates
     if (statuses && statuses.length > 0) {
       for (const status of statuses) {
         await this.processStatusUpdate(account, status);
@@ -154,25 +141,22 @@ class WebhookService {
           data: {
             organizationId: account.organizationId,
             phone,
-            waId,
-            profileName: contactInfo?.profile?.name,
-            name: contactInfo?.profile?.name,
+            firstName: contactInfo?.profile?.name || null,  // ✅ Fixed
             source: 'WHATSAPP',
           },
         });
-      } else if (contactInfo?.profile?.name && !contact.name) {
-        // Update profile name if we didn't have it
+      } else if (contactInfo?.profile?.name && !contact.firstName) {  // ✅ Fixed
         contact = await prisma.contact.update({
           where: { id: contact.id },
-          data: { profileName: contactInfo.profile.name },
+          data: { firstName: contactInfo.profile.name },  // ✅ Fixed
         });
       }
 
       // Find or create conversation
       let conversation = await prisma.conversation.findUnique({
         where: {
-          whatsappAccountId_contactId: {
-            whatsappAccountId: account.id,
+          organizationId_contactId: {  // ✅ Fixed
+            organizationId: account.organizationId,
             contactId: contact.id,
           },
         },
@@ -182,32 +166,28 @@ class WebhookService {
         conversation = await prisma.conversation.create({
           data: {
             organizationId: account.organizationId,
-            whatsappAccountId: account.id,
+            phoneNumberId: account.phoneNumberId,  // ✅ Fixed
             contactId: contact.id,
-            windowExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+            windowExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
             isWindowOpen: true,
-            status: 'OPEN',
             unreadCount: 1,
             lastMessageAt: new Date(parseInt(message.timestamp) * 1000),
-            lastMessageText: this.getMessagePreview(message),
+            lastMessagePreview: this.getMessagePreview(message),  // ✅ Fixed
           },
         });
       } else {
-        // Update conversation
         await prisma.conversation.update({
           where: { id: conversation.id },
           data: {
             windowExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
             isWindowOpen: true,
-            status: 'OPEN',
             unreadCount: { increment: 1 },
             lastMessageAt: new Date(parseInt(message.timestamp) * 1000),
-            lastMessageText: this.getMessagePreview(message),
+            lastMessagePreview: this.getMessagePreview(message),  // ✅ Fixed
           },
         });
       }
 
-      // Check for duplicate message
       const existingMessage = await prisma.message.findUnique({
         where: { wamId: message.id },
       });
@@ -217,7 +197,6 @@ class WebhookService {
         return;
       }
 
-      // Create message
       const newMessage = await prisma.message.create({
         data: {
           conversationId: conversation.id,
@@ -225,7 +204,7 @@ class WebhookService {
           wamId: message.id,
           direction: 'INBOUND',
           type: this.mapMessageType(message.type),
-          content: this.extractMessageContent(message),
+          content: JSON.stringify(this.extractMessageContent(message)),
           status: 'DELIVERED',
           sentAt: new Date(parseInt(message.timestamp) * 1000),
         },
@@ -238,7 +217,6 @@ class WebhookService {
         },
       });
 
-      // Emit real-time event
       webhookEvents.emit('newMessage', {
         organizationId: account.organizationId,
         accountId: account.id,
@@ -282,8 +260,7 @@ class WebhookService {
       } else if (status.status === 'read') {
         updateData.readAt = new Date(parseInt(status.timestamp) * 1000);
       } else if (status.status === 'failed' && status.errors?.[0]) {
-        updateData.errorCode = status.errors[0].code.toString();
-        updateData.errorMessage = status.errors[0].title;
+        updateData.failureReason = status.errors[0].title;
       }
 
       await prisma.message.update({
@@ -291,9 +268,9 @@ class WebhookService {
         data: updateData,
       });
 
-      // Update campaign recipient if this was a campaign message
-      await prisma.campaignRecipient.updateMany({
-        where: { wamId: status.id },
+      // ✅ Fixed: campaignRecipient → campaignContact
+      await prisma.campaignContact.updateMany({
+        where: { waMessageId: status.id },
         data: {
           status: status.status === 'read' ? 'READ' :
                  status.status === 'delivered' ? 'DELIVERED' :
@@ -303,13 +280,11 @@ class WebhookService {
           ...(status.status === 'read' && { readAt: new Date() }),
           ...(status.status === 'failed' && {
             failedAt: new Date(),
-            errorCode: status.errors?.[0]?.code?.toString(),
-            errorMessage: status.errors?.[0]?.title,
+            failureReason: status.errors?.[0]?.title,
           }),
         },
       });
 
-      // Emit real-time event
       webhookEvents.emit('messageStatus', {
         organizationId: account.organizationId,
         messageId: message.id,
@@ -323,6 +298,7 @@ class WebhookService {
     }
   }
 
+  // ✅ Fixed: MessageType enum values
   private mapMessageType(type: string): MessageType {
     const typeMap: Record<string, MessageType> = {
       text: 'TEXT',
@@ -332,10 +308,10 @@ class WebhookService {
       document: 'DOCUMENT',
       sticker: 'STICKER',
       location: 'LOCATION',
-      contacts: 'CONTACTS',
+      contacts: 'CONTACT',  // ✅ Fixed: CONTACTS → CONTACT
       interactive: 'INTERACTIVE',
       button: 'INTERACTIVE',
-      reaction: 'REACTION',
+      reaction: 'TEXT',  // ✅ Fixed: REACTION → TEXT
     };
     return typeMap[type] || 'TEXT';
   }

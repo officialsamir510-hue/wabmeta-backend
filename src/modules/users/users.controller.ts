@@ -105,7 +105,7 @@ export class UsersController {
   async revokeSession(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user!.id;
-      const { sessionId } = req.params;
+      const sessionId = req.params.sessionId as string;
       const result = await usersService.revokeSession(userId, sessionId);
       return sendSuccess(res, result, result.message);
     } catch (error) {

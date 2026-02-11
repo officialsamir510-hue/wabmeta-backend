@@ -15,6 +15,39 @@ export interface ApiResponse<T = any> {
   };
 }
 
+// ✅ sendSuccess - Supports multiple call patterns
+export const sendSuccess = <T = any>(
+  res: Response,
+  data?: T,
+  message: string = 'Success',
+  statusCode: number = 200
+): Response => {
+  const response: ApiResponse<T> = {
+    success: true,
+    message,
+    data,
+  };
+
+  return res.status(statusCode).json(response);
+};
+
+// ✅ sendError - Supports multiple call patterns
+export const sendError = (
+  res: Response,
+  message: string = 'An error occurred',
+  statusCode: number = 400,
+  error?: any
+): Response => {
+  const response: ApiResponse = {
+    success: false,
+    message,
+    error: error?.message || error,
+  };
+
+  return res.status(statusCode).json(response);
+};
+
+// successResponse - Object based version
 export const successResponse = <T = any>(
   res: Response,
   options: {
@@ -36,6 +69,7 @@ export const successResponse = <T = any>(
   return res.status(statusCode).json(response);
 };
 
+// errorResponse - Object based version
 export const errorResponse = (
   res: Response,
   message: string = 'An error occurred',
@@ -89,4 +123,22 @@ export const paginatedResponse = <T = any>(
   };
 
   return res.status(200).json(response);
+};
+export const sendPaginated = <T = any>(
+  res: Response,
+  data: T[],
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+  },
+  message: string = 'Success'
+): Response => {
+  return paginatedResponse(res, {
+    data,
+    page: pagination.page,
+    limit: pagination.limit,
+    total: pagination.total,
+    message,
+  });
 };

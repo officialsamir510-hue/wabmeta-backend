@@ -45,10 +45,10 @@ const formatContact = (contact: any): ContactResponse => ({
 
 const formatContactWithGroups = (contact: any): ContactWithGroups => ({
   ...formatContact(contact),
-  groups: contact.groups?.map((g: any) => ({
-    id: g.group.id,
-    name: g.group.name,
-    color: g.group.color,
+  groups: contact.groupMemberships?.map((gm: any) => ({
+    id: gm.group.id,
+    name: gm.group.name,
+    color: gm.group.color,
   })) || [],
 });
 
@@ -187,8 +187,9 @@ export class ContactsService {
       where.tags = { hasSome: tags };
     }
 
+    // ✅ Fixed: Use groupMemberships instead of groups
     if (groupId) {
-      where.groups = {
+      where.groupMemberships = {
         some: { groupId },
       };
     }
@@ -225,7 +226,8 @@ export class ContactsService {
         organizationId,
       },
       include: {
-        groups: {
+        // ✅ Fixed: Use groupMemberships instead of groups
+        groupMemberships: {
           include: {
             group: {
               select: {
@@ -667,8 +669,9 @@ export class ContactsService {
   async export(organizationId: string, groupId?: string): Promise<any[]> {
     const where: Prisma.ContactWhereInput = { organizationId };
 
+    // ✅ Fixed: Use groupMemberships instead of groups
     if (groupId) {
-      where.groups = { some: { groupId } };
+      where.groupMemberships = { some: { groupId } };
     }
 
     const contacts = await prisma.contact.findMany({
@@ -937,7 +940,8 @@ export class ContactsService {
 
     const where: Prisma.ContactWhereInput = {
       organizationId,
-      groups: { some: { groupId } },
+      // ✅ Fixed: Use groupMemberships instead of groups
+      groupMemberships: { some: { groupId } },
     };
 
     if (search) {

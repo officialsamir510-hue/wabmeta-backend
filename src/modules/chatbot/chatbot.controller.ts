@@ -56,7 +56,7 @@ export class ChatbotController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string;
       const chatbot = await chatbotService.getById(organizationId, id);
 
       return sendSuccess(res, chatbot, 'Chatbot fetched successfully');
@@ -89,7 +89,7 @@ export class ChatbotController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string;
       const chatbot = await chatbotService.update(organizationId, id, req.body);
 
       return sendSuccess(res, chatbot, 'Chatbot updated successfully');
@@ -106,7 +106,7 @@ export class ChatbotController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string;
       await chatbotService.delete(organizationId, id);
 
       return sendSuccess(res, null, 'Chatbot deleted successfully');
@@ -123,7 +123,7 @@ export class ChatbotController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string;
       const chatbot = await chatbotService.activate(organizationId, id);
 
       return sendSuccess(res, chatbot, 'Chatbot activated successfully');
@@ -140,7 +140,7 @@ export class ChatbotController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string;
       const chatbot = await chatbotService.deactivate(organizationId, id);
 
       return sendSuccess(res, chatbot, 'Chatbot paused successfully');
@@ -157,7 +157,7 @@ export class ChatbotController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string;
       const chatbot = await chatbotService.duplicate(organizationId, id);
 
       return sendSuccess(res, chatbot, 'Chatbot duplicated successfully', 201);
@@ -174,7 +174,7 @@ export class ChatbotController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string;
       const stats = await chatbotService.getStats(organizationId, id);
 
       return sendSuccess(res, stats, 'Chatbot stats fetched successfully');

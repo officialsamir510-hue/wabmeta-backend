@@ -54,7 +54,7 @@ export class OrganizationsController {
   async getById(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user!.id;
-      const { id } = req.params;
+      const id = req.params.id as string;
       const organization = await organizationsService.getById(id, userId);
       return sendSuccess(res, organization, 'Organization fetched successfully');
     } catch (error) {
@@ -87,7 +87,7 @@ export class OrganizationsController {
   async update(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user!.id;
-      const { id } = req.params;
+      const id = req.params.id as string;
       const input: UpdateOrganizationInput = req.body;
       const organization = await organizationsService.update(id, userId, input);
       return sendSuccess(res, organization, 'Organization updated successfully');
@@ -102,7 +102,7 @@ export class OrganizationsController {
   async inviteMember(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user!.id;
-      const { id } = req.params;
+      const id = req.params.id as string;
       const { email, role }: InviteMemberInput = req.body;
       const result = await organizationsService.inviteMember(id, userId, email, role);
       return sendSuccess(res, result, result.message);
@@ -117,7 +117,7 @@ export class OrganizationsController {
   async updateMemberRole(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user!.id;
-      const { id, memberId } = req.params;
+      const id = req.params.id as string; const memberId = req.params.memberId as string;
       const { role }: UpdateMemberRoleInput = req.body;
       const result = await organizationsService.updateMemberRole(id, userId, memberId, role);
       return sendSuccess(res, result, result.message);
@@ -132,7 +132,7 @@ export class OrganizationsController {
   async removeMember(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user!.id;
-      const { id, memberId } = req.params;
+      const id = req.params.id as string; const memberId = req.params.memberId as string;
       const result = await organizationsService.removeMember(id, userId, memberId);
       return sendSuccess(res, result, result.message);
     } catch (error) {
@@ -146,7 +146,7 @@ export class OrganizationsController {
   async leave(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user!.id;
-      const { id } = req.params;
+      const id = req.params.id as string;
       const result = await organizationsService.leaveOrganization(id, userId);
       return sendSuccess(res, result, result.message);
     } catch (error) {
@@ -160,7 +160,7 @@ export class OrganizationsController {
   async transferOwnership(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user!.id;
-      const { id } = req.params;
+      const id = req.params.id as string;
       const { newOwnerId, password }: TransferOwnershipInput = req.body;
       const result = await organizationsService.transferOwnership(id, userId, newOwnerId, password);
       return sendSuccess(res, result, result.message);
@@ -175,7 +175,7 @@ export class OrganizationsController {
   async getStats(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user!.id;
-      const { id } = req.params;
+      const id = req.params.id as string;
       const stats = await organizationsService.getStats(id, userId);
       return sendSuccess(res, stats, 'Stats fetched successfully');
     } catch (error) {
@@ -189,7 +189,7 @@ export class OrganizationsController {
   async delete(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user!.id;
-      const { id } = req.params;
+      const id = req.params.id as string;
       const { password } = req.body;
       const result = await organizationsService.delete(id, userId, password);
       return sendSuccess(res, result, result.message);

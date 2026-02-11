@@ -1,6 +1,6 @@
 // src/modules/whatsapp/whatsapp.service.ts
 
-import { PrismaClient, MessageStatus, MessageDirection, MessageType } from '@prisma/client';
+import { PrismaClient, MessageStatus, MessageDirection, MessageType, WhatsAppAccountStatus } from '@prisma/client';
 import { metaApi } from '../meta/meta.api';
 import { decrypt } from '../../utils/encryption';
 
@@ -110,10 +110,15 @@ class WhatsAppService {
       throw new Error('WhatsApp account not found');
     }
 
-    if (account.status !== 'ACTIVE') {
+    // ✅ Fixed: Use WhatsAppAccountStatus.CONNECTED instead of 'ACTIVE'
+    if (account.status !== WhatsAppAccountStatus.CONNECTED) {
       throw new Error('WhatsApp account is not active');
     }
 
+    // ✅ Fixed: Add null check for accessToken
+    if (!account.accessToken) {
+      throw new Error('Access token not found');
+    }
     const accessToken = decrypt(account.accessToken);
 
     // Format phone number (remove + and spaces)
@@ -149,19 +154,20 @@ class WhatsAppService {
           data: {
             organizationId: account.organizationId,
             phone: to.startsWith('+') ? to : `+${formattedTo}`,
-            waId: formattedTo,
+            // ✅ Fixed: Removed waId (not in schema)
             source: 'MANUAL',
           },
         });
       }
 
       // Find or create conversation
+      // ✅ Fixed: Use organizationId_contactId instead of whatsappAccountId_contactId
       let conversation = conversationId
         ? await prisma.conversation.findUnique({ where: { id: conversationId } })
         : await prisma.conversation.findUnique({
             where: {
-              whatsappAccountId_contactId: {
-                whatsappAccountId: accountId,
+              organizationId_contactId: {
+                organizationId: account.organizationId,
                 contactId: contact.id,
               },
             },
@@ -171,11 +177,12 @@ class WhatsAppService {
         conversation = await prisma.conversation.create({
           data: {
             organizationId: account.organizationId,
-            whatsappAccountId: accountId,
+            // ✅ Fixed: Removed whatsappAccountId (not in schema, use phoneNumberId)
+            phoneNumberId: null, // Optional in schema
             contactId: contact.id,
-            status: 'OPEN',
+            // ✅ Fixed: Removed status (not in schema)
             lastMessageAt: new Date(),
-            lastMessageText: this.getMessagePreview(type, content),
+            lastMessagePreview: this.getMessagePreview(type, content), // ✅ Fixed: lastMessageText -> lastMessagePreview
           },
         });
       } else {
@@ -183,7 +190,7 @@ class WhatsAppService {
           where: { id: conversation.id },
           data: {
             lastMessageAt: new Date(),
-            lastMessageText: this.getMessagePreview(type, content),
+            lastMessagePreview: this.getMessagePreview(type, content), // ✅ Fixed
           },
         });
       }
@@ -194,10 +201,10 @@ class WhatsAppService {
           conversationId: conversation.id,
           whatsappAccountId: accountId,
           wamId: result.messageId,
-          direction: 'OUTBOUND',
+          direction: MessageDirection.OUTBOUND,
           type: this.mapMessageType(type),
-          content: content,
-          status: 'SENT',
+          content: typeof content === 'string' ? content : JSON.stringify(content),
+          status: MessageStatus.SENT,
           sentAt: new Date(),
         },
         include: {
@@ -223,11 +230,11 @@ class WhatsAppService {
           data: {
             conversationId,
             whatsappAccountId: accountId,
-            direction: 'OUTBOUND',
+            direction: MessageDirection.OUTBOUND,
             type: this.mapMessageType(type),
-            content: content,
-            status: 'FAILED',
-            errorMessage: error.message,
+            content: typeof content === 'string' ? content : JSON.stringify(content),
+            status: MessageStatus.FAILED,
+            failureReason: error.message, // ✅ Fixed: errorMessage -> failureReason
           },
         });
       }
@@ -244,14 +251,15 @@ class WhatsAppService {
     batchSize: number = 50,
     delayMs: number = 1000
   ) {
+    // ✅ Fixed: Use correct includes
     const campaign = await prisma.campaign.findUnique({
       where: { id: campaignId },
       include: {
         template: true,
         whatsappAccount: true,
-        recipients: {
-          where: { status: 'PENDING' },
-          include: { contact: true },
+        CampaignContact: {  // ✅ Fixed: recipients -> CampaignContact
+          where: { status: MessageStatus.PENDING },
+          include: { Contact: true },  // ✅ Fixed: contact -> Contact
           take: batchSize,
         },
       },
@@ -265,26 +273,32 @@ class WhatsAppService {
       throw new Error('Campaign is not running');
     }
 
+    // ✅ Fixed: Add null check for accessToken
+    if (!campaign.whatsappAccount.accessToken) {
+      throw new Error('Access token not found');
+    }
     const accessToken = decrypt(campaign.whatsappAccount.accessToken);
+
     const results = {
       sent: 0,
       failed: 0,
       errors: [] as string[],
     };
 
-    for (const recipient of campaign.recipients) {
+    // ✅ Fixed: Use CampaignContact instead of recipients
+    for (const recipient of campaign.CampaignContact) {
       try {
         // Build template components with variables
         const components = this.buildTemplateComponents(
           campaign.template,
-          recipient.variables as any
+          {} // Variables would come from recipient data if needed
         );
 
         // Send message
         const messageResult = await metaApi.sendMessage(
           campaign.whatsappAccount.phoneNumberId,
           accessToken,
-          recipient.contact.phone.replace(/[^0-9]/g, ''),
+          recipient.Contact.phone.replace(/[^0-9]/g, ''),
           {
             type: 'template',
             template: {
@@ -295,21 +309,21 @@ class WhatsAppService {
           }
         );
 
-        // Update recipient status
-        await prisma.campaignRecipient.update({
+        // ✅ Fixed: Use campaignContact instead of campaignRecipient
+        await prisma.campaignContact.update({
           where: { id: recipient.id },
           data: {
-            status: 'SENT',
-            wamId: messageResult.messageId,
+            status: MessageStatus.SENT,
+            waMessageId: messageResult.messageId, // ✅ Fixed: wamId -> waMessageId
             sentAt: new Date(),
           },
         });
 
-        // Update campaign stats
+        // ✅ Fixed: Use sentCount instead of sent
         await prisma.campaign.update({
           where: { id: campaignId },
           data: {
-            sent: { increment: 1 },
+            sentCount: { increment: 1 },
           },
         });
 
@@ -318,35 +332,36 @@ class WhatsAppService {
         // Delay between messages
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       } catch (error: any) {
-        console.error(`Failed to send to ${recipient.contact.phone}:`, error);
+        console.error(`Failed to send to ${recipient.Contact.phone}:`, error);
 
-        // Update recipient as failed
-        await prisma.campaignRecipient.update({
+        // ✅ Fixed: Use campaignContact
+        await prisma.campaignContact.update({
           where: { id: recipient.id },
           data: {
-            status: 'FAILED',
+            status: MessageStatus.FAILED,
             failedAt: new Date(),
-            errorMessage: error.message,
+            failureReason: error.message, // ✅ Fixed: errorMessage -> failureReason
           },
         });
 
+        // ✅ Fixed: Use failedCount instead of failed
         await prisma.campaign.update({
           where: { id: campaignId },
           data: {
-            failed: { increment: 1 },
+            failedCount: { increment: 1 },
           },
         });
 
         results.failed++;
-        results.errors.push(`${recipient.contact.phone}: ${error.message}`);
+        results.errors.push(`${recipient.Contact.phone}: ${error.message}`);
       }
     }
 
-    // Check if campaign is complete
-    const remainingRecipients = await prisma.campaignRecipient.count({
+    // ✅ Fixed: Use campaignContact
+    const remainingRecipients = await prisma.campaignContact.count({
       where: {
         campaignId,
-        status: 'PENDING',
+        status: MessageStatus.PENDING,
       },
     });
 
@@ -375,6 +390,10 @@ class WhatsAppService {
       throw new Error('Account not found');
     }
 
+    // ✅ Fixed: Add null check for accessToken
+    if (!account.accessToken) {
+      throw new Error('Access token not found');
+    }
     const accessToken = decrypt(account.accessToken);
 
     try {
@@ -415,9 +434,10 @@ class WhatsAppService {
       }
     }
 
-    // Body component
-    if (template.bodyVariables && template.bodyVariables.length > 0) {
-      const bodyParams = template.bodyVariables.map((varName: string, index: number) => ({
+    // Body component - extract variables from bodyText
+    const bodyVars = this.extractVariablesFromText(template.bodyText);
+    if (bodyVars.length > 0) {
+      const bodyParams = bodyVars.map((varName: string, index: number) => ({
         type: 'text',
         text: variables[varName] || variables[`body_${index + 1}`] || `{{${index + 1}}}`,
       }));
@@ -430,25 +450,36 @@ class WhatsAppService {
 
     // Button components
     if (template.buttons) {
-      const buttons = template.buttons as any[];
-      buttons.forEach((button: any, index: number) => {
-        if (button.type === 'URL' && button.url?.includes('{{')) {
-          components.push({
-            type: 'button',
-            sub_type: 'url',
-            index,
-            parameters: [
-              {
-                type: 'text',
-                text: variables[`button_${index}`] || '',
-              },
-            ],
-          });
-        }
-      });
+      const buttons = typeof template.buttons === 'string' 
+        ? JSON.parse(template.buttons) 
+        : template.buttons;
+      
+      if (Array.isArray(buttons)) {
+        buttons.forEach((button: any, index: number) => {
+          if (button.type === 'URL' && button.url?.includes('{{')) {
+            components.push({
+              type: 'button',
+              sub_type: 'url',
+              index,
+              parameters: [
+                {
+                  type: 'text',
+                  text: variables[`button_${index}`] || '',
+                },
+              ],
+            });
+          }
+        });
+      }
     }
 
     return components;
+  }
+
+  private extractVariablesFromText(text: string): string[] {
+    if (!text) return [];
+    const matches = text.match(/\{\{(\d+)\}\}/g) || [];
+    return matches.map((_, index) => `var_${index + 1}`);
   }
 
   private extractVariables(text: string, variables: Record<string, string>) {
@@ -480,14 +511,14 @@ class WhatsAppService {
 
   private mapMessageType(type: string): MessageType {
     const map: Record<string, MessageType> = {
-      text: 'TEXT',
-      template: 'TEMPLATE',
-      image: 'IMAGE',
-      video: 'VIDEO',
-      audio: 'AUDIO',
-      document: 'DOCUMENT',
+      text: MessageType.TEXT,
+      template: MessageType.TEMPLATE,
+      image: MessageType.IMAGE,
+      video: MessageType.VIDEO,
+      audio: MessageType.AUDIO,
+      document: MessageType.DOCUMENT,
     };
-    return map[type] || 'TEXT';
+    return map[type] || MessageType.TEXT;
   }
 }
 

@@ -175,7 +175,7 @@ const getConnectedWabaCredentials = async (
     const metaConn = await prisma.metaConnection.findUnique({
       where: { organizationId },
       include: {
-        phoneNumbers: {
+        PhoneNumber: {  // ✅ Fixed: phoneNumbers -> PhoneNumber (capital P)
           where: { isActive: true },
           orderBy: [{ isPrimary: 'desc' }, { createdAt: 'desc' }],
           take: 1,
@@ -195,7 +195,7 @@ const getConnectedWabaCredentials = async (
         source: 'META_CONNECTION' as const,
         wabaId: metaConn.wabaId,
         accessToken,
-        phoneNumberId: metaConn.phoneNumbers?.[0]?.phoneNumberId || null,
+        phoneNumberId: metaConn.PhoneNumber?.[0]?.phoneNumberId || null,  // ✅ Fixed: phoneNumbers -> PhoneNumber
       };
     }
 

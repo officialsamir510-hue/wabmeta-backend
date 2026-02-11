@@ -80,7 +80,7 @@ export class CampaignsController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string; // ✅ Fixed
       const campaign = await campaignsService.getById(organizationId, id);
       return sendSuccess(res, campaign, 'Campaign fetched successfully');
     } catch (error) {
@@ -98,7 +98,7 @@ export class CampaignsController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string; // ✅ Fixed
       const input: UpdateCampaignInput = req.body;
       const campaign = await campaignsService.update(organizationId, id, input);
       return sendSuccess(res, campaign, 'Campaign updated successfully');
@@ -117,7 +117,7 @@ export class CampaignsController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string; // ✅ Fixed
       const result = await campaignsService.delete(organizationId, id);
       return sendSuccess(res, result, result.message);
     } catch (error) {
@@ -135,7 +135,7 @@ export class CampaignsController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string; // ✅ Fixed
       const campaign = await campaignsService.start(organizationId, id);
       return sendSuccess(res, campaign, 'Campaign started successfully');
     } catch (error) {
@@ -153,7 +153,7 @@ export class CampaignsController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string; // ✅ Fixed
       const campaign = await campaignsService.pause(organizationId, id);
       return sendSuccess(res, campaign, 'Campaign paused successfully');
     } catch (error) {
@@ -171,7 +171,7 @@ export class CampaignsController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string; // ✅ Fixed
       const campaign = await campaignsService.resume(organizationId, id);
       return sendSuccess(res, campaign, 'Campaign resumed successfully');
     } catch (error) {
@@ -189,7 +189,7 @@ export class CampaignsController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string; // ✅ Fixed
       const campaign = await campaignsService.cancel(organizationId, id);
       return sendSuccess(res, campaign, 'Campaign cancelled successfully');
     } catch (error) {
@@ -207,7 +207,7 @@ export class CampaignsController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string; // ✅ Fixed
       const query: CampaignContactsQueryInput = {
         page: parseInt(req.query.page as string) || 1,
         limit: parseInt(req.query.limit as string) || 50,
@@ -236,7 +236,7 @@ export class CampaignsController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string; // ✅ Fixed
       const { retryFailed, retryPending } = req.body;
       const result = await campaignsService.retry(organizationId, id, retryFailed, retryPending);
       return sendSuccess(res, result, result.message);
@@ -255,7 +255,7 @@ export class CampaignsController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string; // ✅ Fixed
       const { name } = req.body;
       const campaign = await campaignsService.duplicate(organizationId, id, name);
       return sendSuccess(res, campaign, 'Campaign duplicated successfully', 201);
@@ -291,7 +291,7 @@ export class CampaignsController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const id = req.params.id as string; // ✅ Fixed
       const analytics = await campaignsService.getAnalytics(organizationId, id);
       return sendSuccess(res, analytics, 'Analytics fetched successfully');
     } catch (error) {

@@ -300,7 +300,7 @@ export class UsersService {
       await prisma.activityLog.create({
         data: {
           userId,
-          action: 'user.delete_request',
+          action: 'DELETE',
           metadata: { reason },
         },
       });

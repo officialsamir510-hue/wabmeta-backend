@@ -1,6 +1,6 @@
 // src/modules/meta/meta.service.ts
 
-import { PrismaClient, WhatsAppAccountStatus, ConnectionStatus } from '@prisma/client';
+import { PrismaClient, WhatsAppAccountStatus, ConnectionStatus, TemplateStatus, TemplateCategory } from '@prisma/client';
 import { metaApi } from './meta.api';
 import { config } from '../../config';
 import { encrypt, decrypt } from '../../utils/encryption';
@@ -193,12 +193,9 @@ class MetaService {
             data: {
               accessToken: encrypt(accessToken),
               tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), // 60 days
-              verifiedName: primaryPhone.verifiedName,
+              displayName: primaryPhone.displayPhoneNumber,
               qualityRating: primaryPhone.qualityRating,
-              status: WhatsAppAccountStatus.ACTIVE,
-              connectionStatus: ConnectionStatus.CONNECTED,
-              lastConnectedAt: new Date(),
-              lastSyncedAt: new Date(),
+              status: WhatsAppAccountStatus.CONNECTED, // ✅ Fixed: Use CONNECTED instead of ACTIVE
             },
           });
 
@@ -228,19 +225,20 @@ class MetaService {
           organizationId,
           wabaId,
           phoneNumberId: primaryPhone.id,
-          businessId: businessId || wabaDetails.owner_business_info?.id,
+          // ❌ REMOVED: businessId (not in schema)
           phoneNumber: primaryPhone.displayPhoneNumber.replace(/\D/g, ''),
-          displayPhoneNumber: primaryPhone.displayPhoneNumber,
-          verifiedName: primaryPhone.verifiedName,
+          displayName: primaryPhone.displayPhoneNumber,
+          // ❌ REMOVED: verifiedName (not in WhatsAppAccount schema)
           qualityRating: primaryPhone.qualityRating,
           accessToken: encrypt(accessToken),
           tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), // 60 days
-          webhookVerifyToken,
-          webhookConfigured: true,
-          status: WhatsAppAccountStatus.ACTIVE,
-          connectionStatus: ConnectionStatus.CONNECTED,
-          lastConnectedAt: new Date(),
-          lastSyncedAt: new Date(),
+          webhookSecret: webhookVerifyToken,
+          status: WhatsAppAccountStatus.CONNECTED, // ✅ Fixed: Use CONNECTED
+          // ❌ REMOVED: connectionStatus (not in schema)
+          // ❌ REMOVED: lastConnectedAt (not in schema)
+          // ❌ REMOVED: lastSyncedAt (not in schema)
+          // ❌ REMOVED: webhookConfigured (not in schema)
+          // ❌ REMOVED: webhookVerifyToken (not in schema)
           isDefault: accountCount === 0,
         },
       });
@@ -309,13 +307,13 @@ class MetaService {
       where: { id: accountId },
     });
 
-    if (!account) {
+    if (!account || !account.accessToken) {
       return null;
     }
 
     return {
       account,
-      accessToken: decrypt(account.accessToken),
+      accessToken: decrypt(account.accessToken), // ✅ Fixed: Handle null check
     };
   }
 
@@ -339,8 +337,8 @@ class MetaService {
       where: { id: accountId },
       data: {
         status: WhatsAppAccountStatus.DISCONNECTED,
-        connectionStatus: ConnectionStatus.DISCONNECTED,
-        accessToken: '', // Clear token
+        // ❌ REMOVED: connectionStatus (not in schema)
+        accessToken: null, // ✅ Fixed: Set to null instead of empty string
       },
     });
 
@@ -350,7 +348,7 @@ class MetaService {
         where: {
           organizationId,
           id: { not: accountId },
-          status: WhatsAppAccountStatus.ACTIVE,
+          status: WhatsAppAccountStatus.CONNECTED, // ✅ Fixed: Use CONNECTED
         },
       });
 
@@ -408,8 +406,8 @@ class MetaService {
         await prisma.whatsAppAccount.update({
           where: { id: accountId },
           data: {
-            status: WhatsAppAccountStatus.ERROR,
-            connectionStatus: ConnectionStatus.ERROR,
+            status: WhatsAppAccountStatus.DISCONNECTED, // ✅ Fixed: No ERROR status
+            // ❌ REMOVED: connectionStatus
           },
         });
         
@@ -425,9 +423,8 @@ class MetaService {
           where: { id: accountId },
           data: {
             qualityRating: phone.qualityRating,
-            status: WhatsAppAccountStatus.ACTIVE,
-            connectionStatus: ConnectionStatus.CONNECTED,
-            lastSyncedAt: new Date(),
+            status: WhatsAppAccountStatus.CONNECTED, // ✅ Fixed
+            // ❌ REMOVED: connectionStatus, lastSyncedAt
           },
         });
 
@@ -443,8 +440,8 @@ class MetaService {
       await prisma.whatsAppAccount.update({
         where: { id: accountId },
         data: {
-          status: WhatsAppAccountStatus.ERROR,
-          connectionStatus: ConnectionStatus.ERROR,
+          status: WhatsAppAccountStatus.DISCONNECTED, // ✅ Fixed
+          // ❌ REMOVED: connectionStatus
         },
       });
 
@@ -472,6 +469,13 @@ class MetaService {
 
     // Upsert templates
     for (const template of templates) {
+      const mappedStatus = this.mapTemplateStatus(template.status);
+      
+      // ✅ Skip DRAFT status (not in enum)
+      if (mappedStatus === 'DRAFT' as any) {
+        continue;
+      }
+
       await prisma.template.upsert({
         where: {
           organizationId_name_language: {
@@ -482,30 +486,27 @@ class MetaService {
         },
         create: {
           organizationId,
-          whatsappAccountId: accountId,
+          // ❌ REMOVED: whatsappAccountId (not in Template schema)
           metaTemplateId: template.id,
           name: template.name,
           language: template.language,
           category: this.mapCategory(template.category),
-          status: this.mapTemplateStatus(template.status),
+          status: mappedStatus as TemplateStatus,
           bodyText: this.extractBodyText(template.components),
           headerType: this.extractHeaderType(template.components),
           headerContent: this.extractHeaderContent(template.components),
           footerText: this.extractFooterText(template.components),
           buttons: this.extractButtons(template.components),
-          lastSyncedAt: new Date(),
+          // ❌ REMOVED: lastSyncedAt (not in schema)
         },
         update: {
-          status: this.mapTemplateStatus(template.status),
-          lastSyncedAt: new Date(),
+          status: mappedStatus as TemplateStatus,
+          // ❌ REMOVED: lastSyncedAt
         },
       });
     }
 
-    await prisma.whatsAppAccount.update({
-      where: { id: accountId },
-      data: { lastSyncedAt: new Date() },
-    });
+    // ❌ Can't update lastSyncedAt (not in WhatsAppAccount schema)
 
     return { synced: templates.length };
   }
@@ -530,7 +531,7 @@ class MetaService {
    * Remove sensitive data from account
    */
   private sanitizeAccount(account: any) {
-    const { accessToken, systemUserAccessToken, webhookSecret, ...safe } = account;
+    const { accessToken, webhookSecret, ...safe } = account;
     return {
       ...safe,
       hasAccessToken: !!accessToken,
@@ -538,8 +539,8 @@ class MetaService {
   }
 
   // Helper methods for template parsing
-  private mapCategory(category: string): 'MARKETING' | 'UTILITY' | 'AUTHENTICATION' {
-    const map: Record<string, 'MARKETING' | 'UTILITY' | 'AUTHENTICATION'> = {
+  private mapCategory(category: string): TemplateCategory {
+    const map: Record<string, TemplateCategory> = {
       MARKETING: 'MARKETING',
       UTILITY: 'UTILITY',
       AUTHENTICATION: 'AUTHENTICATION',
@@ -547,11 +548,12 @@ class MetaService {
     return map[category] || 'UTILITY';
   }
 
-  private mapTemplateStatus(status: string): 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' {
-    const map: Record<string, 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED'> = {
+  private mapTemplateStatus(status: string): TemplateStatus | 'DRAFT' {
+    const map: Record<string, TemplateStatus | 'DRAFT'> = {
       APPROVED: 'APPROVED',
       PENDING: 'PENDING',
       REJECTED: 'REJECTED',
+      DRAFT: 'DRAFT', // Will be filtered out
     };
     return map[status] || 'PENDING';
   }

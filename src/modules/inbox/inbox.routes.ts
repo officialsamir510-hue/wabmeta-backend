@@ -13,10 +13,10 @@ router.use(authenticate);
 router.get('/organizations/:organizationId/accounts/:accountId/conversations', async (req, res, next) => {
   try {
     const { organizationId, accountId } = req.params;
-    const { status, search, page, limit } = req.query;
+    const { filter, search, page, limit } = req.query;
 
     const result = await inboxService.getConversations(organizationId, accountId, {
-      status: status as any,
+      filter: filter as 'all' | 'unread' | 'archived' | 'open' | undefined,
       search: search as string,
       page: page ? parseInt(page as string) : undefined,
       limit: limit ? parseInt(limit as string) : undefined,
@@ -56,12 +56,50 @@ router.post('/conversations/:conversationId/read', async (req, res, next) => {
   }
 });
 
-// Update status
+// Update archive status (replaces updateStatus)
 router.patch('/conversations/:conversationId/status', async (req, res, next) => {
   try {
     const { conversationId } = req.params;
     const { status } = req.body;
-    const result = await inboxService.updateStatus(conversationId, status);
+    
+    // Map status to isArchived boolean
+    const isArchived = status === 'archived' || status === 'closed';
+    const result = await inboxService.updateArchiveStatus(conversationId, isArchived);
+    
+    return successResponse(res, { data: { conversation: result } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Archive conversation
+router.post('/conversations/:conversationId/archive', async (req, res, next) => {
+  try {
+    const { conversationId } = req.params;
+    const result = await inboxService.updateArchiveStatus(conversationId, true);
+    return successResponse(res, { data: { conversation: result } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Unarchive conversation
+router.post('/conversations/:conversationId/unarchive', async (req, res, next) => {
+  try {
+    const { conversationId } = req.params;
+    const result = await inboxService.updateArchiveStatus(conversationId, false);
+    return successResponse(res, { data: { conversation: result } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Update labels
+router.patch('/conversations/:conversationId/labels', async (req, res, next) => {
+  try {
+    const { conversationId } = req.params;
+    const { labels } = req.body;
+    const result = await inboxService.updateLabels(conversationId, labels || []);
     return successResponse(res, { data: { conversation: result } });
   } catch (error) {
     next(error);
@@ -86,6 +124,26 @@ router.get('/organizations/:organizationId/accounts/:accountId/stats', async (re
     const { organizationId, accountId } = req.params;
     const stats = await inboxService.getStats(organizationId, accountId);
     return successResponse(res, { data: stats });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get single conversation
+router.get('/conversations/:conversationId', async (req, res, next) => {
+  try {
+    const { conversationId } = req.params;
+    const { organizationId } = req.query;
+    
+    if (!organizationId) {
+      return errorResponse(res, 'Organization ID is required', 400);
+    }
+    
+    const conversation = await inboxService.getConversation(
+      conversationId, 
+      organizationId as string
+    );
+    return successResponse(res, { data: { conversation } });
   } catch (error) {
     next(error);
   }
