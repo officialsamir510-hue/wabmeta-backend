@@ -42,11 +42,11 @@ export const getAuthUrl = async (req: AuthRequest, res: Response) => {
         organizationId,
         timestamp: Date.now(),
         random: Math.random().toString(36).substring(7),
-        mode
+        mode,
       })
     ).toString('base64');
 
-    const version = 'v21.0'; // ✅ Stable version
+    const version = 'v21.0';
     const redirectUri = encodeURIComponent(
       config.meta.redirectUri || `${config.frontendUrl}/meta/callback`
     );
@@ -54,20 +54,22 @@ export const getAuthUrl = async (req: AuthRequest, res: Response) => {
     let authUrl: string;
 
     if (mode === 'embedded' && config.meta?.configId) {
-      // ✅ EMBEDDED SIGNUP URL (with config_id)
-      authUrl = `https://www.facebook.com/${version}/dialog/oauth` +
+      // Embedded signup (config_id required)
+      authUrl =
+        `https://www.facebook.com/${version}/dialog/oauth` +
         `?client_id=${config.meta.appId}` +
         `&redirect_uri=${redirectUri}` +
         `&state=${state}` +
-        `&config_id=${config.meta.configId}` + // ✅ Config ID for embedded signup
+        `&config_id=${config.meta.configId}` +
         `&response_type=code` +
         `&scope=whatsapp_business_management,whatsapp_business_messaging,business_management`;
 
       console.log('🔗 Generated Embedded Signup URL');
       console.log('   Config ID:', config.meta.configId);
     } else {
-      // Standard OAuth URL (fallback)
-      authUrl = `https://www.facebook.com/${version}/dialog/oauth` +
+      // Standard OAuth fallback
+      authUrl =
+        `https://www.facebook.com/${version}/dialog/oauth` +
         `?client_id=${config.meta.appId}` +
         `&redirect_uri=${redirectUri}` +
         `&state=${state}` +
@@ -83,18 +85,21 @@ export const getAuthUrl = async (req: AuthRequest, res: Response) => {
     console.log('   App ID:', config.meta.appId);
     console.log('   Redirect URI:', decodeURIComponent(redirectUri));
 
-    sendSuccess(res, { 
-      url: authUrl,
-      authUrl,
-      state,
-      mode,
-      redirectUri: config.meta.redirectUri,
-      isEmbedded: mode === 'embedded' && !!config.meta?.configId
-    }, 'Auth URL generated successfully');
-
+    return sendSuccess(
+      res,
+      {
+        url: authUrl,
+        authUrl,
+        state,
+        mode,
+        redirectUri: config.meta.redirectUri,
+        isEmbedded: mode === 'embedded' && !!config.meta?.configId,
+      },
+      'Auth URL generated successfully'
+    );
   } catch (error: any) {
     console.error('❌ Get auth URL error:', error);
-    sendError(res, error.message || 'Failed to generate auth URL', 500);
+    return sendError(res, error.message || 'Failed to generate auth URL', 500);
   }
 };
 
@@ -115,62 +120,42 @@ export const handleAuthCallback = async (req: Request, res: Response) => {
     console.log('   State:', state ? 'present' : 'missing');
     console.log('   Error:', error || 'none');
 
-    // Handle OAuth errors from Meta
     if (error) {
       console.error('❌ OAuth error from Meta:', error, error_description);
-      const errorMsg = encodeURIComponent(
-        String(error_description || error || 'Authorization denied')
-      );
-      return res.redirect(
-        `${config.frontendUrl}/dashboard/settings?tab=whatsapp&error=${errorMsg}`
-      );
+      const errorMsg = encodeURIComponent(String(error_description || error || 'Authorization denied'));
+      return res.redirect(`${config.frontendUrl}/dashboard/settings?tab=whatsapp&error=${errorMsg}`);
     }
 
     if (!code || !state) {
       console.error('❌ Missing code or state in callback');
-      return res.redirect(
-        `${config.frontendUrl}/dashboard/settings?tab=whatsapp&error=missing_params`
-      );
+      return res.redirect(`${config.frontendUrl}/dashboard/settings?tab=whatsapp&error=missing_params`);
     }
 
     // Decode state to get organization ID
     let organizationId: string;
     let mode = 'standard';
-    
+
     try {
-      const decodedState = JSON.parse(
-        Buffer.from(state as string, 'base64').toString()
-      );
+      const decodedState = JSON.parse(Buffer.from(state as string, 'base64').toString());
       organizationId = decodedState.organizationId;
       mode = decodedState.mode || 'standard';
 
-      if (!organizationId) {
-        throw new Error('Organization ID not found in state');
-      }
+      if (!organizationId) throw new Error('Organization ID not found in state');
     } catch (e) {
       console.error('❌ Failed to decode state:', e);
-      return res.redirect(
-        `${config.frontendUrl}/dashboard/settings?tab=whatsapp&error=invalid_state`
-      );
+      return res.redirect(`${config.frontendUrl}/dashboard/settings?tab=whatsapp&error=invalid_state`);
     }
 
     console.log(`🔗 Processing ${mode} OAuth redirect for org:`, organizationId);
 
-    // Connect Meta account
-    await MetaService.connectEmbeddedSignup(
-      organizationId,
-      code as string,
-      state as string
-    );
+    await MetaService.connectEmbeddedSignup(organizationId, code as string, state as string);
 
     console.log('✅ Meta account connected via redirect');
-
-    // Redirect to success page
-    res.redirect(`${config.frontendUrl}/dashboard/settings?tab=whatsapp&meta_connected=true`);
+    return res.redirect(`${config.frontendUrl}/dashboard/settings?tab=whatsapp&meta_connected=true`);
   } catch (error: any) {
     console.error('❌ Callback redirect error:', error);
     const errorMsg = encodeURIComponent(error.message || 'Connection failed');
-    res.redirect(`${config.frontendUrl}/dashboard/settings?tab=whatsapp&error=${errorMsg}`);
+    return res.redirect(`${config.frontendUrl}/dashboard/settings?tab=whatsapp&error=${errorMsg}`);
   }
 };
 
@@ -190,38 +175,19 @@ export const handleAuthCallbackPost = async (req: AuthRequest, res: Response) =>
 
     console.log('🔗 Meta OAuth callback received (POST)');
     console.log('   Organization:', organizationId);
-    console.log('   Code:', code ? code.substring(0, 20) + '...' : 'missing');
+    console.log('   Code:', code ? String(code).substring(0, 20) + '...' : 'missing');
 
-    // Handle OAuth errors
-    if (error) {
-      return sendError(res, error_description || error, 400);
-    }
+    if (error) return sendError(res, error_description || error, 400);
+    if (!code) return sendError(res, 'Authorization code is required', 400);
+    if (!organizationId) return sendError(res, 'Organization ID is required', 400);
 
-    if (!code) {
-      return sendError(res, 'Authorization code is required', 400);
-    }
-
-    if (!organizationId) {
-      return sendError(res, 'Organization ID is required', 400);
-    }
-
-    // Connect via service
-    const connection = await MetaService.connectEmbeddedSignup(
-      organizationId,
-      code,
-      state
-    );
+    const connection = await MetaService.connectEmbeddedSignup(organizationId, code, state);
 
     console.log('✅ Meta account connected via POST callback');
-
-    sendSuccess(res, connection, 'Meta account connected successfully');
+    return sendSuccess(res, connection, 'Meta account connected successfully');
   } catch (error: any) {
     console.error('❌ POST Callback error:', error);
-    sendError(
-      res,
-      error.message || 'Failed to connect Meta account',
-      error.statusCode || 500
-    );
+    return sendError(res, error.message || 'Failed to connect Meta account', error.statusCode || 500);
   }
 };
 
@@ -236,31 +202,25 @@ export const connectMeta = async (req: AuthRequest, res: Response) => {
 
     console.log('🔗 Meta connect request received:');
     console.log('   Organization:', organizationId);
-    console.log('   Code:', code ? code.substring(0, 20) + '...' : 'MISSING');
+    console.log('   Code:', code ? String(code).substring(0, 20) + '...' : 'MISSING');
 
-    if (!organizationId) {
-      return sendError(res, 'Organization ID is required', 400);
-    }
+    if (!organizationId) return sendError(res, 'Organization ID is required', 400);
+    if (!code) return sendError(res, 'Authorization code is required', 400);
 
-    if (!code) {
-      return sendError(res, 'Authorization code is required', 400);
-    }
+    const connection = await MetaService.connectEmbeddedSignup(organizationId, code, state);
 
-    const connection = await MetaService.connectEmbeddedSignup(
-      organizationId,
-      code,
-      state
-    );
+    // ✅ FIX: service returns `accounts` (not `phoneNumbers`)
+    const accounts = (connection as any)?.accounts || [];
 
     console.log('✅ Meta connection successful');
-    console.log('   Connection ID:', connection.id);
-    console.log('   WABA ID:', connection.wabaId);
-    console.log('   Phone Numbers:', connection.phoneNumbers?.length || 0);
+    console.log('   Connection ID:', (connection as any)?.id);
+    console.log('   WABA ID:', (connection as any)?.wabaId);
+    console.log('   Accounts:', accounts.length);
 
-    sendSuccess(res, connection, 'Meta account connected successfully');
+    return sendSuccess(res, connection, 'Meta account connected successfully');
   } catch (error: any) {
     console.error('❌ Meta connect error:', error);
-    sendError(res, error.message || 'Failed to connect Meta account', error.statusCode || 500);
+    return sendError(res, error.message || 'Failed to connect Meta account', error.statusCode || 500);
   }
 };
 
@@ -275,23 +235,18 @@ export const connectMeta = async (req: AuthRequest, res: Response) => {
 export const getConnectionStatus = async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user?.organizationId;
-
-    if (!organizationId) {
-      return sendError(res, 'Organization ID is required', 400);
-    }
+    if (!organizationId) return sendError(res, 'Organization ID is required', 400);
 
     const status = await MetaService.getConnectionStatus(organizationId);
-
-    sendSuccess(res, status, 'Connection status retrieved');
+    return sendSuccess(res, status, 'Connection status retrieved');
   } catch (error: any) {
     console.error('❌ Get connection status error:', error);
 
-    // Handle database timeout gracefully
     if (error.code === 'P2024') {
       return sendError(res, 'Database temporarily unavailable. Please try again.', 503);
     }
 
-    sendError(res, error.message || 'Failed to get connection status', 500);
+    return sendError(res, error.message || 'Failed to get connection status', 500);
   }
 };
 
@@ -302,19 +257,15 @@ export const getConnectionStatus = async (req: AuthRequest, res: Response) => {
 export const disconnect = async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user?.organizationId;
-
-    if (!organizationId) {
-      return sendError(res, 'Organization ID is required', 400);
-    }
+    if (!organizationId) return sendError(res, 'Organization ID is required', 400);
 
     const result = await MetaService.disconnect(organizationId);
-
     console.log('✅ Meta account disconnected for org:', organizationId);
 
-    sendSuccess(res, result, 'Meta account disconnected');
+    return sendSuccess(res, result, 'Meta account disconnected');
   } catch (error: any) {
     console.error('❌ Disconnect error:', error);
-    sendError(res, error.message || 'Failed to disconnect', 500);
+    return sendError(res, error.message || 'Failed to disconnect', 500);
   }
 };
 
@@ -325,19 +276,15 @@ export const disconnect = async (req: AuthRequest, res: Response) => {
 export const refreshConnection = async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user?.organizationId;
-
-    if (!organizationId) {
-      return sendError(res, 'Organization ID is required', 400);
-    }
+    if (!organizationId) return sendError(res, 'Organization ID is required', 400);
 
     const status = await MetaService.refreshConnection(organizationId);
-
     console.log('✅ Meta connection refreshed for org:', organizationId);
 
-    sendSuccess(res, status, 'Connection refreshed successfully');
+    return sendSuccess(res, status, 'Connection refreshed successfully');
   } catch (error: any) {
     console.error('❌ Refresh connection error:', error);
-    sendError(res, error.message || 'Failed to refresh connection', 500);
+    return sendError(res, error.message || 'Failed to refresh connection', 500);
   }
 };
 
@@ -352,17 +299,13 @@ export const refreshConnection = async (req: AuthRequest, res: Response) => {
 export const getPhoneNumbers = async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user?.organizationId;
-
-    if (!organizationId) {
-      return sendError(res, 'Organization ID is required', 400);
-    }
+    if (!organizationId) return sendError(res, 'Organization ID is required', 400);
 
     const phoneNumbers = await MetaService.getPhoneNumbers(organizationId);
-
-    sendSuccess(res, phoneNumbers, 'Phone numbers retrieved');
+    return sendSuccess(res, phoneNumbers, 'Phone numbers retrieved');
   } catch (error: any) {
     console.error('❌ Get phone numbers error:', error);
-    sendError(res, error.message || 'Failed to get phone numbers', 500);
+    return sendError(res, error.message || 'Failed to get phone numbers', 500);
   }
 };
 
@@ -376,26 +319,16 @@ export const registerPhoneNumber = async (req: AuthRequest, res: Response) => {
     const { phoneNumberId } = req.params;
     const { pin } = req.body;
 
-    if (!organizationId) {
-      return sendError(res, 'Organization ID is required', 400);
-    }
+    if (!organizationId) return sendError(res, 'Organization ID is required', 400);
+    if (!phoneNumberId) return sendError(res, 'Phone number ID is required', 400);
 
-    if (!phoneNumberId) {
-      return sendError(res, 'Phone number ID is required', 400);
-    }
-
-    const result = await MetaService.registerPhoneNumber(
-      organizationId,
-      phoneNumberId,
-      pin
-    );
-
+    const result = await MetaService.registerPhoneNumber(organizationId, phoneNumberId, pin);
     console.log('✅ Phone number registered:', phoneNumberId);
 
-    sendSuccess(res, result, 'Phone number registered successfully');
+    return sendSuccess(res, result, 'Phone number registered successfully');
   } catch (error: any) {
     console.error('❌ Register phone number error:', error);
-    sendError(res, error.message || 'Failed to register phone number', 500);
+    return sendError(res, error.message || 'Failed to register phone number', 500);
   }
 };
 
@@ -410,17 +343,13 @@ export const registerPhoneNumber = async (req: AuthRequest, res: Response) => {
 export const getBusinessAccounts = async (req: AuthRequest, res: Response) => {
   try {
     const organizationId = req.user?.organizationId;
-
-    if (!organizationId) {
-      return sendError(res, 'Organization ID is required', 400);
-    }
+    if (!organizationId) return sendError(res, 'Organization ID is required', 400);
 
     const accounts = await MetaService.getBusinessAccounts(organizationId);
-
-    sendSuccess(res, accounts, 'Business accounts retrieved');
+    return sendSuccess(res, accounts, 'Business accounts retrieved');
   } catch (error: any) {
     console.error('❌ Get business accounts error:', error);
-    sendError(res, error.message || 'Failed to get business accounts', 500);
+    return sendError(res, error.message || 'Failed to get business accounts', 500);
   }
 };
 
@@ -437,27 +366,18 @@ export const sendTestMessage = async (req: AuthRequest, res: Response) => {
     const organizationId = req.user?.organizationId;
     const { phoneNumberId, to, message } = req.body;
 
-    if (!organizationId) {
-      return sendError(res, 'Organization ID is required', 400);
-    }
-
+    if (!organizationId) return sendError(res, 'Organization ID is required', 400);
     if (!phoneNumberId || !to || !message) {
       return sendError(res, 'phoneNumberId, to, and message are required', 400);
     }
 
-    const result = await MetaService.sendTestMessage(
-      organizationId,
-      phoneNumberId,
-      to,
-      message
-    );
-
+    const result = await MetaService.sendTestMessage(organizationId, phoneNumberId, to, message);
     console.log('✅ Test message sent to:', to);
 
-    sendSuccess(res, result, 'Test message sent successfully');
+    return sendSuccess(res, result, 'Test message sent successfully');
   } catch (error: any) {
     console.error('❌ Send test message error:', error);
-    sendError(res, error.message || 'Failed to send test message', 500);
+    return sendError(res, error.message || 'Failed to send test message', 500);
   }
 };
 
@@ -479,12 +399,12 @@ export const getDebugConfig = async (req: AuthRequest, res: Response) => {
       redirectUri: config.meta?.redirectUri,
       graphApiVersion: config.meta?.graphApiVersion,
       frontendUrl: config.frontendUrl,
-      webhookConfigured: !!config.meta?.webhookVerifyToken
+      webhookConfigured: !!config.meta?.webhookVerifyToken,
     };
 
-    sendSuccess(res, debugInfo, 'Debug config retrieved');
+    return sendSuccess(res, debugInfo, 'Debug config retrieved');
   } catch (error: any) {
     console.error('❌ Debug config error:', error);
-    sendError(res, error.message, 500);
+    return sendError(res, error.message, 500);
   }
 };
