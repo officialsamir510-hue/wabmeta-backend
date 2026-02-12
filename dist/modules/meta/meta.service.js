@@ -39,6 +39,15 @@ class MetaService {
         };
     }
     /**
+     * Get Integration Status
+     */
+    getIntegrationStatus() {
+        return {
+            configured: !!(config_1.config.meta.appId && config_1.config.meta.appSecret),
+            apiVersion: config_1.config.meta.graphApiVersion,
+        };
+    }
+    /**
      * Complete Meta connection flow
      */
     async completeConnection(code, organizationId, userId, onProgress) {

@@ -9,6 +9,7 @@ const meta_schema_1 = require("./meta.schema");
 const router = (0, express_1.Router)();
 // Public route - Embedded signup config
 router.get('/config', meta_controller_1.metaController.getEmbeddedConfig.bind(meta_controller_1.metaController));
+router.get('/status', meta_controller_1.metaController.getStatus.bind(meta_controller_1.metaController));
 // Protected routes
 router.use(auth_1.authenticate);
 // OAuth flow

@@ -47,6 +47,16 @@ class MetaService {
   }
 
   /**
+   * Get Integration Status
+   */
+  getIntegrationStatus() {
+    return {
+      configured: !!(config.meta.appId && config.meta.appSecret),
+      apiVersion: config.meta.graphApiVersion,
+    };
+  }
+
+  /**
    * Complete Meta connection flow
    */
   async completeConnection(
@@ -88,11 +98,11 @@ class MetaService {
       });
 
       const debugInfo = await metaApi.debugToken(accessToken);
-      
+
       // Get WABAs from granular scopes
       let wabaId: string | null = null;
       let businessId: string | null = null;
-      
+
       const granularScopes = debugInfo.data.granular_scopes || [];
       for (const scope of granularScopes) {
         if (scope.scope === 'whatsapp_business_management' && scope.target_ids?.length) {
@@ -135,7 +145,7 @@ class MetaService {
       });
 
       const phoneNumbers = await metaApi.getPhoneNumbers(wabaId, accessToken);
-      
+
       if (phoneNumbers.length === 0) {
         throw new Error('No phone numbers found in your WhatsApp Business Account.');
       }
@@ -255,7 +265,7 @@ class MetaService {
       return { success: true, account: this.sanitizeAccount(newAccount) };
     } catch (error: any) {
       console.error('Meta connection error:', error);
-      
+
       onProgress?.({
         step: 'COMPLETED',
         status: 'error',
@@ -387,7 +397,7 @@ class MetaService {
    */
   async refreshAccountHealth(accountId: string, organizationId: string) {
     const result = await this.getAccountWithToken(accountId);
-    
+
     if (!result) {
       throw new Error('Account not found');
     }
@@ -401,7 +411,7 @@ class MetaService {
     try {
       // Verify token is still valid
       const debugInfo = await metaApi.debugToken(accessToken);
-      
+
       if (!debugInfo.data.is_valid) {
         await prisma.whatsAppAccount.update({
           where: { id: accountId },
@@ -410,7 +420,7 @@ class MetaService {
             // ❌ REMOVED: connectionStatus
           },
         });
-        
+
         return { healthy: false, reason: 'Token expired' };
       }
 
@@ -454,7 +464,7 @@ class MetaService {
    */
   async syncTemplates(accountId: string, organizationId: string) {
     const result = await this.getAccountWithToken(accountId);
-    
+
     if (!result) {
       throw new Error('Account not found');
     }
@@ -470,7 +480,7 @@ class MetaService {
     // Upsert templates
     for (const template of templates) {
       const mappedStatus = this.mapTemplateStatus(template.status);
-      
+
       // ✅ Skip DRAFT status (not in enum)
       if (mappedStatus === 'DRAFT' as any) {
         continue;

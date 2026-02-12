@@ -5,6 +5,10 @@ declare class MetaController {
      */
     getEmbeddedConfig(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
     /**
+     * Get Integration Status
+     */
+    getStatus(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    /**
      * Generate OAuth URL (alternative flow)
      */
     getOAuthUrl(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;

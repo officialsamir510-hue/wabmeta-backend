@@ -14,6 +14,13 @@ declare class MetaService {
         features: string[];
     };
     /**
+     * Get Integration Status
+     */
+    getIntegrationStatus(): {
+        configured: boolean;
+        apiVersion: string;
+    };
+    /**
      * Complete Meta connection flow
      */
     completeConnection(code: string, organizationId: string, userId: string, onProgress?: (progress: ConnectionProgress) => void): Promise<{

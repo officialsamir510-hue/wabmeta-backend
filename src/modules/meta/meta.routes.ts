@@ -10,6 +10,7 @@ const router = Router();
 
 // Public route - Embedded signup config
 router.get('/config', metaController.getEmbeddedConfig.bind(metaController));
+router.get('/status', metaController.getStatus.bind(metaController));
 
 // Protected routes
 router.use(authenticate);

@@ -30,6 +30,21 @@ class MetaController {
         }
     }
     /**
+     * Get Integration Status
+     */
+    async getStatus(req, res, next) {
+        try {
+            const status = meta_service_1.metaService.getIntegrationStatus();
+            return (0, response_1.successResponse)(res, {
+                data: status,
+                message: 'Meta integration status',
+            });
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    /**
      * Generate OAuth URL (alternative flow)
      */
     async getOAuthUrl(req, res, next) {

@@ -19,10 +19,25 @@ class MetaController {
   async getEmbeddedConfig(req: Request, res: Response, next: NextFunction) {
     try {
       const config = metaService.getEmbeddedSignupConfig();
-      
+
       return successResponse(res, {
         data: config,
         message: 'Embedded signup config retrieved',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Get Integration Status
+   */
+  async getStatus(req: Request, res: Response, next: NextFunction) {
+    try {
+      const status = metaService.getIntegrationStatus();
+      return successResponse(res, {
+        data: status,
+        message: 'Meta integration status',
       });
     } catch (error) {
       next(error);
@@ -35,7 +50,7 @@ class MetaController {
   async getOAuthUrl(req: Request, res: Response, next: NextFunction) {
     try {
       const organizationId = getString(req.query.organizationId);
-      
+
       if (!organizationId) {
         return errorResponse(res, 'Organization ID required', 400);
       }
@@ -240,7 +255,7 @@ class MetaController {
   private async verifyOrgAccess(userId: string, organizationId: string): Promise<boolean> {
     const { PrismaClient } = require('@prisma/client');
     const prisma = new PrismaClient();
-    
+
     const member = await prisma.organizationMember.findUnique({
       where: {
         organizationId_userId: {
