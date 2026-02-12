@@ -7,7 +7,6 @@ import {
   DebugTokenResponse,
   SharedWABAInfo,
   PhoneNumberInfo,
-  WABAInfo,
   MetaApiError,
   WebhookSubscribeResponse,
 } from './meta.types';
@@ -32,10 +31,7 @@ class MetaApiClient {
       (reqConfig) => {
         const url = reqConfig.url || '';
         const method = reqConfig.method?.toUpperCase() || 'GET';
-
-        // Don't log sensitive params
         console.log(`[Meta API] ${method} ${url}`);
-
         return reqConfig;
       },
       (error) => {
@@ -75,7 +71,7 @@ class MetaApiClient {
   // ============================================
 
   /**
-   * Exchange authorization code for access token - ✅ UPDATED
+   * Exchange authorization code for access token - ✅ UPDATED with redirect_uri
    */
   async exchangeCodeForToken(code: string): Promise<TokenExchangeResponse> {
     try {
@@ -101,13 +97,12 @@ class MetaApiClient {
     } catch (error: any) {
       console.error('[Meta API] ❌ Token exchange failed');
 
-      // Log detailed error for debugging
       if (error.response?.data?.error) {
         const err = error.response.data.error;
         console.error('[Meta API] Error details:', {
           message: err.message,
           code: err.code,
-          type: err.type
+          type: err.type,
         });
       }
 
@@ -136,7 +131,7 @@ class MetaApiClient {
       return {
         accessToken: response.data.access_token,
         tokenType: response.data.token_type || 'bearer',
-        expiresIn: response.data.expires_in, // Usually 60 days
+        expiresIn: response.data.expires_in,
       };
     } catch (error: any) {
       console.error('[Meta API] ⚠️ Could not get long-lived token');
@@ -179,23 +174,23 @@ class MetaApiClient {
   // ============================================
 
   /**
-   * Get shared WABA (WhatsApp Business Account) list
+   * Get shared WABA list
    */
   async getSharedWABAs(accessToken: string): Promise<SharedWABAInfo[]> {
     try {
       console.log('[Meta API] Fetching shared WABAs...');
 
-      // First, get the user ID
+      // Get user ID
       const meResponse = await this.client.get('/me', {
         params: {
           access_token: accessToken,
-          fields: 'id,name'
+          fields: 'id,name',
         },
       });
 
       console.log('[Meta API] User:', meResponse.data.name || meResponse.data.id);
 
-      // Get businesses for this user
+      // Get businesses
       const businessResponse = await this.client.get(`/${meResponse.data.id}/businesses`, {
         params: {
           access_token: accessToken,
@@ -208,10 +203,9 @@ class MetaApiClient {
 
       const wabas: SharedWABAInfo[] = [];
 
-      // For each business, get shared WABAs
+      // Get WABAs from each business
       for (const business of businesses) {
         try {
-          // Try client WABAs
           const clientWabaResponse = await this.client.get(
             `/${business.id}/client_whatsapp_business_accounts`,
             {
@@ -223,11 +217,10 @@ class MetaApiClient {
           );
 
           if (clientWabaResponse.data.data?.length) {
-            console.log(`[Meta API] Found ${clientWabaResponse.data.data.length} client WABAs for business ${business.name}`);
+            console.log(`[Meta API] Found ${clientWabaResponse.data.data.length} client WABAs`);
             wabas.push(...clientWabaResponse.data.data);
           }
         } catch (e) {
-          // Try owned WABAs
           try {
             const ownedWabaResponse = await this.client.get(
               `/${business.id}/owned_whatsapp_business_accounts`,
@@ -240,7 +233,7 @@ class MetaApiClient {
             );
 
             if (ownedWabaResponse.data.data?.length) {
-              console.log(`[Meta API] Found ${ownedWabaResponse.data.data.length} owned WABAs for business ${business.name}`);
+              console.log(`[Meta API] Found ${ownedWabaResponse.data.data.length} owned WABAs`);
               wabas.push(...ownedWabaResponse.data.data);
             }
           } catch (e2) {
@@ -249,7 +242,7 @@ class MetaApiClient {
         }
       }
 
-      // Also try direct WABA access from token scopes
+      // Get WABAs from token scopes
       try {
         const debugToken = await this.debugToken(accessToken);
         const granularScopes = debugToken.data.granular_scopes || [];
@@ -257,7 +250,6 @@ class MetaApiClient {
         for (const scope of granularScopes) {
           if (scope.scope === 'whatsapp_business_management' && scope.target_ids) {
             for (const wabaId of scope.target_ids) {
-              // Check if we already have this WABA
               if (!wabas.find((w) => w.id === wabaId)) {
                 try {
                   const wabaDetails = await this.getWABADetails(wabaId, accessToken);
@@ -266,7 +258,7 @@ class MetaApiClient {
                     console.log(`[Meta API] Added WABA from token scope: ${wabaId}`);
                   }
                 } catch (e) {
-                  console.log(`[Meta API] Could not fetch WABA ${wabaId} from token scope`);
+                  console.log(`[Meta API] Could not fetch WABA ${wabaId}`);
                 }
               }
             }
@@ -298,7 +290,6 @@ class MetaApiClient {
       });
 
       console.log(`[Meta API] ✅ WABA: ${response.data.name}`);
-
       return response.data;
     } catch (error: any) {
       throw this.handleError(error, 'Failed to get WABA details');
@@ -336,7 +327,6 @@ class MetaApiClient {
       }));
 
       console.log(`[Meta API] ✅ Found ${phoneNumbers.length} phone numbers`);
-
       return phoneNumbers;
     } catch (error: any) {
       throw this.handleError(error, 'Failed to get phone numbers');
@@ -354,7 +344,7 @@ class MetaApiClient {
         `/${phoneNumberId}/register`,
         {
           messaging_product: 'whatsapp',
-          pin: '123456', // Required but not used for Cloud API
+          pin: '123456',
         },
         {
           headers: {
@@ -366,7 +356,6 @@ class MetaApiClient {
       console.log('[Meta API] ✅ Phone number registered');
       return response.data.success === true;
     } catch (error: any) {
-      // If already registered, that's fine
       if (error.response?.data?.error?.code === 10) {
         console.log('[Meta API] Phone number already registered');
         return true;
@@ -398,7 +387,6 @@ class MetaApiClient {
 
       const success = response.data.success === true;
       console.log(`[Meta API] ${success ? '✅' : '❌'} Webhook subscription: ${success}`);
-
       return success;
     } catch (error: any) {
       throw this.handleError(error, 'Failed to subscribe to webhooks');
@@ -502,9 +490,7 @@ class MetaApiClient {
     message: any
   ): Promise<{ messageId: string; contacts?: any[] }> {
     try {
-      // Clean the recipient phone number
       const cleanTo = to.replace(/[^0-9]/g, '');
-
       console.log(`[Meta API] Sending message to ${cleanTo.substring(0, 5)}...`);
 
       const payload: any = {
@@ -514,15 +500,11 @@ class MetaApiClient {
         ...message,
       };
 
-      const response = await this.client.post(
-        `/${phoneNumberId}/messages`,
-        payload,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      );
+      const response = await this.client.post(`/${phoneNumberId}/messages`, payload, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
 
       const messageId = response.data.messages?.[0]?.id;
       console.log(`[Meta API] ✅ Message sent: ${messageId}`);
@@ -594,7 +576,6 @@ class MetaApiClient {
         const templates = response.data.data || [];
         allTemplates.push(...templates);
 
-        // Check for pagination
         if (response.data.paging?.next) {
           url = response.data.paging.next;
         } else {
@@ -726,7 +707,6 @@ class MetaApiClient {
       });
 
       console.log(`[Meta API] ✅ Media uploaded: ${response.data.id}`);
-
       return { id: response.data.id };
     } catch (error: any) {
       throw this.handleError(error, 'Failed to upload media');
@@ -815,20 +795,16 @@ class MetaApiClient {
     if (error.response?.data?.error) {
       const metaError = error.response.data.error;
 
-      // Build detailed error message
       let errorMessage = metaError.message || defaultMessage;
 
-      // Add error code if available
       if (metaError.code) {
         errorMessage += ` (Error Code: ${metaError.code})`;
       }
 
-      // Add subcode if available
       if (metaError.error_subcode) {
         errorMessage += ` (Subcode: ${metaError.error_subcode})`;
       }
 
-      // Common error code translations
       const errorCodes: Record<number, string> = {
         1: 'Unknown error occurred',
         2: 'Service temporarily unavailable',
@@ -851,7 +827,6 @@ class MetaApiClient {
       return new Error(errorMessage);
     }
 
-    // Network or other errors
     if (error.code === 'ECONNABORTED') {
       return new Error('Request timeout - Meta API took too long to respond');
     }

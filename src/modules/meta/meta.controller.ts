@@ -1,3 +1,5 @@
+// src/modules/meta/meta.controller.ts
+
 import { Request, Response, NextFunction } from 'express';
 import { metaService } from './meta.service';
 import { successResponse, errorResponse } from '../../utils/response';
@@ -14,32 +16,43 @@ const getString = (value: unknown): string => {
 };
 
 class MetaController {
+  /**
+   * Get embedded signup configuration
+   */
   async getEmbeddedConfig(req: Request, res: Response, next: NextFunction) {
     try {
       const cfg = metaService.getEmbeddedSignupConfig();
-      return successResponse(res, { data: cfg, message: 'Embedded signup config retrieved' });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async getStatus(req: Request, res: Response, next: NextFunction) {
-    try {
-      const status = metaService.getIntegrationStatus();
-      return successResponse(res, { data: status, message: 'Meta integration status' });
+      return successResponse(res, {
+        data: cfg,
+        message: 'Embedded signup config retrieved'
+      });
     } catch (error) {
       next(error);
     }
   }
 
   /**
-   * Generates URL like:
-   * https://www.facebook.com/v21.0/dialog/oauth?...&config_id=...&override_default_response_type=true
+   * Get Meta integration status
+   */
+  async getStatus(req: Request, res: Response, next: NextFunction) {
+    try {
+      const status = metaService.getIntegrationStatus();
+      return successResponse(res, {
+        data: status,
+        message: 'Meta integration status'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Generate OAuth URL for Meta login
    */
   async getOAuthUrl(req: Request, res: Response, next: NextFunction) {
     try {
       const orgFromQuery = getString(req.query.organizationId);
-      const orgFromUser = (req.user as any)?.organizationId; // if your auth middleware attaches it
+      const orgFromUser = (req.user as any)?.organizationId;
       const organizationId = orgFromQuery || orgFromUser;
 
       if (!organizationId) {
@@ -67,6 +80,9 @@ class MetaController {
     }
   }
 
+  /**
+   * Handle OAuth callback
+   */
   async handleCallback(req: Request, res: Response, next: NextFunction) {
     try {
       const { code, organizationId } = req.body;
@@ -99,6 +115,40 @@ class MetaController {
     }
   }
 
+  /**
+   * Get organization connection status - ✅ NEW METHOD
+   */
+  async getOrganizationStatus(req: Request, res: Response, next: NextFunction) {
+    try {
+      const organizationId = getString(req.params.organizationId);
+
+      const hasAccess = await this.verifyOrgAccess(req.user!.id, organizationId);
+      if (!hasAccess) {
+        return errorResponse(res, 'Unauthorized', 403);
+      }
+
+      // Check if any account is connected
+      const accounts = await metaService.getAccounts(organizationId);
+      const connectedAccounts = accounts.filter((a: any) =>
+        a.status === 'CONNECTED' || a.status === 'connected'
+      );
+
+      return successResponse(res, {
+        data: {
+          status: connectedAccounts.length > 0 ? 'CONNECTED' : 'DISCONNECTED',
+          connectedCount: connectedAccounts.length,
+          totalAccounts: accounts.length,
+        },
+        message: 'Organization Meta connection status',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Get all WhatsApp accounts for organization
+   */
   async getAccounts(req: Request, res: Response, next: NextFunction) {
     try {
       const organizationId = getString(req.params.organizationId);
@@ -117,6 +167,9 @@ class MetaController {
     }
   }
 
+  /**
+   * Get single WhatsApp account
+   */
   async getAccount(req: Request, res: Response, next: NextFunction) {
     try {
       const organizationId = getString(req.params.organizationId);
@@ -136,6 +189,9 @@ class MetaController {
     }
   }
 
+  /**
+   * Disconnect WhatsApp account
+   */
   async disconnectAccount(req: Request, res: Response, next: NextFunction) {
     try {
       const organizationId = getString(req.params.organizationId);
@@ -146,12 +202,17 @@ class MetaController {
 
       await metaService.disconnectAccount(accountId, organizationId);
 
-      return successResponse(res, { message: 'Account disconnected successfully' });
+      return successResponse(res, {
+        message: 'Account disconnected successfully'
+      });
     } catch (error) {
       next(error);
     }
   }
 
+  /**
+   * Set account as default
+   */
   async setDefaultAccount(req: Request, res: Response, next: NextFunction) {
     try {
       const organizationId = getString(req.params.organizationId);
@@ -162,12 +223,17 @@ class MetaController {
 
       await metaService.setDefaultAccount(accountId, organizationId);
 
-      return successResponse(res, { message: 'Default account updated' });
+      return successResponse(res, {
+        message: 'Default account updated'
+      });
     } catch (error) {
       next(error);
     }
   }
 
+  /**
+   * Refresh account health status
+   */
   async refreshHealth(req: Request, res: Response, next: NextFunction) {
     try {
       const organizationId = getString(req.params.organizationId);
@@ -187,6 +253,9 @@ class MetaController {
     }
   }
 
+  /**
+   * Sync templates from Meta
+   */
   async syncTemplates(req: Request, res: Response, next: NextFunction) {
     try {
       const organizationId = getString(req.params.organizationId);
@@ -206,13 +275,24 @@ class MetaController {
     }
   }
 
+  /**
+   * Verify user has access to organization
+   */
   private async verifyOrgAccess(userId: string, organizationId: string): Promise<boolean> {
-    const member = await prisma.organizationMember.findUnique({
-      where: {
-        organizationId_userId: { organizationId, userId },
-      },
-    });
-    return !!member;
+    try {
+      const member = await prisma.organizationMember.findUnique({
+        where: {
+          organizationId_userId: {
+            organizationId,
+            userId
+          },
+        },
+      });
+      return !!member;
+    } catch (error) {
+      console.error('Error verifying org access:', error);
+      return false;
+    }
   }
 }
 

@@ -29,6 +29,7 @@ export interface WABAInfo {
 }
 
 export interface PhoneNumberInfo {
+  status: any;
   id: string;
   verifiedName: string;
   displayPhoneNumber: string;
