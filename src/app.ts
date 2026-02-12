@@ -98,7 +98,7 @@ app.get('/webhooks/meta', (req: Request, res: Response) => {
 });
 
 // Meta Webhook Events (POST) - Raw body for signature verification
-app.post('/webhooks/meta', 
+app.post('/webhooks/meta',
   express.raw({ type: 'application/json', limit: '10mb' }),
   async (req: Request, res: Response) => {
     try {
@@ -198,7 +198,7 @@ app.get('/health', async (req: Request, res: Response) => {
 // ============================================
 // API ROUTES
 // ============================================
-const apiPrefix = '/api';
+const apiPrefix = '/api/v1';
 
 // Auth routes
 app.use(`${apiPrefix}/auth`, authRoutes);

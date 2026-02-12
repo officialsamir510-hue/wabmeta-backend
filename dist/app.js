@@ -208,7 +208,7 @@ app.get('/health', async (req, res) => {
 // ============================================
 // API ROUTES
 // ============================================
-const apiPrefix = '/api';
+const apiPrefix = '/api/v1';
 // Auth routes
 app.use(`${apiPrefix}/auth`, auth_routes_1.default);
 // Core routes
