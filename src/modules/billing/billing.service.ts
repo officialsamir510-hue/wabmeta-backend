@@ -1,344 +1,392 @@
 // src/modules/billing/billing.service.ts
 
-import prisma from '../../config/database';
-import { AppError } from '../../middleware/errorHandler';
-import { PlanType } from '@prisma/client';
-import {
-  CurrentPlanResponse,
-  UsageStatsResponse,
-  InvoiceResponse,
-  PaymentMethodResponse,
-  AvailablePlanResponse,
-  UpgradePlanInput,
-} from './billing.types';
+import { PrismaClient, PlanType, SubscriptionStatus } from '@prisma/client';
+import Razorpay from 'razorpay';
+import crypto from 'crypto';
+import { config } from '../../config';
 
-export class BillingService {
-  async getCurrentPlan(organizationId: string): Promise<CurrentPlanResponse> {
-    const organization = await prisma.organization.findUnique({
-      where: { id: organizationId },
-      include: { subscription: { include: { plan: true } } },
+const prisma = new PrismaClient();
+
+// Initialize Razorpay
+const razorpay = new Razorpay({
+  key_id: config.razorpay?.keyId || process.env.RAZORPAY_KEY_ID || '',
+  key_secret: config.razorpay?.keySecret || process.env.RAZORPAY_KEY_SECRET || ''
+});
+
+class BillingService {
+  // ============================================
+  // GET SUBSCRIPTION
+  // ============================================
+  async getSubscription(organizationId: string) {
+    const subscription = await prisma.subscription.findUnique({
+      where: { organizationId },
+      include: { plan: true }
     });
 
-    if (!organization) throw new AppError('Organization not found', 404);
-
-    const plan = organization.subscription?.plan;
-    const subscription = organization.subscription;
-
-    if (!plan) {
-      const freePlan = await prisma.plan.findUnique({ where: { type: 'FREE' } });
-      if (!freePlan) throw new AppError('Free plan not found', 500);
+    if (!subscription) {
+      // Return default free plan info
+      const freePlan = await prisma.plan.findUnique({
+        where: { type: PlanType.FREE }
+      });
 
       return {
-        plan: {
-          id: freePlan.id,
-          name: freePlan.name,
-          type: freePlan.type,
-          description: freePlan.description,
-          monthlyPrice: Number(freePlan.monthlyPrice),
-          yearlyPrice: Number(freePlan.yearlyPrice),
-          features: (freePlan.features as string[]) || [],
-        },
-        subscription: null,
-        limits: {
-          maxContacts: freePlan.maxContacts,
-          maxMessages: freePlan.maxMessages,
-          maxTeamMembers: freePlan.maxTeamMembers,
-          maxCampaigns: freePlan.maxCampaigns,
-          maxChatbots: freePlan.maxChatbots,
-          maxTemplates: freePlan.maxTemplates,
-        },
+        plan: freePlan,
+        status: 'active',
+        billingCycle: 'monthly',
+        currentPeriodStart: new Date(),
+        currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        messagesUsed: 0,
+        contactsUsed: 0
       };
     }
 
-    return {
-      plan: {
-        id: plan.id,
-        name: plan.name,
-        type: plan.type,
-        description: plan.description,
-        monthlyPrice: Number(plan.monthlyPrice),
-        yearlyPrice: Number(plan.yearlyPrice),
-        features: (plan.features as string[]) || [],
-      },
-      subscription: subscription ? {
-        id: subscription.id,
-        status: subscription.status,
-        billingCycle: subscription.billingCycle,
-        currentPeriodStart: subscription.currentPeriodStart,
-        currentPeriodEnd: subscription.currentPeriodEnd,
-        cancelledAt: subscription.cancelledAt,
-      } : null,
-      limits: {
-        maxContacts: plan.maxContacts,
-        maxMessages: plan.maxMessages,
-        maxTeamMembers: plan.maxTeamMembers,
-        maxCampaigns: plan.maxCampaigns,
-        maxChatbots: plan.maxChatbots,
-        maxTemplates: plan.maxTemplates,
-      },
-    };
+    return subscription;
   }
 
-  // ✅ MAIN FIX: messages.unlimited flag + free-only warning logic support
-  async getUsageStats(organizationId: string): Promise<UsageStatsResponse> {
-    const organization = await prisma.organization.findUnique({
-      where: { id: organizationId },
-      include: {
-        subscription: { include: { plan: true } },
-        _count: { select: { contacts: true, members: true, campaigns: true, templates: true, chatbots: true } },
-      },
+  // ============================================
+  // GET PLANS
+  // ============================================
+  async getPlans() {
+    const plans = await prisma.plan.findMany({
+      where: { isActive: true },
+      orderBy: { monthlyPrice: 'asc' }
     });
 
-    if (!organization) throw new AppError('Organization not found', 404);
-
-    const plan = organization.subscription?.plan;
-    const subscription = organization.subscription;
-
-    const isFreeDemo = (organization.planType === PlanType.FREE);
-
-    // messages count this month
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
-
-    const messagesThisMonth = await prisma.message.count({
-      where: {
-        conversation: { organizationId },
-        direction: 'OUTBOUND',
-        createdAt: { gte: startOfMonth },
-      },
-    });
-
-    // limits
-    const limits = {
-      maxContacts: plan?.maxContacts || 100,
-      maxMessages: plan?.maxMessages || (isFreeDemo ? 100 : 999999), // ✅ free default 100
-      maxTeamMembers: plan?.maxTeamMembers || 1,
-      maxCampaigns: plan?.maxCampaigns || 5,
-      maxChatbots: plan?.maxChatbots || 1,
-      maxTemplates: plan?.maxTemplates || 5,
-    };
-
-    // usage
-    const usage = {
-      contacts: organization._count.contacts,
-      messages: subscription?.messagesUsed ?? messagesThisMonth,
-      teamMembers: organization._count.members,
-      campaigns: organization._count.campaigns,
-      templates: organization._count.templates,
-      chatbots: organization._count.chatbots,
-    };
-
-    const safePct = (used: number, limit: number) => {
-      if (!limit || limit <= 0) return 0;
-      return Math.round((used / limit) * 100);
-    };
-
-    return {
-      contacts: {
-        used: usage.contacts,
-        limit: limits.maxContacts,
-        percentage: safePct(usage.contacts, limits.maxContacts),
-      },
-      messages: {
-        used: usage.messages,
-        limit: limits.maxMessages,
-        percentage: isFreeDemo ? safePct(usage.messages, limits.maxMessages) : 0,
-        unlimited: !isFreeDemo, // ✅ Paid plans = unlimited => frontend banner should never show
-      },
-      teamMembers: {
-        used: usage.teamMembers,
-        limit: limits.maxTeamMembers,
-        percentage: safePct(usage.teamMembers, limits.maxTeamMembers),
-      },
-      campaigns: {
-        used: usage.campaigns,
-        limit: limits.maxCampaigns,
-        percentage: safePct(usage.campaigns, limits.maxCampaigns),
-      },
-      templates: {
-        used: usage.templates,
-        limit: limits.maxTemplates,
-        percentage: safePct(usage.templates, limits.maxTemplates),
-      },
-      chatbots: {
-        used: usage.chatbots,
-        limit: limits.maxChatbots,
-        percentage: safePct(usage.chatbots, limits.maxChatbots),
-      },
-    };
-  }
-
-  async getAvailablePlans(organizationId: string): Promise<AvailablePlanResponse[]> {
-    const [plans, organization] = await Promise.all([
-      prisma.plan.findMany({ where: { isActive: true }, orderBy: { monthlyPrice: 'asc' } }),
-      prisma.organization.findUnique({ where: { id: organizationId } }),
-    ]);
-
-    const currentPlanType = organization?.planType || 'FREE';
-
-    return plans.map((plan) => ({
-      id: plan.id,
-      name: plan.name,
-      type: plan.type,
-      description: plan.description,
+    // Add popular flag to PRO plan
+    return plans.map(plan => ({
+      ...plan,
+      popular: plan.type === PlanType.PRO,
       monthlyPrice: Number(plan.monthlyPrice),
-      yearlyPrice: Number(plan.yearlyPrice),
-      maxContacts: plan.maxContacts,
-      maxMessages: plan.maxMessages,
-      maxTeamMembers: plan.maxTeamMembers,
-      maxCampaigns: plan.maxCampaigns,
-      maxChatbots: plan.maxChatbots,
-      maxTemplates: plan.maxTemplates,
-      features: (plan.features as string[]) || [],
-      isCurrentPlan: plan.type === currentPlanType,
-      isPopular: plan.type === 'PRO',
+      yearlyPrice: Number(plan.yearlyPrice)
     }));
   }
 
-  async upgradePlan(
-    organizationId: string,
-    userId: string,
-    input: UpgradePlanInput
-  ): Promise<{ message: string; subscription: any }> {
-    const { planType, billingCycle } = input;
-
-    const organization = await prisma.organization.findUnique({
-      where: { id: organizationId },
-      include: { subscription: true },
+  // ============================================
+  // GET USAGE
+  // ============================================
+  async getUsage(organizationId: string) {
+    const subscription = await prisma.subscription.findUnique({
+      where: { organizationId },
+      include: { plan: true }
     });
-    if (!organization) throw new AppError('Organization not found', 404);
-    if (organization.ownerId !== userId) throw new AppError('Only owner can upgrade plan', 403);
 
-    const newPlan = await prisma.plan.findUnique({ where: { type: planType } });
-    if (!newPlan) throw new AppError('Plan not found', 404);
-
-    const now = new Date();
-    const periodEnd = new Date();
-    if (billingCycle === 'yearly') periodEnd.setFullYear(periodEnd.getFullYear() + 1);
-    else periodEnd.setMonth(periodEnd.getMonth() + 1);
-
-    const subscription = await prisma.$transaction(async (tx) => {
-      await tx.organization.update({ where: { id: organizationId }, data: { planType } });
-
-      if (organization.subscription) {
-        return tx.subscription.update({
-          where: { id: organization.subscription.id },
-          data: {
-            planId: newPlan.id,
-            status: 'ACTIVE',
-            billingCycle,
-            currentPeriodStart: now,
-            currentPeriodEnd: periodEnd,
-            cancelledAt: null,
-          },
-        });
-      }
-
-      return tx.subscription.create({
-        data: {
+    // Get actual usage counts
+    const [contactCount, messageCount, campaignCount] = await Promise.all([
+      prisma.contact.count({ where: { organizationId } }),
+      prisma.message.count({
+        where: {
+          conversation: { organizationId },
+          direction: 'OUTBOUND',
+          createdAt: {
+            gte: subscription?.currentPeriodStart || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+          }
+        }
+      }),
+      prisma.campaign.count({
+        where: {
           organizationId,
-          planId: newPlan.id,
-          status: 'ACTIVE',
-          billingCycle,
-          currentPeriodStart: now,
-          currentPeriodEnd: periodEnd,
-        },
-      });
-    });
+          createdAt: {
+            gte: subscription?.currentPeriodStart || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+          }
+        }
+      })
+    ]);
 
-    return { message: `Successfully upgraded to ${newPlan.name} plan`, subscription };
-  }
+    const plan = subscription?.plan || await prisma.plan.findUnique({ where: { type: PlanType.FREE } });
 
-  async cancelSubscription(organizationId: string, userId: string): Promise<{ message: string }> {
-    const organization = await prisma.organization.findUnique({
-      where: { id: organizationId },
-      include: { subscription: true },
-    });
+    const maxContacts = plan?.maxContacts || 100;
+    const maxMessages = plan?.maxMessagesPerMonth || 1000;
+    const maxCampaigns = plan?.maxCampaignsPerMonth || 5;
 
-    if (!organization) throw new AppError('Organization not found', 404);
-    if (organization.ownerId !== userId) throw new AppError('Only owner can cancel subscription', 403);
-    if (!organization.subscription) throw new AppError('No active subscription', 400);
-    if (organization.planType === 'FREE') throw new AppError('Cannot cancel free plan', 400);
-
-    await prisma.subscription.update({
-      where: { id: organization.subscription.id },
-      data: { status: 'CANCELLED', cancelledAt: new Date() },
-    });
-
-    return { message: 'Subscription cancelled. You will have access until the end of current period.' };
-  }
-
-  async getInvoices(organizationId: string, page = 1, limit = 10): Promise<{ invoices: InvoiceResponse[]; total: number }> {
-    const organization = await prisma.organization.findUnique({
-      where: { id: organizationId },
-      include: { subscription: { include: { plan: true } } },
-    });
-
-    if (!organization || !organization.subscription) return { invoices: [], total: 0 };
-
-    const sub = organization.subscription;
-    const plan = sub.plan;
-
-    const invoices: InvoiceResponse[] = [];
-    const monthsBack = 6;
-
-    for (let i = 0; i < monthsBack; i++) {
-      const invoiceDate = new Date();
-      invoiceDate.setMonth(invoiceDate.getMonth() - i);
-
-      invoices.push({
-        id: `inv_${organizationId}_${i}`,
-        invoiceNumber: `INV-${invoiceDate.getFullYear()}${String(invoiceDate.getMonth() + 1).padStart(2, '0')}-${String(i + 1).padStart(4, '0')}`,
-        amount: sub.billingCycle === 'yearly' ? Number(plan.yearlyPrice) : Number(plan.monthlyPrice),
-        currency: 'USD',
-        status: i === 0 && sub.status === 'PAST_DUE' ? 'pending' : 'paid',
-        planName: plan.name,
-        billingCycle: sub.billingCycle,
-        createdAt: invoiceDate,
-        paidAt: i === 0 && sub.status === 'PAST_DUE' ? null : invoiceDate,
-        downloadUrl: `/api/v1/billing/invoices/inv_${organizationId}_${i}/download`,
-      });
-    }
-
-    const start = (page - 1) * limit;
-    return { invoices: invoices.slice(start, start + limit), total: invoices.length };
-  }
-
-  async getPaymentMethods(_organizationId: string): Promise<PaymentMethodResponse[]> {
-    return [
-      {
-        id: 'pm_1',
-        type: 'card',
-        last4: '4242',
-        brand: 'Visa',
-        expiryMonth: '12',
-        expiryYear: '2025',
-        isDefault: true,
-        createdAt: new Date('2024-01-15'),
-      },
-    ];
-  }
-
-  async addPaymentMethod(_organizationId: string, input: any): Promise<PaymentMethodResponse> {
     return {
-      id: `pm_${Date.now()}`,
-      type: input.type,
-      last4: input.details.cardNumber?.slice(-4) || '0000',
-      brand: 'Visa',
-      expiryMonth: input.details.expiryMonth,
-      expiryYear: input.details.expiryYear,
-      isDefault: input.isDefault || false,
-      createdAt: new Date(),
+      messages: {
+        used: messageCount,
+        limit: maxMessages,
+        percentage: maxMessages === -1 ? 0 : Math.round((messageCount / maxMessages) * 100)
+      },
+      contacts: {
+        used: contactCount,
+        limit: maxContacts,
+        percentage: maxContacts === -1 ? 0 : Math.round((contactCount / maxContacts) * 100)
+      },
+      campaigns: {
+        used: campaignCount,
+        limit: maxCampaigns,
+        percentage: maxCampaigns === -1 ? 0 : Math.round((campaignCount / maxCampaigns) * 100)
+      },
+      storage: {
+        used: 0, // TODO: Calculate actual storage
+        limit: 1000, // MB
+        percentage: 0
+      }
     };
   }
 
-  async deletePaymentMethod(_organizationId: string, _paymentMethodId: string): Promise<{ message: string }> {
-    return { message: 'Payment method removed successfully' };
+  // ============================================
+  // CREATE RAZORPAY ORDER
+  // ============================================
+  async createRazorpayOrder(params: {
+    organizationId: string;
+    userId: string;
+    planKey: string;
+    billingCycle: 'monthly' | 'yearly';
+  }) {
+    const { organizationId, userId, planKey, billingCycle } = params;
+
+    // Get plan by slug or type
+    const plan = await prisma.plan.findFirst({
+      where: {
+        OR: [
+          { slug: planKey },
+          { type: planKey.toUpperCase() as PlanType }
+        ],
+        isActive: true
+      }
+    });
+
+    if (!plan) {
+      throw new Error('Plan not found');
+    }
+
+    const price = billingCycle === 'yearly'
+      ? Number(plan.yearlyPrice)
+      : Number(plan.monthlyPrice);
+
+    if (price <= 0) {
+      throw new Error('Cannot create order for free plan');
+    }
+
+    // Create Razorpay order
+    const order = await razorpay.orders.create({
+      amount: Math.round(price * 100), // Convert to paise
+      currency: 'INR',
+      receipt: `order_${organizationId}_${Date.now()}`,
+      notes: {
+        organizationId,
+        userId,
+        planId: plan.id,
+        planType: plan.type,
+        billingCycle
+      }
+    });
+
+    return {
+      id: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      planId: plan.id,
+      planName: plan.name
+    };
   }
 
-  async setDefaultPaymentMethod(_organizationId: string, _paymentMethodId: string): Promise<{ message: string }> {
-    return { message: 'Default payment method updated' };
+  // ============================================
+  // VERIFY RAZORPAY PAYMENT
+  // ============================================
+  async verifyRazorpayPayment(params: {
+    organizationId: string;
+    userId: string;
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  }) {
+    const { organizationId, razorpay_order_id, razorpay_payment_id, razorpay_signature } = params;
+
+    // Verify signature
+    const body = razorpay_order_id + '|' + razorpay_payment_id;
+    const expectedSignature = crypto
+      .createHmac('sha256', config.razorpay?.keySecret || process.env.RAZORPAY_KEY_SECRET || '')
+      .update(body)
+      .digest('hex');
+
+    if (expectedSignature !== razorpay_signature) {
+      throw new Error('Invalid payment signature');
+    }
+
+    // Fetch order details
+    const order = await razorpay.orders.fetch(razorpay_order_id);
+    const notes = order.notes as any;
+
+    // Get plan
+    const plan = await prisma.plan.findUnique({
+      where: { id: notes.planId }
+    });
+
+    if (!plan) {
+      throw new Error('Plan not found');
+    }
+
+    // Calculate period dates
+    const now = new Date();
+    const periodEnd = notes.billingCycle === 'yearly'
+      ? new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000)
+      : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    // Update or create subscription
+    const subscription = await prisma.subscription.upsert({
+      where: { organizationId },
+      create: {
+        organizationId,
+        planId: plan.id,
+        status: SubscriptionStatus.ACTIVE,
+        billingCycle: notes.billingCycle,
+        currentPeriodStart: now,
+        currentPeriodEnd: periodEnd,
+        paymentMethod: 'razorpay',
+        lastPaymentAt: now
+      },
+      update: {
+        planId: plan.id,
+        status: SubscriptionStatus.ACTIVE,
+        billingCycle: notes.billingCycle,
+        currentPeriodStart: now,
+        currentPeriodEnd: periodEnd,
+        paymentMethod: 'razorpay',
+        lastPaymentAt: now,
+        cancelledAt: null
+      }
+    });
+
+    // Update organization plan type
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: { planType: plan.type }
+    });
+
+    return {
+      subscription,
+      plan,
+      message: 'Subscription activated successfully'
+    };
+  }
+
+  // ============================================
+  // UPGRADE PLAN
+  // ============================================
+  async upgradePlan(params: {
+    organizationId: string;
+    planType: string;
+    billingCycle?: string;
+  }) {
+    const { organizationId, planType, billingCycle = 'monthly' } = params;
+
+    const plan = await prisma.plan.findFirst({
+      where: {
+        OR: [
+          { type: planType.toUpperCase() as PlanType },
+          { slug: planType }
+        ]
+      }
+    });
+
+    if (!plan) {
+      throw new Error('Plan not found');
+    }
+
+    // For paid plans, return order creation info
+    const price = billingCycle === 'yearly'
+      ? Number(plan.yearlyPrice)
+      : Number(plan.monthlyPrice);
+
+    if (price > 0) {
+      throw new Error('Please use Razorpay checkout for paid plans');
+    }
+
+    // For free plan, update directly
+    const now = new Date();
+    const periodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    const subscription = await prisma.subscription.upsert({
+      where: { organizationId },
+      create: {
+        organizationId,
+        planId: plan.id,
+        status: SubscriptionStatus.ACTIVE,
+        billingCycle,
+        currentPeriodStart: now,
+        currentPeriodEnd: periodEnd
+      },
+      update: {
+        planId: plan.id,
+        status: SubscriptionStatus.ACTIVE,
+        currentPeriodStart: now,
+        currentPeriodEnd: periodEnd
+      }
+    });
+
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: { planType: plan.type }
+    });
+
+    return subscription;
+  }
+
+  // ============================================
+  // CANCEL SUBSCRIPTION
+  // ============================================
+  async cancelSubscription(organizationId: string, reason?: string) {
+    const subscription = await prisma.subscription.update({
+      where: { organizationId },
+      data: {
+        status: SubscriptionStatus.CANCELLED,
+        cancelledAt: new Date()
+      }
+    });
+
+    // Log cancellation reason
+    if (reason) {
+      await prisma.activityLog.create({
+        data: {
+          organizationId,
+          action: 'UPDATE',
+          entity: 'subscription',
+          entityId: subscription.id,
+          metadata: { reason }
+        }
+      });
+    }
+
+    return { message: 'Subscription will end at period end', subscription };
+  }
+
+  // ============================================
+  // RESUME SUBSCRIPTION
+  // ============================================
+  async resumeSubscription(organizationId: string) {
+    const subscription = await prisma.subscription.update({
+      where: { organizationId },
+      data: {
+        status: SubscriptionStatus.ACTIVE,
+        cancelledAt: null
+      }
+    });
+
+    return subscription;
+  }
+
+  // ============================================
+  // GET INVOICES
+  // ============================================
+  async getInvoices(organizationId: string, limit: number = 10, offset: number = 0): Promise<any[]> {
+    // TODO: Implement actual invoice storage
+    // For now, return empty array or mock data
+    return [];
+  }
+
+  // ============================================
+  // GET SINGLE INVOICE
+  // ============================================
+  async getInvoice(invoiceId: string, organizationId: string): Promise<any> {
+    // TODO: Implement actual invoice retrieval
+    throw new Error('Invoice not found');
+  }
+
+  // ============================================
+  // GENERATE INVOICE PDF
+  // ============================================
+  async generateInvoicePDF(invoiceId: string, organizationId: string): Promise<Buffer> {
+    // TODO: Implement PDF generation
+    throw new Error('Invoice PDF generation not implemented');
   }
 }
 

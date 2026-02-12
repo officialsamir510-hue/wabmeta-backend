@@ -1,146 +1,253 @@
 // src/modules/billing/billing.controller.ts
 
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
 import { billingService } from './billing.service';
-import { sendSuccess } from '../../utils/response';
-import { AppError } from '../../middleware/errorHandler';
-import { UpgradePlanInput } from './billing.types';
+import { sendSuccess, errorResponse } from '../../utils/response';
 
-interface AuthRequest extends Request {
-  user?: { id: string; email: string; organizationId?: string };
-}
-
-export class BillingController {
-  async getCurrentPlan(req: AuthRequest, res: Response, next: NextFunction) {
+class BillingController {
+  // ============================================
+  // GET SUBSCRIPTION
+  // ============================================
+  async getSubscription(req: Request, res: Response) {
     try {
       const organizationId = req.user?.organizationId;
-      if (!organizationId) throw new AppError('Organization context required', 400);
 
-      const data = await billingService.getCurrentPlan(organizationId);
-      return sendSuccess(res, data, 'Current plan fetched');
-    } catch (e) {
-      next(e);
+      if (!organizationId) {
+        return errorResponse(res, 'Organization not found', 400);
+      }
+
+      const subscription = await billingService.getSubscription(organizationId);
+      return sendSuccess(res, subscription, 'Subscription retrieved successfully');
+    } catch (error: any) {
+      console.error('Get subscription error:', error);
+      return errorResponse(res, error.message || 'Failed to get subscription', 500);
     }
   }
 
-  async getUsage(req: AuthRequest, res: Response, next: NextFunction) {
+  // ============================================
+  // GET PLANS
+  // ============================================
+  async getPlans(req: Request, res: Response) {
     try {
-      const organizationId = req.user?.organizationId;
-      if (!organizationId) throw new AppError('Organization context required', 400);
-
-      const data = await billingService.getUsageStats(organizationId);
-      return sendSuccess(res, data, 'Usage fetched');
-    } catch (e) {
-      next(e);
+      const plans = await billingService.getPlans();
+      return sendSuccess(res, plans, 'Plans retrieved successfully');
+    } catch (error: any) {
+      console.error('Get plans error:', error);
+      return errorResponse(res, error.message || 'Failed to get plans', 500);
     }
   }
 
-  async getPlans(req: AuthRequest, res: Response, next: NextFunction) {
+  // ============================================
+  // GET USAGE
+  // ============================================
+  async getUsage(req: Request, res: Response) {
     try {
       const organizationId = req.user?.organizationId;
-      if (!organizationId) throw new AppError('Organization context required', 400);
 
-      const data = await billingService.getAvailablePlans(organizationId);
-      return sendSuccess(res, data, 'Plans fetched');
-    } catch (e) {
-      next(e);
+      if (!organizationId) {
+        return errorResponse(res, 'Organization not found', 400);
+      }
+
+      const usage = await billingService.getUsage(organizationId);
+      return sendSuccess(res, usage, 'Usage retrieved successfully');
+    } catch (error: any) {
+      console.error('Get usage error:', error);
+      return errorResponse(res, error.message || 'Failed to get usage', 500);
     }
   }
 
-  async upgrade(req: AuthRequest, res: Response, next: NextFunction) {
+  // ============================================
+  // CREATE RAZORPAY ORDER
+  // ============================================
+  async createRazorpayOrder(req: Request, res: Response) {
     try {
+      const { planKey, billingCycle = 'monthly' } = req.body;
       const organizationId = req.user?.organizationId;
       const userId = req.user?.id;
-      if (!organizationId || !userId) throw new AppError('Auth required', 401);
 
-      const input: UpgradePlanInput = req.body;
-      const data = await billingService.upgradePlan(organizationId, userId, input);
-      return sendSuccess(res, data, data.message);
-    } catch (e) {
-      next(e);
-    }
-  }
+      if (!organizationId || !userId) {
+        return errorResponse(res, 'User not authenticated', 401);
+      }
 
-  async cancel(req: AuthRequest, res: Response, next: NextFunction) {
-    try {
-      const organizationId = req.user?.organizationId;
-      const userId = req.user?.id;
-      if (!organizationId || !userId) throw new AppError('Auth required', 401);
+      if (!planKey) {
+        return errorResponse(res, 'Plan key is required', 400);
+      }
 
-      const data = await billingService.cancelSubscription(organizationId, userId);
-      return sendSuccess(res, data, data.message);
-    } catch (e) {
-      next(e);
-    }
-  }
-
-  async getInvoices(req: AuthRequest, res: Response, next: NextFunction) {
-    try {
-      const organizationId = req.user?.organizationId;
-      if (!organizationId) throw new AppError('Organization context required', 400);
-
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 10;
-
-      const result = await billingService.getInvoices(organizationId, page, limit);
-      return res.json({
-        success: true,
-        message: 'Invoices fetched',
-        data: result.invoices,
-        meta: { total: result.total, page, limit },
+      const order = await billingService.createRazorpayOrder({
+        organizationId,
+        userId,
+        planKey,
+        billingCycle: billingCycle as 'monthly' | 'yearly'
       });
-    } catch (e) {
-      next(e);
+
+      return sendSuccess(res, order, 'Order created successfully');
+    } catch (error: any) {
+      console.error('Create Razorpay order error:', error);
+      return errorResponse(res, error.message || 'Failed to create order', 500);
     }
   }
 
-  async getPaymentMethods(req: AuthRequest, res: Response, next: NextFunction) {
+  // ============================================
+  // VERIFY RAZORPAY PAYMENT
+  // ============================================
+  async verifyRazorpayPayment(req: Request, res: Response) {
     try {
+      const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
       const organizationId = req.user?.organizationId;
-      if (!organizationId) throw new AppError('Organization context required', 400);
+      const userId = req.user?.id;
 
-      const data = await billingService.getPaymentMethods(organizationId);
-      return sendSuccess(res, data, 'Payment methods fetched');
-    } catch (e) {
-      next(e);
+      if (!organizationId || !userId) {
+        return errorResponse(res, 'User not authenticated', 401);
+      }
+
+      const result = await billingService.verifyRazorpayPayment({
+        organizationId,
+        userId,
+        razorpay_order_id,
+        razorpay_payment_id,
+        razorpay_signature
+      });
+
+      return sendSuccess(res, result, 'Payment verified successfully');
+    } catch (error: any) {
+      console.error('Verify payment error:', error);
+      return errorResponse(res, error.message || 'Payment verification failed', 500);
     }
   }
 
-  async addPaymentMethod(req: AuthRequest, res: Response, next: NextFunction) {
+  // ============================================
+  // UPGRADE PLAN
+  // ============================================
+  async upgradePlan(req: Request, res: Response) {
     try {
+      const { planType, billingCycle } = req.body;
       const organizationId = req.user?.organizationId;
-      if (!organizationId) throw new AppError('Organization context required', 400);
 
-      const data = await billingService.addPaymentMethod(organizationId, req.body);
-      return sendSuccess(res, data, 'Payment method added', 201);
-    } catch (e) {
-      next(e);
+      if (!organizationId) {
+        return errorResponse(res, 'Organization not found', 400);
+      }
+
+      const subscription = await billingService.upgradePlan({
+        organizationId,
+        planType,
+        billingCycle
+      });
+
+      return sendSuccess(res, subscription, 'Plan upgraded successfully');
+    } catch (error: any) {
+      console.error('Upgrade plan error:', error);
+      return errorResponse(res, error.message || 'Failed to upgrade plan', 500);
     }
   }
 
-  async deletePaymentMethod(req: AuthRequest, res: Response, next: NextFunction) {
+  // ============================================
+  // CANCEL SUBSCRIPTION
+  // ============================================
+  async cancelSubscription(req: Request, res: Response) {
     try {
       const organizationId = req.user?.organizationId;
-      if (!organizationId) throw new AppError('Organization context required', 400);
+      const { reason } = req.body;
 
-      const id = req.params.id as string;
-      const data = await billingService.deletePaymentMethod(organizationId, id);
-      return sendSuccess(res, data, data.message);
-    } catch (e) {
-      next(e);
+      if (!organizationId) {
+        return errorResponse(res, 'Organization not found', 400);
+      }
+
+      const result = await billingService.cancelSubscription(organizationId, reason);
+      return sendSuccess(res, result, 'Subscription cancelled successfully');
+    } catch (error: any) {
+      console.error('Cancel subscription error:', error);
+      return errorResponse(res, error.message || 'Failed to cancel subscription', 500);
     }
   }
 
-  async setDefaultPaymentMethod(req: AuthRequest, res: Response, next: NextFunction) {
+  // ============================================
+  // RESUME SUBSCRIPTION
+  // ============================================
+  async resumeSubscription(req: Request, res: Response) {
     try {
       const organizationId = req.user?.organizationId;
-      if (!organizationId) throw new AppError('Organization context required', 400);
 
-      const id = req.params.id as string;
-      const data = await billingService.setDefaultPaymentMethod(organizationId, id);
-      return sendSuccess(res, data, data.message);
-    } catch (e) {
-      next(e);
+      if (!organizationId) {
+        return errorResponse(res, 'Organization not found', 400);
+      }
+
+      const result = await billingService.resumeSubscription(organizationId);
+      return sendSuccess(res, result, 'Subscription resumed successfully');
+    } catch (error: any) {
+      console.error('Resume subscription error:', error);
+      return errorResponse(res, error.message || 'Failed to resume subscription', 500);
+    }
+  }
+
+  // ============================================
+  // GET INVOICES
+  // ============================================
+  async getInvoices(req: Request, res: Response) {
+    try {
+      const organizationId = req.user?.organizationId;
+      const { limit = 10, offset = 0 } = req.query;
+
+      if (!organizationId) {
+        return errorResponse(res, 'Organization not found', 400);
+      }
+
+      const invoices = await billingService.getInvoices(
+        organizationId,
+        Number(limit),
+        Number(offset)
+      );
+
+      return sendSuccess(res, invoices, 'Invoices retrieved successfully');
+    } catch (error: any) {
+      console.error('Get invoices error:', error);
+      return errorResponse(res, error.message || 'Failed to get invoices', 500);
+    }
+  }
+
+  // ============================================
+  // GET SINGLE INVOICE
+  // ============================================
+  async getInvoice(req: Request, res: Response) {
+    try {
+      const { id } = req.params as { id: string };
+      const organizationId = req.user?.organizationId;
+
+      if (!organizationId) {
+        return errorResponse(res, 'Organization not found', 400);
+      }
+
+      const invoice = await billingService.getInvoice(id, organizationId);
+      return sendSuccess(res, invoice, 'Invoice retrieved successfully');
+    } catch (error: any) {
+      console.error('Get invoice error:', error);
+      return errorResponse(res, error.message || 'Failed to get invoice', 500);
+    }
+  }
+
+  // ============================================
+  // DOWNLOAD INVOICE
+  // ============================================
+  async downloadInvoice(req: Request, res: Response) {
+    try {
+      const { id } = req.params as { id: string };
+      const organizationId = req.user?.organizationId;
+
+      if (!organizationId) {
+        return errorResponse(res, 'Organization not found', 400);
+      }
+
+      const pdfBuffer = await billingService.generateInvoicePDF(id, organizationId);
+
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename=invoice-${id}.pdf`,
+        'Content-Length': pdfBuffer.length
+      });
+
+      return res.send(pdfBuffer);
+    } catch (error: any) {
+      console.error('Download invoice error:', error);
+      return errorResponse(res, error.message || 'Failed to download invoice', 500);
     }
   }
 }

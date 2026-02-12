@@ -1,25 +1,76 @@
 // src/modules/billing/billing.routes.ts
 
 import { Router } from 'express';
-import { authenticate } from '../../middleware/auth';
 import { billingController } from './billing.controller';
+import { authenticate } from '../../middleware/auth';
+import { validate } from '../../middleware/validate';
+import { billingSchema } from './billing.schema';
 
 const router = Router();
+
+// All routes require authentication
 router.use(authenticate);
 
-// GET
-router.get('/plan', billingController.getCurrentPlan.bind(billingController));
-router.get('/usage', billingController.getUsage.bind(billingController));
-router.get('/plans', billingController.getPlans.bind(billingController));
-router.get('/invoices', billingController.getInvoices.bind(billingController));
-router.get('/payment-methods', billingController.getPaymentMethods.bind(billingController));
+// ============================================
+// SUBSCRIPTION & PLANS
+// ============================================
 
-// POST/DELETE
-router.post('/upgrade', billingController.upgrade.bind(billingController));
-router.post('/cancel', billingController.cancel.bind(billingController));
+// Get current subscription/plan
+router.get('/subscription', billingController.getSubscription);
+router.get('/plan', billingController.getSubscription); // Alias
 
-router.post('/payment-methods', billingController.addPaymentMethod.bind(billingController));
-router.delete('/payment-methods/:id', billingController.deletePaymentMethod.bind(billingController));
-router.post('/payment-methods/:id/default', billingController.setDefaultPaymentMethod.bind(billingController));
+// Get all available plans
+router.get('/plans', billingController.getPlans);
+
+// ============================================
+// USAGE
+// ============================================
+
+// Get usage statistics
+router.get('/usage', billingController.getUsage);
+
+// ============================================
+// RAZORPAY INTEGRATION
+// ============================================
+
+// Create Razorpay order
+router.post(
+    '/razorpay/create-order',
+    validate(billingSchema.createOrder),
+    billingController.createRazorpayOrder
+);
+
+// Verify Razorpay payment
+router.post(
+    '/razorpay/verify',
+    validate(billingSchema.verifyPayment),
+    billingController.verifyRazorpayPayment
+);
+
+// ============================================
+// SUBSCRIPTION MANAGEMENT
+// ============================================
+
+// Upgrade/change plan
+router.post('/upgrade', billingController.upgradePlan);
+
+// Cancel subscription
+router.post('/cancel', billingController.cancelSubscription);
+
+// Resume cancelled subscription
+router.post('/resume', billingController.resumeSubscription);
+
+// ============================================
+// INVOICES
+// ============================================
+
+// Get invoices
+router.get('/invoices', billingController.getInvoices);
+
+// Get single invoice
+router.get('/invoices/:id', billingController.getInvoice);
+
+// Download invoice
+router.get('/invoices/:id/download', billingController.downloadInvoice);
 
 export default router;
