@@ -46,10 +46,10 @@
     "razorpay": "^2.9.6",
     "socket.io": "^4.8.3",
     "uuid": "^13.0.0",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "@types/cookie-parser": "^1.4.10"
   },
   "devDependencies": {
-    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/crypto-js": "^4.2.2",
     "@types/express": "^5.0.6",
