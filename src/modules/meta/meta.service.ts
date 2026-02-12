@@ -1,9 +1,9 @@
 // src/modules/meta/meta.service.ts
 
-import { PrismaClient, WhatsAppAccountStatus, ConnectionStatus, TemplateStatus, TemplateCategory } from '@prisma/client';
+import { PrismaClient, WhatsAppAccountStatus, TemplateStatus, TemplateCategory } from '@prisma/client';
 import { metaApi } from './meta.api';
 import { config } from '../../config';
-import { encrypt, decrypt } from '../../utils/encryption';
+import { encrypt, safeDecrypt, encryptIfNeeded, maskToken } from '../../utils/encryption';
 import { v4 as uuidv4 } from 'uuid';
 import {
   ConnectionProgress,
@@ -57,7 +57,7 @@ class MetaService {
   }
 
   /**
-   * Complete Meta connection flow
+   * Complete Meta connection flow - ✅ UPDATED with encryption
    */
   async completeConnection(
     code: string,
@@ -197,17 +197,19 @@ class MetaService {
 
       if (existingAccount) {
         if (existingAccount.organizationId === organizationId) {
-          // Update existing account
+          // ✅ Update existing account with encrypted token
           const updatedAccount = await prisma.whatsAppAccount.update({
             where: { id: existingAccount.id },
             data: {
-              accessToken: encrypt(accessToken),
-              tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), // 60 days
+              accessToken: encrypt(accessToken), // Always encrypt
+              tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
               displayName: primaryPhone.displayPhoneNumber,
               qualityRating: primaryPhone.qualityRating,
-              status: WhatsAppAccountStatus.CONNECTED, // ✅ Fixed: Use CONNECTED instead of ACTIVE
+              status: WhatsAppAccountStatus.CONNECTED,
             },
           });
+
+          console.log(`✅ Account reconnected: ${maskToken(accessToken)}`);
 
           onProgress?.({
             step: 'COMPLETED',
@@ -229,29 +231,24 @@ class MetaService {
         where: { organizationId },
       });
 
-      // Create new account
+      // ✅ Create new account with encrypted tokens
       const newAccount = await prisma.whatsAppAccount.create({
         data: {
           organizationId,
           wabaId,
           phoneNumberId: primaryPhone.id,
-          // ❌ REMOVED: businessId (not in schema)
           phoneNumber: primaryPhone.displayPhoneNumber.replace(/\D/g, ''),
           displayName: primaryPhone.displayPhoneNumber,
-          // ❌ REMOVED: verifiedName (not in WhatsAppAccount schema)
           qualityRating: primaryPhone.qualityRating,
-          accessToken: encrypt(accessToken),
-          tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), // 60 days
-          webhookSecret: webhookVerifyToken,
-          status: WhatsAppAccountStatus.CONNECTED, // ✅ Fixed: Use CONNECTED
-          // ❌ REMOVED: connectionStatus (not in schema)
-          // ❌ REMOVED: lastConnectedAt (not in schema)
-          // ❌ REMOVED: lastSyncedAt (not in schema)
-          // ❌ REMOVED: webhookConfigured (not in schema)
-          // ❌ REMOVED: webhookVerifyToken (not in schema)
+          accessToken: encrypt(accessToken), // ✅ Encrypt access token
+          tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+          webhookSecret: encrypt(webhookVerifyToken), // ✅ Encrypt webhook secret
+          status: WhatsAppAccountStatus.CONNECTED,
           isDefault: accountCount === 0,
         },
       });
+
+      console.log(`✅ New account created: ${maskToken(accessToken)}`);
 
       onProgress?.({
         step: 'COMPLETED',
@@ -307,7 +304,7 @@ class MetaService {
   }
 
   /**
-   * Get account with decrypted token (internal use)
+   * Get account with decrypted token (internal use) - ✅ UPDATED
    */
   async getAccountWithToken(accountId: string): Promise<{
     account: any;
@@ -318,13 +315,43 @@ class MetaService {
     });
 
     if (!account || !account.accessToken) {
+      console.error(`❌ No account or token found for ${accountId}`);
       return null;
     }
 
+    // ✅ Use safeDecrypt for backward compatibility with plain text tokens
+    const decryptedToken = safeDecrypt(account.accessToken);
+
+    if (!decryptedToken) {
+      console.error(`❌ Failed to decrypt token for account ${accountId}`);
+      return null;
+    }
+
+    // ✅ Safe logging with masking
+    console.log(`✅ Token retrieved for account ${accountId}: ${maskToken(decryptedToken)}`);
+
     return {
       account,
-      accessToken: decrypt(account.accessToken), // ✅ Fixed: Handle null check
+      accessToken: decryptedToken,
     };
+  }
+
+  /**
+   * Update account token - ✅ NEW METHOD
+   */
+  async updateAccountToken(accountId: string, newToken: string) {
+    // ✅ Encrypt only if needed (prevents double encryption)
+    const encryptedToken = encryptIfNeeded(newToken);
+
+    await prisma.whatsAppAccount.update({
+      where: { id: accountId },
+      data: {
+        accessToken: encryptedToken,
+        tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000)
+      }
+    });
+
+    console.log(`✅ Token updated for account ${accountId}: ${maskToken(newToken)}`);
   }
 
   /**
@@ -347,8 +374,7 @@ class MetaService {
       where: { id: accountId },
       data: {
         status: WhatsAppAccountStatus.DISCONNECTED,
-        // ❌ REMOVED: connectionStatus (not in schema)
-        accessToken: null, // ✅ Fixed: Set to null instead of empty string
+        accessToken: null,
       },
     });
 
@@ -358,7 +384,7 @@ class MetaService {
         where: {
           organizationId,
           id: { not: accountId },
-          status: WhatsAppAccountStatus.CONNECTED, // ✅ Fixed: Use CONNECTED
+          status: WhatsAppAccountStatus.CONNECTED,
         },
       });
 
@@ -416,8 +442,7 @@ class MetaService {
         await prisma.whatsAppAccount.update({
           where: { id: accountId },
           data: {
-            status: WhatsAppAccountStatus.DISCONNECTED, // ✅ Fixed: No ERROR status
-            // ❌ REMOVED: connectionStatus
+            status: WhatsAppAccountStatus.DISCONNECTED,
           },
         });
 
@@ -433,8 +458,7 @@ class MetaService {
           where: { id: accountId },
           data: {
             qualityRating: phone.qualityRating,
-            status: WhatsAppAccountStatus.CONNECTED, // ✅ Fixed
-            // ❌ REMOVED: connectionStatus, lastSyncedAt
+            status: WhatsAppAccountStatus.CONNECTED,
           },
         });
 
@@ -450,8 +474,7 @@ class MetaService {
       await prisma.whatsAppAccount.update({
         where: { id: accountId },
         data: {
-          status: WhatsAppAccountStatus.DISCONNECTED, // ✅ Fixed
-          // ❌ REMOVED: connectionStatus
+          status: WhatsAppAccountStatus.DISCONNECTED,
         },
       });
 
@@ -481,7 +504,7 @@ class MetaService {
     for (const template of templates) {
       const mappedStatus = this.mapTemplateStatus(template.status);
 
-      // ✅ Skip DRAFT status (not in enum)
+      // Skip DRAFT status (not in enum)
       if (mappedStatus === 'DRAFT' as any) {
         continue;
       }
@@ -496,7 +519,6 @@ class MetaService {
         },
         create: {
           organizationId,
-          // ❌ REMOVED: whatsappAccountId (not in Template schema)
           metaTemplateId: template.id,
           name: template.name,
           language: template.language,
@@ -507,16 +529,12 @@ class MetaService {
           headerContent: this.extractHeaderContent(template.components),
           footerText: this.extractFooterText(template.components),
           buttons: this.extractButtons(template.components),
-          // ❌ REMOVED: lastSyncedAt (not in schema)
         },
         update: {
           status: mappedStatus as TemplateStatus,
-          // ❌ REMOVED: lastSyncedAt
         },
       });
     }
-
-    // ❌ Can't update lastSyncedAt (not in WhatsAppAccount schema)
 
     return { synced: templates.length };
   }
@@ -531,9 +549,9 @@ class MetaService {
   ) {
     try {
       const templates = await metaApi.getTemplates(wabaId, accessToken);
-      console.log(`Synced ${templates.length} templates for account ${accountId}`);
+      console.log(`✅ Synced ${templates.length} templates for account ${accountId}`);
     } catch (error) {
-      console.error('Background template sync failed:', error);
+      console.error('❌ Background template sync failed:', error);
     }
   }
 
@@ -563,7 +581,7 @@ class MetaService {
       APPROVED: 'APPROVED',
       PENDING: 'PENDING',
       REJECTED: 'REJECTED',
-      DRAFT: 'DRAFT', // Will be filtered out
+      DRAFT: 'DRAFT',
     };
     return map[status] || 'PENDING';
   }
