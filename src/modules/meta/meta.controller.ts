@@ -1,9 +1,10 @@
-// src/modules/meta/meta.controller.ts
-
 import { Request, Response, NextFunction } from 'express';
 import { metaService } from './meta.service';
 import { successResponse, errorResponse } from '../../utils/response';
 import { v4 as uuidv4 } from 'uuid';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 // Helper function to safely get string from params/query
 const getString = (value: unknown): string => {
@@ -13,54 +14,45 @@ const getString = (value: unknown): string => {
 };
 
 class MetaController {
-  /**
-   * Get Embedded Signup config
-   */
   async getEmbeddedConfig(req: Request, res: Response, next: NextFunction) {
     try {
-      const config = metaService.getEmbeddedSignupConfig();
-
-      return successResponse(res, {
-        data: config,
-        message: 'Embedded signup config retrieved',
-      });
+      const cfg = metaService.getEmbeddedSignupConfig();
+      return successResponse(res, { data: cfg, message: 'Embedded signup config retrieved' });
     } catch (error) {
       next(error);
     }
   }
 
-  /**
-   * Get Integration Status
-   */
   async getStatus(req: Request, res: Response, next: NextFunction) {
     try {
       const status = metaService.getIntegrationStatus();
-      return successResponse(res, {
-        data: status,
-        message: 'Meta integration status',
-      });
+      return successResponse(res, { data: status, message: 'Meta integration status' });
     } catch (error) {
       next(error);
     }
   }
 
   /**
-   * Generate OAuth URL (alternative flow)
+   * Generates URL like:
+   * https://www.facebook.com/v21.0/dialog/oauth?...&config_id=...&override_default_response_type=true
    */
   async getOAuthUrl(req: Request, res: Response, next: NextFunction) {
     try {
-      const organizationId = getString(req.query.organizationId);
+      const orgFromQuery = getString(req.query.organizationId);
+      const orgFromUser = (req.user as any)?.organizationId; // if your auth middleware attaches it
+      const organizationId = orgFromQuery || orgFromUser;
 
       if (!organizationId) {
         return errorResponse(res, 'Organization ID required', 400);
       }
 
-      // Create state with org ID for callback
+      // Create state (base64 JSON)
       const state = Buffer.from(
         JSON.stringify({
           organizationId,
           userId: req.user!.id,
           nonce: uuidv4(),
+          timestamp: Date.now(),
         })
       ).toString('base64');
 
@@ -75,9 +67,6 @@ class MetaController {
     }
   }
 
-  /**
-   * Handle OAuth callback / Complete connection
-   */
   async handleCallback(req: Request, res: Response, next: NextFunction) {
     try {
       const { code, organizationId } = req.body;
@@ -86,7 +75,6 @@ class MetaController {
         return errorResponse(res, 'Code and organization ID are required', 400);
       }
 
-      // Verify user has access to organization
       const hasAccess = await this.verifyOrgAccess(req.user!.id, String(organizationId));
       if (!hasAccess) {
         return errorResponse(res, 'You do not have access to this organization', 403);
@@ -111,17 +99,12 @@ class MetaController {
     }
   }
 
-  /**
-   * Get all WhatsApp accounts for organization
-   */
   async getAccounts(req: Request, res: Response, next: NextFunction) {
     try {
       const organizationId = getString(req.params.organizationId);
 
       const hasAccess = await this.verifyOrgAccess(req.user!.id, organizationId);
-      if (!hasAccess) {
-        return errorResponse(res, 'Unauthorized', 403);
-      }
+      if (!hasAccess) return errorResponse(res, 'Unauthorized', 403);
 
       const accounts = await metaService.getAccounts(organizationId);
 
@@ -134,18 +117,13 @@ class MetaController {
     }
   }
 
-  /**
-   * Get single account
-   */
   async getAccount(req: Request, res: Response, next: NextFunction) {
     try {
       const organizationId = getString(req.params.organizationId);
       const accountId = getString(req.params.accountId);
 
       const hasAccess = await this.verifyOrgAccess(req.user!.id, organizationId);
-      if (!hasAccess) {
-        return errorResponse(res, 'Unauthorized', 403);
-      }
+      if (!hasAccess) return errorResponse(res, 'Unauthorized', 403);
 
       const account = await metaService.getAccount(accountId, organizationId);
 
@@ -158,64 +136,45 @@ class MetaController {
     }
   }
 
-  /**
-   * Disconnect account
-   */
   async disconnectAccount(req: Request, res: Response, next: NextFunction) {
     try {
       const organizationId = getString(req.params.organizationId);
       const accountId = getString(req.params.accountId);
 
       const hasAccess = await this.verifyOrgAccess(req.user!.id, organizationId);
-      if (!hasAccess) {
-        return errorResponse(res, 'Unauthorized', 403);
-      }
+      if (!hasAccess) return errorResponse(res, 'Unauthorized', 403);
 
       await metaService.disconnectAccount(accountId, organizationId);
 
-      return successResponse(res, {
-        message: 'Account disconnected successfully',
-      });
+      return successResponse(res, { message: 'Account disconnected successfully' });
     } catch (error) {
       next(error);
     }
   }
 
-  /**
-   * Set default account
-   */
   async setDefaultAccount(req: Request, res: Response, next: NextFunction) {
     try {
       const organizationId = getString(req.params.organizationId);
       const accountId = getString(req.params.accountId);
 
       const hasAccess = await this.verifyOrgAccess(req.user!.id, organizationId);
-      if (!hasAccess) {
-        return errorResponse(res, 'Unauthorized', 403);
-      }
+      if (!hasAccess) return errorResponse(res, 'Unauthorized', 403);
 
       await metaService.setDefaultAccount(accountId, organizationId);
 
-      return successResponse(res, {
-        message: 'Default account updated',
-      });
+      return successResponse(res, { message: 'Default account updated' });
     } catch (error) {
       next(error);
     }
   }
 
-  /**
-   * Refresh account health
-   */
   async refreshHealth(req: Request, res: Response, next: NextFunction) {
     try {
       const organizationId = getString(req.params.organizationId);
       const accountId = getString(req.params.accountId);
 
       const hasAccess = await this.verifyOrgAccess(req.user!.id, organizationId);
-      if (!hasAccess) {
-        return errorResponse(res, 'Unauthorized', 403);
-      }
+      if (!hasAccess) return errorResponse(res, 'Unauthorized', 403);
 
       const health = await metaService.refreshAccountHealth(accountId, organizationId);
 
@@ -228,18 +187,13 @@ class MetaController {
     }
   }
 
-  /**
-   * Sync templates
-   */
   async syncTemplates(req: Request, res: Response, next: NextFunction) {
     try {
       const organizationId = getString(req.params.organizationId);
       const accountId = getString(req.params.accountId);
 
       const hasAccess = await this.verifyOrgAccess(req.user!.id, organizationId);
-      if (!hasAccess) {
-        return errorResponse(res, 'Unauthorized', 403);
-      }
+      if (!hasAccess) return errorResponse(res, 'Unauthorized', 403);
 
       const result = await metaService.syncTemplates(accountId, organizationId);
 
@@ -253,18 +207,11 @@ class MetaController {
   }
 
   private async verifyOrgAccess(userId: string, organizationId: string): Promise<boolean> {
-    const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
-
     const member = await prisma.organizationMember.findUnique({
       where: {
-        organizationId_userId: {
-          organizationId,
-          userId,
-        },
+        organizationId_userId: { organizationId, userId },
       },
     });
-
     return !!member;
   }
 }

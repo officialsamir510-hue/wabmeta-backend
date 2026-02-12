@@ -15,21 +15,40 @@ const prisma = new PrismaClient();
 
 class MetaService {
   /**
-   * Generate OAuth URL for Meta login
+   * Helper: Check if a string looks like an access token
+   */
+  private looksLikeAccessToken(value: string): boolean {
+    return (
+      value.startsWith('EAA') ||
+      value.startsWith('EAAG') ||
+      value.startsWith('EAAI')
+    );
+  }
+
+  /**
+   * Generate OAuth URL for Meta Embedded Signup - ✅ UPDATED
    */
   getOAuthUrl(state: string): string {
-    const baseUrl = 'https://www.facebook.com/v18.0/dialog/oauth';
+    const version = config.meta.graphApiVersion || 'v21.0';
+    const baseUrl = `https://www.facebook.com/${version}/dialog/oauth`;
+
     const params = new URLSearchParams({
       client_id: config.meta.appId,
-      redirect_uri: config.meta.redirectUri,
+      config_id: config.meta.configId, // ✅ Embedded Signup Config
+      response_type: 'code',
+      override_default_response_type: 'true',
       state: state,
+      redirect_uri: config.meta.redirectUri,
       scope: [
         'whatsapp_business_management',
         'whatsapp_business_messaging',
         'business_management',
       ].join(','),
-      response_type: 'code',
     });
+
+    console.log('📱 Generated OAuth URL:', `${baseUrl}?...`);
+    console.log('📱 Config ID:', config.meta.configId);
+    console.log('📱 Redirect URI:', config.meta.redirectUri);
 
     return `${baseUrl}?${params.toString()}`;
   }
@@ -51,37 +70,51 @@ class MetaService {
    */
   getIntegrationStatus() {
     return {
-      configured: !!(config.meta.appId && config.meta.appSecret),
+      configured: !!(config.meta.appId && config.meta.appSecret && config.meta.configId),
       apiVersion: config.meta.graphApiVersion,
     };
   }
 
   /**
-   * Complete Meta connection flow - ✅ UPDATED with encryption
+   * Complete Meta connection flow - ✅ UPDATED to handle both code and accessToken
    */
   async completeConnection(
-    code: string,
+    codeOrToken: string,
     organizationId: string,
     userId: string,
     onProgress?: (progress: ConnectionProgress) => void
   ): Promise<{ success: boolean; account?: any; error?: string }> {
     try {
-      // Step 1: Exchange code for access token
+      console.log('🔄 Starting Meta connection flow...');
+
+      // Step 1: Get access token (handle both code and direct token)
       onProgress?.({
         step: 'TOKEN_EXCHANGE',
         status: 'in_progress',
         message: 'Exchanging authorization code for access token...',
       });
 
-      const tokenResponse = await metaApi.exchangeCodeForToken(code);
-      let accessToken = tokenResponse.accessToken;
+      let accessToken: string;
 
-      // Get long-lived token
+      // Check if we received a token directly (Embedded Signup sometimes does this)
+      if (this.looksLikeAccessToken(codeOrToken)) {
+        console.log('✅ Received access token directly:', maskToken(codeOrToken));
+        accessToken = codeOrToken;
+      } else {
+        console.log('🔄 Exchanging code for token...');
+        const tokenResponse = await metaApi.exchangeCodeForToken(codeOrToken);
+        accessToken = tokenResponse.accessToken;
+        console.log('✅ Short-lived token obtained:', maskToken(accessToken));
+      }
+
+      // Try to get long-lived token
       try {
+        console.log('🔄 Attempting to get long-lived token...');
         const longLivedTokenResponse = await metaApi.getLongLivedToken(accessToken);
         accessToken = longLivedTokenResponse.accessToken;
+        console.log('✅ Long-lived token obtained:', maskToken(accessToken));
       } catch (error) {
-        console.log('Could not get long-lived token, using short-lived token');
+        console.log('⚠️ Could not get long-lived token, using short-lived token');
       }
 
       onProgress?.({
@@ -98,6 +131,11 @@ class MetaService {
       });
 
       const debugInfo = await metaApi.debugToken(accessToken);
+      console.log('🔍 Token debug info:', {
+        app_id: debugInfo.data.app_id,
+        is_valid: debugInfo.data.is_valid,
+        scopes: debugInfo.data.scopes,
+      });
 
       // Get WABAs from granular scopes
       let wabaId: string | null = null;
@@ -107,6 +145,7 @@ class MetaService {
       for (const scope of granularScopes) {
         if (scope.scope === 'whatsapp_business_management' && scope.target_ids?.length) {
           wabaId = scope.target_ids[0];
+          console.log('✅ Found WABA ID from token:', wabaId);
           break;
         }
         if (scope.scope === 'business_management' && scope.target_ids?.length) {
@@ -115,11 +154,13 @@ class MetaService {
       }
 
       if (!wabaId) {
+        console.log('⚠️ WABA not in token, trying business query...');
         // Try getting WABAs through business
         const wabas = await metaApi.getSharedWABAs(accessToken);
         if (wabas.length > 0) {
           wabaId = wabas[0].id;
           businessId = wabas[0].owner_business_info?.id || businessId;
+          console.log('✅ Found WABA from business:', wabaId);
         }
       }
 
@@ -129,6 +170,7 @@ class MetaService {
 
       // Get WABA details
       const wabaDetails = await metaApi.getWABADetails(wabaId, accessToken);
+      console.log('✅ WABA Details:', wabaDetails.name);
 
       onProgress?.({
         step: 'FETCHING_WABA',
@@ -151,6 +193,7 @@ class MetaService {
       }
 
       const primaryPhone = phoneNumbers[0];
+      console.log('✅ Primary Phone:', primaryPhone.displayPhoneNumber);
 
       onProgress?.({
         step: 'FETCHING_PHONE',
@@ -168,8 +211,9 @@ class MetaService {
 
       try {
         await metaApi.subscribeToWebhooks(wabaId, accessToken);
+        console.log('✅ Webhooks subscribed');
       } catch (error) {
-        console.error('Webhook subscription failed, continuing anyway:', error);
+        console.error('⚠️ Webhook subscription failed, continuing anyway:', error);
       }
 
       onProgress?.({
@@ -197,11 +241,11 @@ class MetaService {
 
       if (existingAccount) {
         if (existingAccount.organizationId === organizationId) {
-          // ✅ Update existing account with encrypted token
+          // Update existing account with encrypted token
           const updatedAccount = await prisma.whatsAppAccount.update({
             where: { id: existingAccount.id },
             data: {
-              accessToken: encrypt(accessToken), // Always encrypt
+              accessToken: encrypt(accessToken),
               tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
               displayName: primaryPhone.displayPhoneNumber,
               qualityRating: primaryPhone.qualityRating,
@@ -209,13 +253,16 @@ class MetaService {
             },
           });
 
-          console.log(`✅ Account reconnected: ${maskToken(accessToken)}`);
+          console.log(`✅ Account reconnected: ${existingAccount.id}`);
 
           onProgress?.({
             step: 'COMPLETED',
             status: 'completed',
             message: 'Account reconnected successfully!',
           });
+
+          // Sync templates in background
+          this.syncTemplatesBackground(updatedAccount.id, wabaId, accessToken);
 
           return { success: true, account: this.sanitizeAccount(updatedAccount) };
         } else {
@@ -231,7 +278,7 @@ class MetaService {
         where: { organizationId },
       });
 
-      // ✅ Create new account with encrypted tokens
+      // Create new account with encrypted tokens
       const newAccount = await prisma.whatsAppAccount.create({
         data: {
           organizationId,
@@ -240,15 +287,15 @@ class MetaService {
           phoneNumber: primaryPhone.displayPhoneNumber.replace(/\D/g, ''),
           displayName: primaryPhone.displayPhoneNumber,
           qualityRating: primaryPhone.qualityRating,
-          accessToken: encrypt(accessToken), // ✅ Encrypt access token
+          accessToken: encrypt(accessToken),
           tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
-          webhookSecret: encrypt(webhookVerifyToken), // ✅ Encrypt webhook secret
+          webhookSecret: encrypt(webhookVerifyToken),
           status: WhatsAppAccountStatus.CONNECTED,
           isDefault: accountCount === 0,
         },
       });
 
-      console.log(`✅ New account created: ${maskToken(accessToken)}`);
+      console.log(`✅ New account created: ${newAccount.id}`);
 
       onProgress?.({
         step: 'COMPLETED',
@@ -261,7 +308,7 @@ class MetaService {
 
       return { success: true, account: this.sanitizeAccount(newAccount) };
     } catch (error: any) {
-      console.error('Meta connection error:', error);
+      console.error('❌ Meta connection error:', error);
 
       onProgress?.({
         step: 'COMPLETED',
@@ -304,7 +351,7 @@ class MetaService {
   }
 
   /**
-   * Get account with decrypted token (internal use) - ✅ UPDATED
+   * Get account with decrypted token (internal use)
    */
   async getAccountWithToken(accountId: string): Promise<{
     account: any;
@@ -319,7 +366,6 @@ class MetaService {
       return null;
     }
 
-    // ✅ Use safeDecrypt for backward compatibility with plain text tokens
     const decryptedToken = safeDecrypt(account.accessToken);
 
     if (!decryptedToken) {
@@ -327,7 +373,6 @@ class MetaService {
       return null;
     }
 
-    // ✅ Safe logging with masking
     console.log(`✅ Token retrieved for account ${accountId}: ${maskToken(decryptedToken)}`);
 
     return {
@@ -337,10 +382,9 @@ class MetaService {
   }
 
   /**
-   * Update account token - ✅ NEW METHOD
+   * Update account token
    */
   async updateAccountToken(accountId: string, newToken: string) {
-    // ✅ Encrypt only if needed (prevents double encryption)
     const encryptedToken = encryptIfNeeded(newToken);
 
     await prisma.whatsAppAccount.update({
@@ -369,7 +413,6 @@ class MetaService {
       throw new Error('Account not found');
     }
 
-    // Update status
     await prisma.whatsAppAccount.update({
       where: { id: accountId },
       data: {
@@ -403,13 +446,11 @@ class MetaService {
    * Set default account
    */
   async setDefaultAccount(accountId: string, organizationId: string) {
-    // Remove default from all
     await prisma.whatsAppAccount.updateMany({
       where: { organizationId },
       data: { isDefault: false },
     });
 
-    // Set new default
     await prisma.whatsAppAccount.update({
       where: { id: accountId },
       data: { isDefault: true },
@@ -435,7 +476,6 @@ class MetaService {
     }
 
     try {
-      // Verify token is still valid
       const debugInfo = await metaApi.debugToken(accessToken);
 
       if (!debugInfo.data.is_valid) {
@@ -449,7 +489,6 @@ class MetaService {
         return { healthy: false, reason: 'Token expired' };
       }
 
-      // Get phone number health
       const phoneNumbers = await metaApi.getPhoneNumbers(account.wabaId, accessToken);
       const phone = phoneNumbers.find((p) => p.id === account.phoneNumberId);
 
@@ -500,11 +539,12 @@ class MetaService {
 
     const templates = await metaApi.getTemplates(account.wabaId, accessToken);
 
-    // Upsert templates
+    let syncedCount = 0;
+
     for (const template of templates) {
       const mappedStatus = this.mapTemplateStatus(template.status);
 
-      // Skip DRAFT status (not in enum)
+      // Skip DRAFT status
       if (mappedStatus === 'DRAFT' as any) {
         continue;
       }
@@ -532,11 +572,15 @@ class MetaService {
         },
         update: {
           status: mappedStatus as TemplateStatus,
+          metaTemplateId: template.id,
         },
       });
+
+      syncedCount++;
     }
 
-    return { synced: templates.length };
+    console.log(`✅ Synced ${syncedCount} templates for account ${accountId}`);
+    return { synced: syncedCount };
   }
 
   /**
@@ -549,7 +593,7 @@ class MetaService {
   ) {
     try {
       const templates = await metaApi.getTemplates(wabaId, accessToken);
-      console.log(`✅ Synced ${templates.length} templates for account ${accountId}`);
+      console.log(`✅ Background sync: ${templates.length} templates for account ${accountId}`);
     } catch (error) {
       console.error('❌ Background template sync failed:', error);
     }
@@ -563,6 +607,7 @@ class MetaService {
     return {
       ...safe,
       hasAccessToken: !!accessToken,
+      hasWebhookSecret: !!webhookSecret,
     };
   }
 
