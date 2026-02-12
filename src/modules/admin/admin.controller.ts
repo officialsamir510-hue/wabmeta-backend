@@ -46,7 +46,7 @@ export class AdminController {
 
   async updateAdmin(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const admin = await adminService.updateAdmin(req.params.id, req.body);
+      const admin = await adminService.updateAdmin(req.params.id as string, req.body);
       return sendSuccess(res, admin, 'Admin updated successfully');
     } catch (error) {
       next(error);
@@ -64,7 +64,7 @@ export class AdminController {
 
   async deleteAdmin(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const result = await adminService.deleteAdmin(req.params.id);
+      const result = await adminService.deleteAdmin(req.params.id as string);
       return sendSuccess(res, result, result.message);
     } catch (error) {
       next(error);
@@ -98,7 +98,7 @@ export class AdminController {
       const sortOrder = typeof q.sortOrder === 'string' ? q.sortOrder : 'desc';
 
       const result = await adminService.getUsers({ page, limit, search, status, sortBy, sortOrder });
-      
+
       return res.json({
         success: true,
         message: 'Users fetched successfully',
@@ -112,7 +112,7 @@ export class AdminController {
 
   async getUserById(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const user = await adminService.getUserById(req.params.id);
+      const user = await adminService.getUserById(req.params.id as string);
       return sendSuccess(res, user, 'User fetched successfully');
     } catch (error) {
       next(error);
@@ -121,7 +121,7 @@ export class AdminController {
 
   async updateUser(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const user = await adminService.updateUser(req.params.id, req.body);
+      const user = await adminService.updateUser(req.params.id as string, req.body);
       return sendSuccess(res, user, 'User updated successfully');
     } catch (error) {
       next(error);
@@ -130,7 +130,7 @@ export class AdminController {
 
   async deleteUser(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const result = await adminService.deleteUser(req.params.id);
+      const result = await adminService.deleteUser(req.params.id as string);
       return sendSuccess(res, result, result.message);
     } catch (error) {
       next(error);
@@ -139,7 +139,7 @@ export class AdminController {
 
   async suspendUser(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const user = await adminService.suspendUser(req.params.id);
+      const user = await adminService.suspendUser(req.params.id as string);
       return sendSuccess(res, user, 'User suspended successfully');
     } catch (error) {
       next(error);
@@ -148,7 +148,7 @@ export class AdminController {
 
   async activateUser(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const user = await adminService.activateUser(req.params.id);
+      const user = await adminService.activateUser(req.params.id as string);
       return sendSuccess(res, user, 'User activated successfully');
     } catch (error) {
       next(error);
@@ -170,7 +170,7 @@ export class AdminController {
       const sortOrder = typeof q.sortOrder === 'string' ? q.sortOrder : 'desc';
 
       const result = await adminService.getOrganizations({ page, limit, search, planType, sortBy, sortOrder });
-      
+
       return res.json({
         success: true,
         message: 'Organizations fetched successfully',
@@ -184,7 +184,7 @@ export class AdminController {
 
   async getOrganizationById(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const org = await adminService.getOrganizationById(req.params.id);
+      const org = await adminService.getOrganizationById(req.params.id as string);
       return sendSuccess(res, org, 'Organization fetched successfully');
     } catch (error) {
       next(error);
@@ -193,7 +193,7 @@ export class AdminController {
 
   async updateOrganization(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const org = await adminService.updateOrganization(req.params.id, req.body);
+      const org = await adminService.updateOrganization(req.params.id as string, req.body);
       return sendSuccess(res, org, 'Organization updated successfully');
     } catch (error) {
       next(error);
@@ -202,7 +202,7 @@ export class AdminController {
 
   async deleteOrganization(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const result = await adminService.deleteOrganization(req.params.id);
+      const result = await adminService.deleteOrganization(req.params.id as string);
       return sendSuccess(res, result, result.message);
     } catch (error) {
       next(error);
@@ -211,7 +211,7 @@ export class AdminController {
 
   async updateSubscription(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const org = await adminService.updateSubscription(req.params.id, req.body);
+      const org = await adminService.updateSubscription(req.params.id as string, req.body);
       return sendSuccess(res, org, 'Subscription updated successfully');
     } catch (error) {
       next(error);
@@ -241,7 +241,7 @@ export class AdminController {
 
   async updatePlan(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const plan = await adminService.updatePlan(req.params.id, req.body);
+      const plan = await adminService.updatePlan(req.params.id as string, req.body);
       return sendSuccess(res, plan, 'Plan updated successfully');
     } catch (error) {
       next(error);
@@ -264,7 +264,7 @@ export class AdminController {
       const endDate = typeof q.endDate === 'string' ? q.endDate : undefined;
 
       const result = await adminService.getActivityLogs({ page, limit, action, userId, organizationId, startDate, endDate });
-      
+
       return res.json({
         success: true,
         message: 'Activity logs fetched',

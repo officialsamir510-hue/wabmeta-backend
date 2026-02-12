@@ -357,7 +357,9 @@ class AdminService {
                 maxWhatsAppAccounts: input.maxWhatsAppAccounts || 1,
                 maxContacts: input.maxContacts || 100,
                 maxMessagesPerMonth: input.maxMessages || input.maxMessagesPerMonth || 1000,
+                maxMessages: input.maxMessages || input.maxMessagesPerMonth || 1000, // Added to satisfy schema
                 maxCampaignsPerMonth: input.maxCampaigns || input.maxCampaignsPerMonth || 5,
+                maxCampaigns: input.maxCampaigns || input.maxCampaignsPerMonth || 5, // Added to satisfy schema
                 maxTeamMembers: input.maxTeamMembers || 1,
                 maxTemplates: input.maxTemplates || 5,
                 maxChatbots: input.maxChatbots || 1,

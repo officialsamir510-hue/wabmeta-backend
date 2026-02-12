@@ -65,7 +65,7 @@ export class InboxController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const { id } = req.params as { id: string };
       const conversation = await inboxService.getConversationById(organizationId, id);
       return sendSuccess(res, conversation, 'Conversation fetched successfully');
     } catch (error) {
@@ -83,7 +83,7 @@ export class InboxController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const { id } = req.params as { id: string };
       const query: MessagesQueryInput = {
         page: parseInt(req.query.page as string) || 1,
         limit: parseInt(req.query.limit as string) || 50,
@@ -109,7 +109,7 @@ export class InboxController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const { id } = req.params as { id: string };
       const input: SendMessageInput = {
         conversationId: id,
         ...req.body,
@@ -132,7 +132,7 @@ export class InboxController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const { id } = req.params as { id: string };
       const conversation = await inboxService.markAsRead(organizationId, id);
       return sendSuccess(res, conversation, 'Marked as read');
     } catch (error) {
@@ -150,7 +150,7 @@ export class InboxController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const { id } = req.params as { id: string };
       const conversation = await inboxService.archiveConversation(organizationId, id, true);
       return sendSuccess(res, conversation, 'Conversation archived');
     } catch (error) {
@@ -168,7 +168,7 @@ export class InboxController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const { id } = req.params as { id: string };
       const conversation = await inboxService.archiveConversation(organizationId, id, false);
       return sendSuccess(res, conversation, 'Conversation unarchived');
     } catch (error) {
@@ -186,7 +186,7 @@ export class InboxController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const { id } = req.params as { id: string };
       const { userId } = req.body;
       const conversation = await inboxService.assignConversation(organizationId, id, userId);
       return sendSuccess(res, conversation, 'Conversation assigned');
@@ -205,7 +205,7 @@ export class InboxController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const { id } = req.params as { id: string };
       const input: UpdateConversationInput = req.body;
       const conversation = await inboxService.updateConversation(organizationId, id, input);
       return sendSuccess(res, conversation, 'Conversation updated');
@@ -224,7 +224,7 @@ export class InboxController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const { id } = req.params as { id: string };
       const { labels } = req.body;
       const conversation = await inboxService.addLabels(organizationId, id, labels);
       return sendSuccess(res, conversation, 'Labels added');
@@ -243,7 +243,7 @@ export class InboxController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id, label } = req.params;
+      const { id, label } = req.params as { id: string; label: string };
       const conversation = await inboxService.removeLabel(organizationId, id, label);
       return sendSuccess(res, conversation, 'Label removed');
     } catch (error) {
@@ -261,7 +261,7 @@ export class InboxController {
         throw new AppError('Organization context required', 400);
       }
 
-      const { id } = req.params;
+      const { id } = req.params as { id: string };
       const result = await inboxService.deleteConversation(organizationId, id);
       return sendSuccess(res, result, result.message);
     } catch (error) {

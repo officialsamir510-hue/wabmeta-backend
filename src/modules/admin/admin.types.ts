@@ -13,3 +13,25 @@ export interface ActivityLogResponse {
   ipAddress: string | null;
   createdAt: Date;
 }
+
+export interface CreatePlanInput {
+  name: string;
+  slug?: string;
+  type: string;
+  description?: string;
+  monthlyPrice: number;
+  yearlyPrice: number;
+  maxWhatsAppAccounts?: number;
+  maxContacts?: number;
+  maxMessages?: number;
+  maxMessagesPerMonth?: number;
+  maxCampaigns?: number;
+  maxCampaignsPerMonth?: number;
+  maxTeamMembers?: number;
+  maxTemplates?: number;
+  maxChatbots?: number;
+  maxAutomations?: number;
+  maxApiCalls?: number;
+  features?: string[];
+  isActive?: boolean;
+}

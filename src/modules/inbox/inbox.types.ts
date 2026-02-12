@@ -1,6 +1,6 @@
 // src/modules/inbox/inbox.types.ts
 
-import { MessageType, ActivityAction } from '@prisma/client';
+import { MessageType } from '@prisma/client';
 
 export interface ConversationsQueryInput {
   page?: number;
@@ -22,7 +22,8 @@ export interface MessagesQueryInput {
 }
 
 export interface SendMessageInput {
-  type: MessageType;
+  conversationId?: string;
+  type?: MessageType;
   content?: string;
   mediaUrl?: string;
 }
@@ -32,19 +33,4 @@ export interface UpdateConversationInput {
   isRead?: boolean;
   assignedTo?: string | null;
   labels?: string[];
-}
-
-// ✅ Add this type for admin.service.ts
-export interface ActivityLogResponse {
-  id: string;
-  action: string; // Not null
-  entity: string | null;
-  entityId: string | null;
-  userId: string | null;
-  userEmail: string; // Not null
-  organizationId: string | null;
-  organizationName: string; // Not null
-  metadata: any;
-  ipAddress: string | null;
-  createdAt: Date;
 }

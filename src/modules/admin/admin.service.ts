@@ -51,51 +51,51 @@ export class AdminService {
     if (existing) throw new AppError('Admin already exists', 409);
 
     const admin = await prisma.adminUser.create({
-      data: { 
-        email: input.email, 
-        password: await hashPassword(input.password), 
-        name: input.name, 
-        role: input.role || 'admin' 
+      data: {
+        email: input.email,
+        password: await hashPassword(input.password),
+        name: input.name,
+        role: input.role || 'admin'
       },
     });
 
-    return { 
-      id: admin.id, 
-      email: admin.email, 
-      name: admin.name, 
-      role: admin.role, 
-      isActive: admin.isActive 
+    return {
+      id: admin.id,
+      email: admin.email,
+      name: admin.name,
+      role: admin.role,
+      isActive: admin.isActive
     };
   }
 
   async updateAdmin(id: string, input: any) {
-    const data: any = { 
-      name: input.name, 
-      email: input.email, 
-      role: input.role, 
-      isActive: input.isActive 
+    const data: any = {
+      name: input.name,
+      email: input.email,
+      role: input.role,
+      isActive: input.isActive
     };
     if (input.password) data.password = await hashPassword(input.password);
 
     const admin = await prisma.adminUser.update({ where: { id }, data });
-    return { 
-      id: admin.id, 
-      email: admin.email, 
-      name: admin.name, 
-      role: admin.role, 
-      isActive: admin.isActive 
+    return {
+      id: admin.id,
+      email: admin.email,
+      name: admin.name,
+      role: admin.role,
+      isActive: admin.isActive
     };
   }
 
   async getAdmins() {
     const admins = await prisma.adminUser.findMany({ orderBy: { createdAt: 'asc' } });
-    return admins.map(a => ({ 
-      id: a.id, 
-      email: a.email, 
-      name: a.name, 
-      role: a.role, 
-      isActive: a.isActive, 
-      lastLoginAt: a.lastLoginAt 
+    return admins.map(a => ({
+      id: a.id,
+      email: a.email,
+      name: a.name,
+      role: a.role,
+      isActive: a.isActive,
+      lastLoginAt: a.lastLoginAt
     }));
   }
 
@@ -127,32 +127,32 @@ export class AdminService {
   // ==========================================
   // USER MANAGEMENT
   // ==========================================
-  async getUsers(query: { 
-    page?: number; 
-    limit?: number; 
-    search?: string; 
-    status?: string; 
-    sortBy?: string; 
-    sortOrder?: string 
+  async getUsers(query: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    status?: string;
+    sortBy?: string;
+    sortOrder?: string
   }) {
-    const { 
-      page = 1, 
-      limit = 20, 
-      search, 
-      status, 
-      sortBy = 'createdAt', 
-      sortOrder = 'desc' 
+    const {
+      page = 1,
+      limit = 20,
+      search,
+      status,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
     } = query;
 
     const where: Prisma.UserWhereInput = {};
-    
+
     if (search) {
       where.OR = [
-        { email: { contains: search, mode: 'insensitive' } }, 
+        { email: { contains: search, mode: 'insensitive' } },
         { firstName: { contains: search, mode: 'insensitive' } }
       ];
     }
-    
+
     if (status) {
       where.status = status as any;
     }
@@ -163,14 +163,14 @@ export class AdminService {
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { [sortBy]: sortOrder as 'asc' | 'desc' },
-        include: { 
-          memberships: { 
-            include: { 
-              organization: { 
-                select: { id: true, name: true } 
-              } 
-            } 
-          } 
+        include: {
+          memberships: {
+            include: {
+              organization: {
+                select: { id: true, name: true }
+              }
+            }
+          }
         },
       }),
       prisma.user.count({ where }),
@@ -185,10 +185,10 @@ export class AdminService {
         status: u.status,
         emailVerified: u.emailVerified,
         createdAt: u.createdAt,
-        organizations: u.memberships?.map(m => ({ 
-          id: m.organization.id, 
-          name: m.organization.name, 
-          role: m.role 
+        organizations: u.memberships?.map(m => ({
+          id: m.organization.id,
+          name: m.organization.name,
+          role: m.role
         })) || [],
       })),
       total,
@@ -198,29 +198,29 @@ export class AdminService {
   async getUserById(id: string) {
     const user = await prisma.user.findUnique({
       where: { id },
-      include: { 
-        memberships: { 
-          include: { 
-            organization: { 
-              select: { id: true, name: true } 
-            } 
-          } 
-        } 
+      include: {
+        memberships: {
+          include: {
+            organization: {
+              select: { id: true, name: true }
+            }
+          }
+        }
       },
     });
-    
+
     if (!user) throw new AppError('User not found', 404);
-    
+
     return {
       id: user.id,
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
       status: user.status,
-      organizations: user.memberships?.map(m => ({ 
-        id: m.organization.id, 
-        name: m.organization.name, 
-        role: m.role 
+      organizations: user.memberships?.map(m => ({
+        id: m.organization.id,
+        name: m.organization.name,
+        role: m.role
       })) || [],
     };
   }
@@ -228,20 +228,20 @@ export class AdminService {
   async updateUser(id: string, input: any) {
     const user = await prisma.user.update({
       where: { id },
-      data: { 
-        firstName: input.firstName, 
-        lastName: input.lastName, 
-        status: input.status, 
-        emailVerified: input.emailVerified 
+      data: {
+        firstName: input.firstName,
+        lastName: input.lastName,
+        status: input.status,
+        emailVerified: input.emailVerified
       },
     });
-    
-    return { 
-      id: user.id, 
-      email: user.email, 
-      firstName: user.firstName, 
-      lastName: user.lastName, 
-      status: user.status 
+
+    return {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      status: user.status
     };
   }
 
@@ -250,43 +250,43 @@ export class AdminService {
     return { message: 'User deleted successfully' };
   }
 
-  async suspendUser(id: string) { 
-    return this.updateUser(id, { status: 'SUSPENDED' }); 
+  async suspendUser(id: string) {
+    return this.updateUser(id, { status: 'SUSPENDED' });
   }
-  
-  async activateUser(id: string) { 
-    return this.updateUser(id, { status: 'ACTIVE' }); 
+
+  async activateUser(id: string) {
+    return this.updateUser(id, { status: 'ACTIVE' });
   }
 
   // ==========================================
   // ORGANIZATION MANAGEMENT
   // ==========================================
-  async getOrganizations(query: { 
-    page?: number; 
-    limit?: number; 
-    search?: string; 
-    planType?: string; 
-    sortBy?: string; 
-    sortOrder?: string 
+  async getOrganizations(query: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    planType?: string;
+    sortBy?: string;
+    sortOrder?: string
   }) {
-    const { 
-      page = 1, 
-      limit = 20, 
-      search, 
-      planType, 
-      sortBy = 'createdAt', 
-      sortOrder = 'desc' 
+    const {
+      page = 1,
+      limit = 20,
+      search,
+      planType,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
     } = query;
 
     const where: Prisma.OrganizationWhereInput = {};
-    
+
     if (search) {
       where.OR = [
-        { name: { contains: search, mode: 'insensitive' } }, 
+        { name: { contains: search, mode: 'insensitive' } },
         { slug: { contains: search, mode: 'insensitive' } }
       ];
     }
-    
+
     if (planType) {
       where.planType = planType as PlanType;
     }
@@ -297,13 +297,13 @@ export class AdminService {
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { [sortBy]: sortOrder as 'asc' | 'desc' },
-        include: { 
-          owner: { 
-            select: { id: true, email: true, firstName: true } 
-          }, 
-          _count: { 
-            select: { members: true, contacts: true } 
-          } 
+        include: {
+          owner: {
+            select: { id: true, email: true, firstName: true }
+          },
+          _count: {
+            select: { members: true, contacts: true }
+          }
         },
       }),
       prisma.organization.count({ where }),
@@ -327,43 +327,43 @@ export class AdminService {
   async getOrganizationById(id: string) {
     const org = await prisma.organization.findUnique({
       where: { id },
-      include: { 
-        owner: { 
-          select: { id: true, email: true, firstName: true } 
-        }, 
-        _count: { 
-          select: { members: true, contacts: true } 
-        } 
+      include: {
+        owner: {
+          select: { id: true, email: true, firstName: true }
+        },
+        _count: {
+          select: { members: true, contacts: true }
+        }
       },
     });
-    
+
     if (!org) throw new AppError('Organization not found', 404);
-    
-    return { 
-      id: org.id, 
-      name: org.name, 
-      slug: org.slug, 
-      planType: org.planType, 
-      owner: org.owner, 
-      memberCount: org._count?.members || 0, 
-      contactCount: org._count?.contacts || 0 
+
+    return {
+      id: org.id,
+      name: org.name,
+      slug: org.slug,
+      planType: org.planType,
+      owner: org.owner,
+      memberCount: org._count?.members || 0,
+      contactCount: org._count?.contacts || 0
     };
   }
 
   async updateOrganization(id: string, input: any) {
-    const org = await prisma.organization.update({ 
-      where: { id }, 
-      data: { 
-        name: input.name, 
-        planType: input.planType 
-      } 
+    const org = await prisma.organization.update({
+      where: { id },
+      data: {
+        name: input.name,
+        planType: input.planType
+      }
     });
-    
-    return { 
-      id: org.id, 
-      name: org.name, 
-      slug: org.slug, 
-      planType: org.planType 
+
+    return {
+      id: org.id,
+      name: org.name,
+      slug: org.slug,
+      planType: org.planType
     };
   }
 
@@ -373,21 +373,21 @@ export class AdminService {
   }
 
   async updateSubscription(id: string, input: any) {
-    const org = await prisma.organization.findUnique({ 
-      where: { id }, 
-      include: { subscription: true } 
+    const org = await prisma.organization.findUnique({
+      where: { id },
+      include: { subscription: true }
     });
-    
+
     if (!org?.subscription) throw new AppError('No subscription found', 400);
-    
-    await prisma.subscription.update({ 
-      where: { id: org.subscription.id }, 
-      data: { 
-        planId: input.planId, 
-        status: input.status 
-      } 
+
+    await prisma.subscription.update({
+      where: { id: org.subscription.id },
+      data: {
+        planId: input.planId,
+        status: input.status
+      }
     });
-    
+
     return this.getOrganizationById(id);
   }
 
@@ -424,7 +424,9 @@ export class AdminService {
         maxWhatsAppAccounts: input.maxWhatsAppAccounts || 1,
         maxContacts: input.maxContacts || 100,
         maxMessagesPerMonth: input.maxMessages || input.maxMessagesPerMonth || 1000,
+        maxMessages: input.maxMessages || input.maxMessagesPerMonth || 1000, // Added to satisfy schema
         maxCampaignsPerMonth: input.maxCampaigns || input.maxCampaignsPerMonth || 5,
+        maxCampaigns: input.maxCampaigns || input.maxCampaignsPerMonth || 5, // Added to satisfy schema
         maxTeamMembers: input.maxTeamMembers || 1,
         maxTemplates: input.maxTemplates || 5,
         maxChatbots: input.maxChatbots || 1,
@@ -449,7 +451,7 @@ export class AdminService {
 
   async updatePlan(id: string, input: any) {
     const updateData: any = {};
-    
+
     if (input.name !== undefined) updateData.name = input.name;
     if (input.description !== undefined) updateData.description = input.description;
     if (input.monthlyPrice !== undefined) updateData.monthlyPrice = input.monthlyPrice;
@@ -467,51 +469,51 @@ export class AdminService {
       data: updateData,
     });
 
-    return { 
-      id: plan.id, 
-      name: plan.name, 
-      type: plan.type, 
-      isActive: plan.isActive 
+    return {
+      id: plan.id,
+      name: plan.name,
+      type: plan.type,
+      isActive: plan.isActive
     };
   }
 
   // ==========================================
   // ACTIVITY LOGS
   // ==========================================
-  async getActivityLogs(query: { 
-    page?: number; 
-    limit?: number; 
-    action?: string; 
-    userId?: string; 
-    organizationId?: string; 
-    startDate?: string; 
-    endDate?: string 
+  async getActivityLogs(query: {
+    page?: number;
+    limit?: number;
+    action?: string;
+    userId?: string;
+    organizationId?: string;
+    startDate?: string;
+    endDate?: string
   }) {
-    const { 
-      page = 1, 
-      limit = 50, 
-      action, 
-      userId, 
-      organizationId, 
-      startDate, 
-      endDate 
+    const {
+      page = 1,
+      limit = 50,
+      action,
+      userId,
+      organizationId,
+      startDate,
+      endDate
     } = query;
 
     const where: Prisma.ActivityLogWhereInput = {};
-    
+
     // ✅ Fix: Use proper enum value, not 'contains'
     if (action) {
       where.action = action as ActivityAction;
     }
-    
+
     if (userId) {
       where.userId = userId;
     }
-    
+
     if (organizationId) {
       where.organizationId = organizationId;
     }
-    
+
     if (startDate || endDate) {
       where.createdAt = {};
       if (startDate) where.createdAt.gte = new Date(startDate);
@@ -524,9 +526,9 @@ export class AdminService {
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        include: { 
-          user: { select: { email: true } }, 
-          organization: { select: { name: true } } 
+        include: {
+          user: { select: { email: true } },
+          organization: { select: { name: true } }
         },
       }),
       prisma.activityLog.count({ where }),
@@ -554,15 +556,15 @@ export class AdminService {
   // ==========================================
   // SYSTEM SETTINGS
   // ==========================================
-  getSystemSettings() { 
-    return systemSettings; 
+  getSystemSettings() {
+    return systemSettings;
   }
-  
+
   updateSystemSettings(input: any) {
-    systemSettings = { 
-      ...systemSettings, 
-      ...input, 
-      lastUpdated: new Date() 
+    systemSettings = {
+      ...systemSettings,
+      ...input,
+      lastUpdated: new Date()
     };
     return systemSettings;
   }

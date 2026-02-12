@@ -17,7 +17,8 @@ export interface MessagesQueryInput {
     after?: string;
 }
 export interface SendMessageInput {
-    type: MessageType;
+    conversationId?: string;
+    type?: MessageType;
     content?: string;
     mediaUrl?: string;
 }
@@ -26,18 +27,5 @@ export interface UpdateConversationInput {
     isRead?: boolean;
     assignedTo?: string | null;
     labels?: string[];
-}
-export interface ActivityLogResponse {
-    id: string;
-    action: string;
-    entity: string | null;
-    entityId: string | null;
-    userId: string | null;
-    userEmail: string;
-    organizationId: string | null;
-    organizationName: string;
-    metadata: any;
-    ipAddress: string | null;
-    createdAt: Date;
 }
 //# sourceMappingURL=inbox.types.d.ts.map
