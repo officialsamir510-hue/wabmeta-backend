@@ -1,3 +1,5 @@
+// src/modules/campaigns/campaigns.service.ts
+
 import prisma from '../../config/database';
 import { AppError } from '../../middleware/errorHandler';
 import { CampaignStatus, MessageStatus, Prisma } from '@prisma/client';
@@ -15,7 +17,8 @@ import {
   AudienceFilter,
 } from './campaigns.types';
 import { whatsappApi } from '../whatsapp/whatsapp.api';
-import { v4 as uuidv4 } from 'uuid'; // ✅ Fixed: Import uuidv4
+import { v4 as uuidv4 } from 'uuid';
+import { metaService } from '../meta/meta.service'; // ✅ ADDED: Import metaService
 
 // ============================================
 // HELPER FUNCTIONS
@@ -373,7 +376,7 @@ export class CampaignsService {
       });
 
       const campaignContactsData = targetContacts.map((contact) => ({
-        id: uuidv4(), // ✅ Fixed: Use uuidv4 instead of cuid
+        id: uuidv4(),
         campaignId: newCampaign.id,
         contactId: contact.id,
         status: 'PENDING' as MessageStatus,
@@ -582,7 +585,7 @@ export class CampaignsService {
   }
 
   // ==========================================
-  // START CAMPAIGN
+  // START CAMPAIGN - ✅ FIXED
   // ==========================================
   async start(organizationId: string, campaignId: string): Promise<CampaignResponse> {
     const campaign = await prisma.campaign.findFirst({
@@ -590,7 +593,9 @@ export class CampaignsService {
       include: { template: true, whatsappAccount: true },
     });
 
-    if (!campaign) throw new AppError('Campaign not found', 404);
+    if (!campaign) {
+      throw new AppError('Campaign not found', 404);
+    }
 
     if (!['DRAFT', 'SCHEDULED', 'PAUSED'].includes(campaign.status)) {
       throw new AppError(`Cannot start campaign with status: ${campaign.status}`, 400);
@@ -603,6 +608,37 @@ export class CampaignsService {
     if (campaign.whatsappAccount.status !== 'CONNECTED') {
       throw new AppError('WhatsApp account is not connected', 400);
     }
+
+    // ✅ ADDED: Check token expiry BEFORE starting
+    const now = new Date();
+    if (campaign.whatsappAccount.tokenExpiresAt &&
+      campaign.whatsappAccount.tokenExpiresAt < now) {
+      throw new AppError(
+        'WhatsApp account token expired. Please reconnect in Settings → WhatsApp.',
+        400
+      );
+    }
+
+    // ✅ ADDED: Verify token can be decrypted
+    const accountData = await metaService.getAccountWithToken(
+      campaign.whatsappAccountId
+    );
+
+    if (!accountData) {
+      throw new AppError(
+        'WhatsApp account token is invalid or unavailable. Please reconnect in Settings → WhatsApp.',
+        400
+      );
+    }
+
+    if (!accountData.accessToken.startsWith('EAA')) {
+      throw new AppError(
+        'WhatsApp account token is corrupted. Please reconnect in Settings → WhatsApp.',
+        400
+      );
+    }
+
+    console.log(`✅ Token validated for campaign: ${campaignId}`);
 
     const updated = await prisma.campaign.update({
       where: { id: campaignId },
@@ -656,6 +692,8 @@ export class CampaignsService {
       },
     });
 
+    console.log(`⏸️ Campaign paused: ${campaignId}`);
+
     return formatCampaign(updated);
   }
 
@@ -678,6 +716,18 @@ export class CampaignsService {
       throw new AppError('Only paused campaigns can be resumed', 400);
     }
 
+    // ✅ ADDED: Verify token before resuming
+    const accountData = await metaService.getAccountWithToken(
+      campaign.whatsappAccountId
+    );
+
+    if (!accountData || !accountData.accessToken.startsWith('EAA')) {
+      throw new AppError(
+        'WhatsApp account token is invalid. Please reconnect before resuming.',
+        400
+      );
+    }
+
     const updated = await prisma.campaign.update({
       where: { id: campaignId },
       data: { status: 'RUNNING' },
@@ -687,6 +737,8 @@ export class CampaignsService {
         ContactGroup: { select: { name: true } },
       },
     });
+
+    console.log(`▶️ Campaign resumed: ${campaignId}`);
 
     // Resume sending
     void this.processCampaignSending(organizationId, campaignId).catch((e) => {
@@ -727,6 +779,8 @@ export class CampaignsService {
         ContactGroup: { select: { name: true } },
       },
     });
+
+    console.log(`❌ Campaign cancelled: ${campaignId}`);
 
     return formatCampaign(updated);
   }
@@ -811,6 +865,18 @@ export class CampaignsService {
       throw new AppError('Campaign not found', 404);
     }
 
+    // ✅ ADDED: Verify token before retry
+    const accountData = await metaService.getAccountWithToken(
+      campaign.whatsappAccountId
+    );
+
+    if (!accountData || !accountData.accessToken.startsWith('EAA')) {
+      throw new AppError(
+        'WhatsApp account token is invalid. Please reconnect before retrying.',
+        400
+      );
+    }
+
     const statusesToRetry: MessageStatus[] = [];
     if (retryFailed) statusesToRetry.push('FAILED');
     if (retryPending) statusesToRetry.push('PENDING');
@@ -837,7 +903,14 @@ export class CampaignsService {
         where: { id: campaignId },
         data: { status: 'RUNNING' },
       });
+
+      // Resume sending
+      void this.processCampaignSending(organizationId, campaignId).catch((e) => {
+        console.error('❌ Campaign retry send failed:', e);
+      });
     }
+
+    console.log(`🔄 Campaign retry: ${result.count} messages queued`);
 
     return {
       message: `${result.count} messages queued for retry`,
@@ -894,7 +967,7 @@ export class CampaignsService {
       if (originalContacts.length > 0) {
         await tx.campaignContact.createMany({
           data: originalContacts.map((c) => ({
-            id: uuidv4(), // ✅ Fixed: Use uuidv4 instead of cuid
+            id: uuidv4(),
             campaignId: newCampaign.id,
             contactId: c.contactId,
             status: 'PENDING' as MessageStatus,
@@ -907,26 +980,70 @@ export class CampaignsService {
       return newCampaign;
     });
 
+    console.log(`📋 Campaign duplicated: ${campaignId} → ${duplicate.id}`);
+
     return formatCampaign(duplicate);
   }
 
   // ==========================================
-  // PROCESS CAMPAIGN SENDING (Internal)
+  // PROCESS CAMPAIGN SENDING - ✅ COMPLETELY FIXED
   // ==========================================
   private async processCampaignSending(organizationId: string, campaignId: string): Promise<void> {
+    console.log(`📤 Starting send process for campaign: ${campaignId}`);
+
     const campaign = await prisma.campaign.findFirst({
       where: { id: campaignId, organizationId },
       include: { template: true, whatsappAccount: true },
     });
 
-    if (!campaign) return;
-    if (campaign.status !== 'RUNNING') return;
-
-    const wa = campaign.whatsappAccount;
-    if (!wa?.accessToken || !wa?.phoneNumberId) {
-      console.error('❌ WhatsApp account token/phoneNumberId missing');
+    if (!campaign) {
+      console.error('❌ Campaign not found');
       return;
     }
+
+    if (campaign.status !== 'RUNNING') {
+      console.log(`⚠️ Campaign status is ${campaign.status}, stopping send process`);
+      return;
+    }
+
+    // ✅ FIX: Get DECRYPTED token using metaService
+    const accountData = await metaService.getAccountWithToken(
+      campaign.whatsappAccountId
+    );
+
+    if (!accountData) {
+      console.error('❌ WhatsApp account not found or token unavailable');
+
+      // Mark campaign as failed
+      await prisma.campaign.update({
+        where: { id: campaignId },
+        data: {
+          status: 'FAILED',
+          completedAt: new Date(),
+        },
+      });
+
+      return;
+    }
+
+    const { account, accessToken } = accountData; // ✅ accessToken is now DECRYPTED
+
+    // Verify token is valid format
+    if (!accessToken.startsWith('EAA')) {
+      console.error('❌ Invalid access token format:', accessToken.substring(0, 10) + '...');
+
+      await prisma.campaign.update({
+        where: { id: campaignId },
+        data: {
+          status: 'FAILED',
+          completedAt: new Date(),
+        },
+      });
+
+      return;
+    }
+
+    console.log('✅ Using decrypted token:', accessToken.substring(0, 10) + '...');
 
     const template = campaign.template;
     const templateName = template?.name;
@@ -934,25 +1051,44 @@ export class CampaignsService {
 
     if (!templateName) {
       console.error('❌ Campaign template missing');
+
+      await prisma.campaign.update({
+        where: { id: campaignId },
+        data: {
+          status: 'FAILED',
+          completedAt: new Date(),
+        },
+      });
+
       return;
     }
 
     const vars = (template.variables as any[]) || [];
     const varCount = Array.isArray(vars) ? vars.length : 0;
 
-    while (true) {
+    let batchCount = 0;
+    const MAX_BATCHES = 100; // Prevent infinite loops
+    let totalSent = 0;
+    let totalFailed = 0;
+
+    while (batchCount < MAX_BATCHES) {
+      batchCount++;
+
+      // Check campaign status before each batch
       const currentCampaign = await prisma.campaign.findUnique({
         where: { id: campaignId },
         select: { status: true },
       });
 
       if (!currentCampaign || currentCampaign.status !== 'RUNNING') {
+        console.log(`⚠️ Campaign stopped at batch ${batchCount} (status: ${currentCampaign?.status})`);
         break;
       }
 
+      // Get pending contacts
       const pending = await prisma.campaignContact.findMany({
         where: { campaignId, status: 'PENDING' },
-        take: 25,
+        take: 25, // Process 25 at a time
         orderBy: { createdAt: 'asc' },
         include: {
           Contact: {
@@ -967,10 +1103,17 @@ export class CampaignsService {
         },
       });
 
-      if (!pending.length) break;
+      if (!pending.length) {
+        console.log(`✅ No more pending contacts (batch ${batchCount})`);
+        break;
+      }
 
+      console.log(`📤 Processing batch ${batchCount}: ${pending.length} contacts`);
+
+      // Process each contact
       for (const cc of pending) {
         const to = cc.Contact?.phone;
+
         if (!to) {
           await this.updateContactStatus(
             campaignId,
@@ -979,11 +1122,15 @@ export class CampaignsService {
             undefined,
             'Contact phone missing'
           );
+          totalFailed++;
           continue;
         }
 
         try {
+          // Build template parameters
           const params = buildParamsFromContact(cc.Contact, varCount);
+
+          // Build message payload
           const payload = buildTemplateSendPayload({
             to,
             templateName,
@@ -991,18 +1138,92 @@ export class CampaignsService {
             params,
           });
 
-          const res = await whatsappApi.sendMessage(wa.phoneNumberId, wa.accessToken, payload);
+          // ✅ FIX: Use DECRYPTED token
+          const res = await whatsappApi.sendMessage(
+            account.phoneNumberId,
+            accessToken,  // ✅ Now plaintext!
+            payload
+          );
+
           const waMessageId = res?.messages?.[0]?.id;
 
-          await this.updateContactStatus(campaignId, cc.contactId, 'SENT', waMessageId);
+          if (!waMessageId) {
+            throw new Error('No message ID returned from WhatsApp API');
+          }
+
+          // Update contact status to SENT
+          await this.updateContactStatus(
+            campaignId,
+            cc.contactId,
+            'SENT',
+            waMessageId
+          );
+
+          totalSent++;
+          console.log(`✅ Message sent to ${to} (${waMessageId})`);
+
+          // Rate limiting: ~80 messages/second max (WhatsApp limit)
           await new Promise((r) => setTimeout(r, 80));
+
         } catch (e: any) {
+          console.error(`❌ Failed to send to ${to}:`, e.message);
+
+          // Check if it's a token error (code 190)
+          if (e?.response?.data?.error?.code === 190) {
+            console.error('❌ OAuth token invalid - stopping campaign');
+
+            // Mark account as disconnected
+            await prisma.whatsAppAccount.update({
+              where: { id: account.id },
+              data: {
+                status: 'DISCONNECTED',
+                accessToken: null,
+                tokenExpiresAt: null,
+              },
+            });
+
+            // Mark campaign as failed
+            await prisma.campaign.update({
+              where: { id: campaignId },
+              data: {
+                status: 'FAILED',
+                completedAt: new Date(),
+              },
+            });
+
+            console.log(`❌ Campaign failed due to invalid token. Total sent: ${totalSent}, Total failed: ${totalFailed}`);
+
+            return; // Stop processing entirely
+          }
+
+          // Check for rate limit error (code 130429)
+          if (e?.response?.data?.error?.code === 130429) {
+            console.warn('⚠️ Rate limit hit, waiting 60 seconds...');
+            await new Promise((r) => setTimeout(r, 60000)); // Wait 1 minute
+          }
+
           const reason = e?.response?.data?.error?.message || e?.message || 'Send failed';
-          await this.updateContactStatus(campaignId, cc.contactId, 'FAILED', undefined, reason);
+
+          await this.updateContactStatus(
+            campaignId,
+            cc.contactId,
+            'FAILED',
+            undefined,
+            reason
+          );
+
+          totalFailed++;
         }
       }
     }
 
+    if (batchCount >= MAX_BATCHES) {
+      console.warn(`⚠️ Campaign stopped: max batches (${MAX_BATCHES}) reached`);
+    }
+
+    console.log(`📊 Campaign ${campaignId} send process completed. Sent: ${totalSent}, Failed: ${totalFailed}`);
+
+    // Check if campaign is complete
     await this.checkAndComplete(campaignId);
   }
 
@@ -1156,6 +1377,7 @@ export class CampaignsService {
       data: updateData,
     });
 
+    // Update campaign counts
     const countField = `${status.toLowerCase()}Count`;
     if (['SENT', 'DELIVERED', 'READ', 'FAILED'].includes(status)) {
       await prisma.campaign.update({
@@ -1192,6 +1414,8 @@ export class CampaignsService {
           completedAt: new Date(),
         },
       });
+
+      console.log(`✅ Campaign completed: ${campaignId}`);
     }
   }
 }
