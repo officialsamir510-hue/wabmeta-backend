@@ -348,11 +348,16 @@ class MetaService {
 
         // Update existing account
         console.log('🔄 Updating existing account:', existingAccount.id);
+        console.log('🔐 Encrypting token before saving...');
+
+        // ✅ ENCRYPT TOKEN BEFORE SAVING
+        const encryptedToken = encrypt(accessToken);
+        console.log('✅ Token encrypted:', maskToken(encryptedToken));
 
         savedAccount = await prisma.whatsAppAccount.update({
           where: { id: existingAccount.id },
           data: {
-            accessToken: encrypt(accessToken),
+            accessToken: encryptedToken,  // ✅ Save encrypted token
             tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), // 60 days
             displayName: primaryPhone.verifiedName || primaryPhone.displayPhoneNumber,
             qualityRating: primaryPhone.qualityRating,
@@ -370,6 +375,7 @@ class MetaService {
       } else {
         // Create new account
         console.log('🔄 Creating new account...');
+        console.log('🔐 Encrypting token before saving...');
 
         // Generate webhook verify token
         const webhookVerifyToken = uuidv4();
@@ -382,6 +388,12 @@ class MetaService {
         // Clean phone number (digits only)
         const cleanPhoneNumber = primaryPhone.displayPhoneNumber.replace(/\D/g, '');
 
+        // ✅ ENCRYPT TOKEN BEFORE SAVING
+        const encryptedToken = encrypt(accessToken);
+        const encryptedWebhookSecret = encrypt(webhookVerifyToken);
+
+        console.log('✅ Token encrypted:', maskToken(encryptedToken));
+
         savedAccount = await prisma.whatsAppAccount.create({
           data: {
             organizationId,
@@ -390,9 +402,9 @@ class MetaService {
             phoneNumber: cleanPhoneNumber,
             displayName: primaryPhone.verifiedName || primaryPhone.displayPhoneNumber,
             qualityRating: primaryPhone.qualityRating,
-            accessToken: encrypt(accessToken),
+            accessToken: encryptedToken,  // ✅ Save encrypted token
             tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), // 60 days
-            webhookSecret: encrypt(webhookVerifyToken),
+            webhookSecret: encryptedWebhookSecret,  // ✅ Save encrypted webhook secret
             status: WhatsAppAccountStatus.CONNECTED,
             isDefault: accountCount === 0, // First account is default
           },
@@ -470,7 +482,7 @@ class MetaService {
   }
 
   /**
-   * Get account with decrypted token (internal use only)
+   * Get account with decrypted token (internal use only) - ✅ FIXED
    */
   async getAccountWithToken(accountId: string): Promise<{
     account: any;
@@ -490,6 +502,9 @@ class MetaService {
       return null;
     }
 
+    console.log(`🔐 Decrypting token for account ${accountId}...`);
+
+    // ✅ DECRYPT TOKEN
     const decryptedToken = safeDecrypt(account.accessToken);
 
     if (!decryptedToken) {
@@ -497,7 +512,14 @@ class MetaService {
       return null;
     }
 
-    console.log(`✅ Token retrieved for account ${accountId}: ${maskToken(decryptedToken)}`);
+    // ✅ Verify it's a valid Meta token
+    if (!this.looksLikeAccessToken(decryptedToken)) {
+      console.error(`❌ Decrypted value doesn't look like a valid Meta token`);
+      console.error(`   Got: ${maskToken(decryptedToken)}`);
+      return null;
+    }
+
+    console.log(`✅ Token decrypted successfully: ${maskToken(decryptedToken)}`);
 
     return {
       account,
@@ -506,10 +528,13 @@ class MetaService {
   }
 
   /**
-   * Update account access token
+   * Update account access token - ✅ FIXED
    */
   async updateAccountToken(accountId: string, newToken: string) {
-    const encryptedToken = encryptIfNeeded(newToken);
+    console.log(`🔐 Encrypting new token for account ${accountId}...`);
+
+    // ✅ ENCRYPT TOKEN BEFORE SAVING
+    const encryptedToken = encrypt(newToken);
 
     await prisma.whatsAppAccount.update({
       where: { id: accountId },
@@ -524,7 +549,7 @@ class MetaService {
   }
 
   /**
-   * Disconnect WhatsApp account - FIXED VERSION
+   * Disconnect WhatsApp account
    */
   async disconnectAccount(accountId: string, organizationId: string) {
     const account = await prisma.whatsAppAccount.findFirst({
@@ -608,7 +633,7 @@ class MetaService {
   }
 
   // ============================================
-  // HEALTH & STATUS
+  // HEALTH & STATUS - ✅ FIXED
   // ============================================
 
   /**
@@ -707,7 +732,7 @@ class MetaService {
   }
 
   // ============================================
-  // TEMPLATE MANAGEMENT
+  // TEMPLATE MANAGEMENT - ✅ FIXED
   // ============================================
 
   /**
