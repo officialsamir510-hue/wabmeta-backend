@@ -1,10 +1,20 @@
 // src/modules/whatsapp/whatsapp.service.ts
 
-import { PrismaClient, MessageStatus, MessageDirection, MessageType, WhatsAppAccountStatus } from '@prisma/client';
+import {
+  PrismaClient,
+  MessageStatus,
+  MessageDirection,
+  MessageType,
+  WhatsAppAccountStatus,
+} from '@prisma/client';
 import { metaApi } from '../meta/meta.api';
 import { safeDecrypt, maskToken } from '../../utils/encryption';
 
 const prisma = new PrismaClient();
+
+// ============================================
+// INTERFACES
+// ============================================
 
 interface SendMessageOptions {
   accountId: string;
@@ -12,6 +22,7 @@ interface SendMessageOptions {
   type: 'text' | 'template' | 'image' | 'document' | 'video' | 'audio';
   content: any;
   conversationId?: string;
+  organizationId?: string;
 }
 
 interface SendTemplateOptions {
@@ -21,9 +32,164 @@ interface SendTemplateOptions {
   templateLanguage: string;
   components?: any[];
   conversationId?: string;
+  organizationId?: string;
 }
 
+interface SendBulkOptions {
+  accountId: string;
+  recipients: Array<{
+    phone: string;
+    variables?: Record<string, string>;
+  }>;
+  templateName: string;
+  templateLanguage: string;
+  components?: any[];
+  organizationId?: string;
+}
+
+interface CampaignSendResult {
+  sent: number;
+  failed: number;
+  errors: string[];
+}
+
+// ============================================
+// WHATSAPP SERVICE CLASS
+// ============================================
+
 class WhatsAppService {
+  // ============================================
+  // HELPER METHODS
+  // ============================================
+
+  /**
+   * Get account with safe token decryption
+   */
+  private async getAccountWithToken(accountId: string): Promise<{
+    account: any;
+    accessToken: string;
+  }> {
+    const account = await prisma.whatsAppAccount.findUnique({
+      where: { id: accountId },
+      include: { organization: true },
+    });
+
+    if (!account) {
+      throw new Error('WhatsApp account not found');
+    }
+
+    if (account.status !== WhatsAppAccountStatus.CONNECTED) {
+      throw new Error('WhatsApp account is not connected');
+    }
+
+    if (!account.accessToken) {
+      throw new Error('No access token found for this account');
+    }
+
+    // Safe decryption with fallback
+    const accessToken = safeDecrypt(account.accessToken);
+
+    if (!accessToken) {
+      console.error(`❌ Failed to decrypt token for account ${accountId}`);
+      throw new Error('Failed to decrypt access token. Please reconnect your WhatsApp account.');
+    }
+
+    // Log safely with masked token
+    console.log(`🔑 Token retrieved for account ${accountId}: ${maskToken(accessToken)}`);
+
+    return { account, accessToken };
+  }
+
+  /**
+   * Format phone number for WhatsApp API
+   */
+  private formatPhoneNumber(phone: string): string {
+    // Remove all non-numeric characters
+    return phone.replace(/[^0-9]/g, '');
+  }
+
+  /**
+   * Get or create contact
+   */
+  private async getOrCreateContact(
+    organizationId: string,
+    phone: string
+  ): Promise<any> {
+    const formattedPhone = phone.startsWith('+') ? phone : `+${this.formatPhoneNumber(phone)}`;
+
+    let contact = await prisma.contact.findUnique({
+      where: {
+        organizationId_phone: {
+          organizationId,
+          phone: formattedPhone,
+        },
+      },
+    });
+
+    if (!contact) {
+      contact = await prisma.contact.create({
+        data: {
+          organizationId,
+          phone: formattedPhone,
+          source: 'WHATSAPP',
+        },
+      });
+      console.log(`👤 Created new contact: ${contact.id}`);
+    }
+
+    return contact;
+  }
+
+  /**
+   * Get or create conversation
+   */
+  private async getOrCreateConversation(
+    organizationId: string,
+    contactId: string,
+    phoneNumberId: string,
+    messagePreview: string,
+    existingConversationId?: string
+  ): Promise<any> {
+    let conversation = existingConversationId
+      ? await prisma.conversation.findUnique({ where: { id: existingConversationId } })
+      : await prisma.conversation.findUnique({
+        where: {
+          organizationId_contactId: {
+            organizationId,
+            contactId,
+          },
+        },
+      });
+
+    if (!conversation) {
+      conversation = await prisma.conversation.create({
+        data: {
+          organizationId,
+          phoneNumberId,
+          contactId,
+          lastMessageAt: new Date(),
+          lastMessagePreview: messagePreview,
+        },
+      });
+      console.log(`💬 Created new conversation: ${conversation.id}`);
+    } else {
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          lastMessageAt: new Date(),
+          lastMessagePreview: messagePreview,
+          unreadCount: 0,
+        },
+      });
+    }
+
+    return conversation;
+  }
+
+  // ============================================
+  // MESSAGE SENDING METHODS
+  // ============================================
+
   /**
    * Send a text message
    */
@@ -31,7 +197,8 @@ class WhatsAppService {
     accountId: string,
     to: string,
     text: string,
-    conversationId?: string
+    conversationId?: string,
+    organizationId?: string
   ) {
     return this.sendMessage({
       accountId,
@@ -39,6 +206,7 @@ class WhatsAppService {
       type: 'text',
       content: { text: { body: text } },
       conversationId,
+      organizationId,
     });
   }
 
@@ -46,8 +214,15 @@ class WhatsAppService {
    * Send a template message
    */
   async sendTemplateMessage(options: SendTemplateOptions) {
-    const { accountId, to, templateName, templateLanguage, components, conversationId } =
-      options;
+    const {
+      accountId,
+      to,
+      templateName,
+      templateLanguage,
+      components,
+      conversationId,
+      organizationId,
+    } = options;
 
     return this.sendMessage({
       accountId,
@@ -61,6 +236,7 @@ class WhatsAppService {
         },
       },
       conversationId,
+      organizationId,
     });
   }
 
@@ -73,7 +249,8 @@ class WhatsAppService {
     mediaType: 'image' | 'document' | 'video' | 'audio',
     mediaUrl: string,
     caption?: string,
-    conversationId?: string
+    conversationId?: string,
+    organizationId?: string
   ) {
     const content: any = {
       [mediaType]: {
@@ -91,53 +268,37 @@ class WhatsAppService {
       type: mediaType,
       content,
       conversationId,
+      organizationId,
     });
   }
 
   /**
-   * Core send message function - ✅ UPDATED with safe decryption
+   * Core send message function
    */
   async sendMessage(options: SendMessageOptions) {
     const { accountId, to, type, content, conversationId } = options;
 
-    // Get account with access token
-    const account = await prisma.whatsAppAccount.findUnique({
-      where: { id: accountId },
-      include: { organization: true },
-    });
-
-    if (!account) {
-      throw new Error('WhatsApp account not found');
-    }
-
-    if (account.status !== WhatsAppAccountStatus.CONNECTED) {
-      throw new Error('WhatsApp account is not active');
-    }
-
-    if (!account.accessToken) {
-      throw new Error('Access token not found');
-    }
-
-    // ✅ Use safeDecrypt for backward compatibility with plain text tokens
-    const accessToken = safeDecrypt(account.accessToken);
-
-    if (!accessToken) {
-      throw new Error('Failed to decrypt access token');
-    }
-
-    // ✅ Safe logging with masking
-    console.log(`📤 Sending message via account ${accountId}: ${maskToken(accessToken)}`);
-
-    // Format phone number (remove + and spaces)
-    const formattedTo = to.replace(/[^0-9]/g, '');
-
-    // Prepare message payload
-    const messagePayload: any = {
-      type,
-      ...content,
-    };
-
     try {
+      // Get account with decrypted token
+      const { account, accessToken } = await this.getAccountWithToken(accountId);
+
+      // Use provided organizationId or get from account
+      const organizationId = options.organizationId || account.organizationId;
+
+      console.log(`📤 Sending ${type} message via account ${accountId} to ${to}`);
+
+      // Format phone number
+      const formattedTo = this.formatPhoneNumber(to);
+
+      // Prepare message payload
+      const messagePayload: any = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: formattedTo,
+        type,
+        ...content,
+      };
+
       // Send via Meta API
       const result = await metaApi.sendMessage(
         account.phoneNumberId,
@@ -146,57 +307,22 @@ class WhatsAppService {
         messagePayload
       );
 
-      // Find or create contact
-      let contact = await prisma.contact.findUnique({
-        where: {
-          organizationId_phone: {
-            organizationId: account.organizationId,
-            phone: to.startsWith('+') ? to : `+${formattedTo}`,
-          },
-        },
-      });
+      console.log(`✅ Message sent successfully: ${result.messageId}`);
 
-      if (!contact) {
-        contact = await prisma.contact.create({
-          data: {
-            organizationId: account.organizationId,
-            phone: to.startsWith('+') ? to : `+${formattedTo}`,
-            source: 'MANUAL',
-          },
-        });
-      }
+      // Get or create contact
+      const contact = await this.getOrCreateContact(organizationId, to);
 
-      // Find or create conversation
-      let conversation = conversationId
-        ? await prisma.conversation.findUnique({ where: { id: conversationId } })
-        : await prisma.conversation.findUnique({
-          where: {
-            organizationId_contactId: {
-              organizationId: account.organizationId,
-              contactId: contact.id,
-            },
-          },
-        });
+      // Get message preview
+      const messagePreview = this.getMessagePreview(type, content);
 
-      if (!conversation) {
-        conversation = await prisma.conversation.create({
-          data: {
-            organizationId: account.organizationId,
-            phoneNumberId: null,
-            contactId: contact.id,
-            lastMessageAt: new Date(),
-            lastMessagePreview: this.getMessagePreview(type, content),
-          },
-        });
-      } else {
-        await prisma.conversation.update({
-          where: { id: conversation.id },
-          data: {
-            lastMessageAt: new Date(),
-            lastMessagePreview: this.getMessagePreview(type, content),
-          },
-        });
-      }
+      // Get or create conversation
+      const conversation = await this.getOrCreateConversation(
+        organizationId,
+        contact.id,
+        account.phoneNumberId,
+        messagePreview,
+        conversationId
+      );
 
       // Save message to database
       const message = await prisma.message.create({
@@ -219,43 +345,60 @@ class WhatsAppService {
         },
       });
 
-      console.log(`✅ Message sent successfully: ${result.messageId}`);
-
       return {
         success: true,
         messageId: result.messageId,
         message,
       };
     } catch (error: any) {
-      console.error('❌ Failed to send message:', error);
+      console.error('❌ Failed to send message:', {
+        error: error.message,
+        response: error.response?.data,
+      });
 
-      // Still save the failed message for tracking
+      // Save failed message for tracking
       if (conversationId) {
-        await prisma.message.create({
-          data: {
-            conversationId,
-            whatsappAccountId: accountId,
-            direction: MessageDirection.OUTBOUND,
-            type: this.mapMessageType(type),
-            content: typeof content === 'string' ? content : JSON.stringify(content),
-            status: MessageStatus.FAILED,
-            failureReason: error.message,
-          },
-        });
+        try {
+          await prisma.message.create({
+            data: {
+              conversationId,
+              whatsappAccountId: accountId,
+              direction: MessageDirection.OUTBOUND,
+              type: this.mapMessageType(type),
+              content: typeof content === 'string' ? content : JSON.stringify(content),
+              status: MessageStatus.FAILED,
+              failureReason: error.response?.data?.error?.message || error.message,
+              sentAt: new Date(),
+            },
+          });
+        } catch (dbError) {
+          console.error('Failed to save error message to DB:', dbError);
+        }
       }
 
-      throw new Error(error.message || 'Failed to send message');
+      // Extract meaningful error message
+      const errorMessage =
+        error.response?.data?.error?.message ||
+        error.response?.data?.message ||
+        error.message ||
+        'Failed to send message';
+
+      throw new Error(errorMessage);
     }
   }
 
+  // ============================================
+  // CAMPAIGN METHODS
+  // ============================================
+
   /**
-   * Send bulk campaign messages - ✅ UPDATED with safe decryption
+   * Send bulk campaign messages
    */
   async sendCampaignMessages(
     campaignId: string,
     batchSize: number = 50,
     delayMs: number = 1000
-  ) {
+  ): Promise<CampaignSendResult> {
     const campaign = await prisma.campaign.findUnique({
       where: { id: campaignId },
       include: {
@@ -277,94 +420,178 @@ class WhatsAppService {
       throw new Error('Campaign is not running');
     }
 
-    if (!campaign.whatsappAccount.accessToken) {
-      throw new Error('Access token not found');
+    // Get decrypted access token
+    let accessToken: string;
+    try {
+      const tokenResult = await this.getAccountWithToken(campaign.whatsappAccount.id);
+      accessToken = tokenResult.accessToken;
+    } catch (error: any) {
+      console.error('❌ Failed to get access token for campaign:', error);
+
+      // Update campaign with failure reason
+      await prisma.campaign.update({
+        where: { id: campaignId },
+        data: {
+          status: 'FAILED',
+        },
+      });
+
+      throw new Error('Failed to get access token for campaign. Please reconnect WhatsApp account.');
     }
 
-    // ✅ Use safeDecrypt for backward compatibility
-    const accessToken = safeDecrypt(campaign.whatsappAccount.accessToken);
+    console.log(`📢 Running campaign ${campaignId} with ${campaign.CampaignContact.length} recipients`);
 
-    if (!accessToken) {
-      throw new Error('Failed to decrypt access token');
-    }
-
-    // ✅ Safe logging
-    console.log(`📢 Running campaign ${campaignId} with token: ${maskToken(accessToken)}`);
-
-    const results = {
+    const results: CampaignSendResult = {
       sent: 0,
       failed: 0,
-      errors: [] as string[],
+      errors: [],
     };
 
     for (const recipient of campaign.CampaignContact) {
       try {
-        // Build template components with variables
-        const components = this.buildTemplateComponents(
-          campaign.template,
-          {} // Variables would come from recipient data if needed
-        );
+        // Build template components
+        const components = this.buildTemplateComponents(campaign.template, {});
+
+        // Format phone number
+        const formattedPhone = this.formatPhoneNumber(recipient.Contact.phone);
 
         // Send message
+        const messagePayload = {
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: formattedPhone,
+          type: 'template',
+          template: {
+            name: campaign.template.name,
+            language: { code: campaign.template.language },
+            components,
+          },
+        };
+
         const messageResult = await metaApi.sendMessage(
           campaign.whatsappAccount.phoneNumberId,
           accessToken,
-          recipient.Contact.phone.replace(/[^0-9]/g, ''),
-          {
-            type: 'template',
-            template: {
-              name: campaign.template.name,
-              language: { code: campaign.template.language },
-              components,
-            },
-          }
+          formattedPhone,
+          messagePayload
         );
 
-        await prisma.campaignContact.update({
-          where: { id: recipient.id },
-          data: {
-            status: MessageStatus.SENT,
-            waMessageId: messageResult.messageId,
-            sentAt: new Date(),
-          },
-        });
-
-        await prisma.campaign.update({
-          where: { id: campaignId },
-          data: {
-            sentCount: { increment: 1 },
-          },
-        });
+        // Update contact status
+        await this.updateContactStatus(
+          campaignId,
+          recipient.contactId,
+          MessageStatus.SENT,
+          messageResult.messageId
+        );
 
         results.sent++;
-        console.log(`✅ Sent to ${recipient.Contact.phone}`);
+        console.log(`✅ Sent to ${recipient.Contact.phone} (${messageResult.messageId})`);
 
         // Delay between messages
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        if (delayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
       } catch (error: any) {
-        console.error(`❌ Failed to send to ${recipient.Contact.phone}:`, error);
+        console.error(`❌ Failed to send to ${recipient.Contact.phone}:`, error.message);
 
-        await prisma.campaignContact.update({
-          where: { id: recipient.id },
-          data: {
-            status: MessageStatus.FAILED,
-            failedAt: new Date(),
-            failureReason: error.message,
-          },
-        });
+        const errorMessage =
+          error.response?.data?.error?.message ||
+          error.response?.data?.message ||
+          error.message;
 
-        await prisma.campaign.update({
-          where: { id: campaignId },
-          data: {
-            failedCount: { increment: 1 },
-          },
-        });
+        // Update contact status
+        await this.updateContactStatus(
+          campaignId,
+          recipient.contactId,
+          MessageStatus.FAILED,
+          undefined,
+          errorMessage
+        );
 
         results.failed++;
-        results.errors.push(`${recipient.Contact.phone}: ${error.message}`);
+        results.errors.push(`${recipient.Contact.phone}: ${errorMessage}`);
       }
     }
 
+    // Check if campaign is complete
+    await this.checkCampaignCompletion(campaignId);
+
+    return results;
+  }
+
+  /**
+   * Update campaign contact status
+   */
+  async updateContactStatus(
+    campaignId: string,
+    contactId: string,
+    status: MessageStatus,
+    waMessageId?: string,
+    failureReason?: string
+  ): Promise<void> {
+    const now = new Date();
+
+    // Build update data dynamically
+    const updateData: Record<string, any> = {
+      status,
+      updatedAt: now,
+    };
+
+    if (waMessageId) {
+      updateData.waMessageId = waMessageId;
+    }
+
+    // Add timestamp based on status
+    switch (status) {
+      case MessageStatus.SENT:
+        updateData.sentAt = now;
+        break;
+      case MessageStatus.DELIVERED:
+        updateData.deliveredAt = now;
+        break;
+      case MessageStatus.READ:
+        updateData.readAt = now;
+        break;
+      case MessageStatus.FAILED:
+        updateData.failedAt = now;
+        if (failureReason) {
+          updateData.failureReason = failureReason;
+        }
+        break;
+    }
+
+    // Update CampaignContact
+    await prisma.campaignContact.updateMany({
+      where: {
+        campaignId,
+        contactId,
+      },
+      data: updateData,
+    });
+
+    // Update Campaign Counts
+    const countFieldMap: Record<string, string> = {
+      SENT: 'sentCount',
+      DELIVERED: 'deliveredCount',
+      READ: 'readCount',
+      FAILED: 'failedCount',
+    };
+
+    const fieldToIncrement = countFieldMap[status];
+
+    if (fieldToIncrement) {
+      await prisma.campaign.update({
+        where: { id: campaignId },
+        data: {
+          [fieldToIncrement]: { increment: 1 },
+        },
+      });
+    }
+  }
+
+  /**
+   * Check if campaign is complete and update status
+   */
+  async checkCampaignCompletion(campaignId: string): Promise<boolean> {
     const remainingRecipients = await prisma.campaignContact.count({
       where: {
         campaignId,
@@ -373,6 +600,11 @@ class WhatsAppService {
     });
 
     if (remainingRecipients === 0) {
+      const campaign = await prisma.campaign.findUnique({
+        where: { id: campaignId },
+        select: { sentCount: true, failedCount: true },
+      });
+
       await prisma.campaign.update({
         where: { id: campaignId },
         data: {
@@ -380,78 +612,119 @@ class WhatsAppService {
           completedAt: new Date(),
         },
       });
-      console.log(`🎉 Campaign ${campaignId} completed!`);
+
+      console.log(
+        `🎉 Campaign ${campaignId} completed! Sent: ${campaign?.sentCount || 0}, Failed: ${campaign?.failedCount || 0}`
+      );
+      return true;
     }
 
-    return results;
+    return false;
+  }
+
+  // ============================================
+  // MESSAGE STATUS METHODS
+  // ============================================
+
+  /**
+   * Mark message as read
+   */
+  async markAsRead(accountId: string, messageId: string) {
+    try {
+      const { account, accessToken } = await this.getAccountWithToken(accountId);
+
+      await metaApi.markMessageAsRead(account.phoneNumberId, accessToken, messageId);
+
+      console.log(`✅ Marked message ${messageId} as read`);
+      return { success: true };
+    } catch (error: any) {
+      console.error('❌ Failed to mark as read:', error);
+      return { success: false, error: error.message };
+    }
   }
 
   /**
-   * Mark messages as read - ✅ UPDATED with safe decryption
+   * Update message status from webhook
    */
-  async markAsRead(accountId: string, messageId: string) {
-    const account = await prisma.whatsAppAccount.findUnique({
-      where: { id: accountId },
-    });
-
-    if (!account) {
-      throw new Error('Account not found');
-    }
-
-    if (!account.accessToken) {
-      throw new Error('Access token not found');
-    }
-
-    // ✅ Use safeDecrypt for backward compatibility
-    const accessToken = safeDecrypt(account.accessToken);
-
-    if (!accessToken) {
-      throw new Error('Failed to decrypt access token');
-    }
-
+  async updateMessageStatus(
+    wamId: string,
+    status: MessageStatus,
+    timestamp?: Date,
+    errorInfo?: { code: number; title: string }
+  ): Promise<void> {
     try {
-      await metaApi.sendMessage(account.phoneNumberId, accessToken, '', {
-        messaging_product: 'whatsapp',
-        status: 'read',
-        message_id: messageId,
+      const updateData: Record<string, any> = {
+        status,
+      };
+
+      switch (status) {
+        case MessageStatus.DELIVERED:
+          updateData.deliveredAt = timestamp || new Date();
+          break;
+        case MessageStatus.READ:
+          updateData.readAt = timestamp || new Date();
+          break;
+        case MessageStatus.FAILED:
+          updateData.failedAt = timestamp || new Date();
+          if (errorInfo) {
+            updateData.failureReason = `${errorInfo.code}: ${errorInfo.title}`;
+          }
+          break;
+      }
+
+      await prisma.message.updateMany({
+        where: { wamId },
+        data: updateData,
       });
-      console.log(`✅ Marked message ${messageId} as read`);
-      return { success: true };
-    } catch (error) {
-      console.error('❌ Failed to mark as read:', error);
-      return { success: false };
+
+      console.log(`📝 Updated message ${wamId} status to ${status}`);
+    } catch (error: any) {
+      console.error(`❌ Failed to update message status for ${wamId}:`, error);
     }
   }
+
+  // ============================================
+  // TEMPLATE HELPER METHODS
+  // ============================================
 
   /**
    * Build template components with variables
    */
-  private buildTemplateComponents(template: any, variables: Record<string, string>) {
+  private buildTemplateComponents(
+    template: any,
+    variables: Record<string, string>
+  ): any[] {
     const components: any[] = [];
 
     // Header component
     if (template.headerType) {
       if (template.headerType === 'TEXT' && template.headerContent) {
-        components.push({
-          type: 'header',
-          parameters: this.extractVariables(template.headerContent, variables),
-        });
+        const headerVars = this.extractVariables(template.headerContent, variables);
+        if (headerVars.length > 0) {
+          components.push({
+            type: 'header',
+            parameters: headerVars,
+          });
+        }
       } else if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(template.headerType)) {
-        components.push({
-          type: 'header',
-          parameters: [
-            {
-              type: template.headerType.toLowerCase(),
-              [template.headerType.toLowerCase()]: {
-                link: variables.header_media || template.headerMediaUrl,
+        const mediaUrl = variables.header_media || template.headerMediaUrl;
+        if (mediaUrl) {
+          components.push({
+            type: 'header',
+            parameters: [
+              {
+                type: template.headerType.toLowerCase(),
+                [template.headerType.toLowerCase()]: {
+                  link: mediaUrl,
+                },
               },
-            },
-          ],
-        });
+            ],
+          });
+        }
       }
     }
 
-    // Body component - extract variables from bodyText
+    // Body component
     const bodyVars = this.extractVariablesFromText(template.bodyText);
     if (bodyVars.length > 0) {
       const bodyParams = bodyVars.map((varName: string, index: number) => ({
@@ -467,9 +740,10 @@ class WhatsAppService {
 
     // Button components
     if (template.buttons) {
-      const buttons = typeof template.buttons === 'string'
-        ? JSON.parse(template.buttons)
-        : template.buttons;
+      const buttons =
+        typeof template.buttons === 'string'
+          ? JSON.parse(template.buttons)
+          : template.buttons;
 
       if (Array.isArray(buttons)) {
         buttons.forEach((button: any, index: number) => {
@@ -505,13 +779,20 @@ class WhatsAppService {
   /**
    * Extract and replace variables in text
    */
-  private extractVariables(text: string, variables: Record<string, string>) {
+  private extractVariables(
+    text: string,
+    variables: Record<string, string>
+  ): any[] {
     const matches = text.match(/\{\{(\d+)\}\}/g) || [];
     return matches.map((match, index) => ({
       type: 'text',
       text: variables[`var_${index + 1}`] || match,
     }));
   }
+
+  // ============================================
+  // UTILITY METHODS
+  // ============================================
 
   /**
    * Generate message preview for conversation list
@@ -530,6 +811,12 @@ class WhatsAppService {
         return '🎵 Audio';
       case 'document':
         return '📄 Document';
+      case 'location':
+        return '📍 Location';
+      case 'sticker':
+        return '🎭 Sticker';
+      case 'contacts':
+        return '👤 Contact';
       default:
         return 'Message';
     }
@@ -546,10 +833,76 @@ class WhatsAppService {
       video: MessageType.VIDEO,
       audio: MessageType.AUDIO,
       document: MessageType.DOCUMENT,
+      location: MessageType.LOCATION,
+      sticker: MessageType.STICKER,
+      contacts: MessageType.CONTACT,
+      button: MessageType.INTERACTIVE,
+      list: MessageType.INTERACTIVE,
+      interactive: MessageType.INTERACTIVE,
     };
-    return map[type] || MessageType.TEXT;
+    return map[type.toLowerCase()] || MessageType.TEXT;
+  }
+
+  // ============================================
+  // ACCOUNT MANAGEMENT METHODS
+  // ============================================
+
+  /**
+   * Get default WhatsApp account for organization
+   */
+  async getDefaultAccount(organizationId: string) {
+    const account = await prisma.whatsAppAccount.findFirst({
+      where: {
+        organizationId,
+        isDefault: true,
+        status: WhatsAppAccountStatus.CONNECTED,
+      },
+    });
+
+    if (!account) {
+      // Fallback to any connected account
+      return prisma.whatsAppAccount.findFirst({
+        where: {
+          organizationId,
+          status: WhatsAppAccountStatus.CONNECTED,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+
+    return account;
+  }
+
+  /**
+   * Validate account has required permissions
+   */
+  async validateAccount(accountId: string): Promise<{
+    valid: boolean;
+    reason?: string;
+  }> {
+    try {
+      const { account, accessToken } = await this.getAccountWithToken(accountId);
+
+      // Test token validity with Meta API
+      const isValid = await metaApi.validateToken(accessToken);
+
+      if (!isValid) {
+        return {
+          valid: false,
+          reason: 'Access token is invalid or expired',
+        };
+      }
+
+      return { valid: true };
+    } catch (error: any) {
+      return {
+        valid: false,
+        reason: error.message,
+      };
+    }
   }
 }
 
+// Export singleton instance
 export const whatsappService = new WhatsAppService();
 export default whatsappService;

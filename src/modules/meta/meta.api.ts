@@ -169,6 +169,19 @@ class MetaApiClient {
     }
   }
 
+  /**
+   * Validate if a token is valid and active
+   */
+  async validateToken(accessToken: string): Promise<boolean> {
+    try {
+      const debugResult = await this.debugToken(accessToken);
+      return debugResult.data.is_valid;
+    } catch (error) {
+      console.error('[Meta API] Token validation failed:', error);
+      return false;
+    }
+  }
+
   // ============================================
   // WABA (WhatsApp Business Account) METHODS
   // ============================================
