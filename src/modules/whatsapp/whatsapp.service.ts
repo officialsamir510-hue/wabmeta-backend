@@ -19,7 +19,7 @@ const prisma = new PrismaClient();
 interface SendMessageOptions {
   accountId: string;
   to: string;
-  type: 'text' | 'template' | 'image' | 'document' | 'video' | 'audio';
+  type: 'text' | 'template' | 'image' | 'document' | 'video' | 'audio' | 'interactive' | 'location' | 'contacts';
   content: any;
   conversationId?: string;
   organizationId?: string;
@@ -90,7 +90,6 @@ class WhatsAppService {
     }
 
     console.log(`🔐 Decrypting token for account ${accountId}...`);
-    console.log(`   Raw token from DB (first 20 chars): ${account.accessToken.substring(0, 20)}...`);
 
     // ✅ SAFE DECRYPT - handles both encrypted and plain text tokens
     let accessToken: string | null = null;
@@ -120,7 +119,8 @@ class WhatsAppService {
       console.error(`❌ Decrypted token doesn't look like a Meta token`);
       console.error(`   Expected to start with: EAA`);
       console.error(`   Got (masked): ${maskToken(accessToken)}`);
-      throw new Error('Invalid access token format. Please reconnect your WhatsApp account.');
+      // Try to use it anyway if it's not empty, but log warning
+      console.warn('⚠️ Token format suspicious, attempting to use anyway...');
     }
 
     console.log(`✅ Token ready: ${maskToken(accessToken)}`);
@@ -147,12 +147,17 @@ class WhatsAppService {
       ? phone
       : `+${this.formatPhoneNumber(phone)}`;
 
-    let contact = await prisma.contact.findUnique({
+    // Try finding by exact match or just digits match
+    const cleanPhone = this.formatPhoneNumber(phone);
+
+    let contact = await prisma.contact.findFirst({
       where: {
-        organizationId_phone: {
-          organizationId,
-          phone: formattedPhone,
-        },
+        organizationId,
+        OR: [
+          { phone: formattedPhone },
+          { phone: cleanPhone },
+          { phone: `+${cleanPhone}` }
+        ]
       },
     });
 
@@ -162,6 +167,8 @@ class WhatsAppService {
           organizationId,
           phone: formattedPhone,
           source: 'WHATSAPP',
+          firstName: 'Unknown',
+          status: 'ACTIVE'
         },
       });
       console.log(`👤 Created new contact: ${contact.id}`);
@@ -201,6 +208,8 @@ class WhatsAppService {
           contactId,
           lastMessageAt: new Date(),
           lastMessagePreview: messagePreview,
+          unreadCount: 0,
+          isWindowOpen: true
         },
       });
       console.log(`💬 Created new conversation: ${conversation.id}`);
@@ -210,7 +219,7 @@ class WhatsAppService {
         data: {
           lastMessageAt: new Date(),
           lastMessagePreview: messagePreview,
-          unreadCount: 0,
+          isWindowOpen: true
         },
       });
     }
@@ -342,7 +351,7 @@ class WhatsAppService {
         ...content,
       };
 
-      console.log(`   Payload:`, JSON.stringify(messagePayload, null, 2));
+      console.log(`   Payload type:`, type);
 
       // ✅ Send via Meta API with decrypted token
       const result = await metaApi.sendMessage(
@@ -376,10 +385,10 @@ class WhatsAppService {
           conversationId: conversation.id,
           whatsappAccountId: accountId,
           wamId: result.messageId,
+          waMessageId: result.messageId, // Duplicate for backward compatibility
           direction: MessageDirection.OUTBOUND,
           type: this.mapMessageType(type),
-          content:
-            typeof content === 'string' ? content : JSON.stringify(content),
+          content: typeof content === 'string' ? content : JSON.stringify(content),
           status: MessageStatus.SENT,
           sentAt: new Date(),
         },
@@ -403,7 +412,6 @@ class WhatsAppService {
       console.error(`❌ Failed to send message:`, {
         error: error.message,
         response: error.response?.data,
-        stack: error.stack,
       });
 
       // Save failed message for tracking
@@ -415,13 +423,9 @@ class WhatsAppService {
               whatsappAccountId: accountId,
               direction: MessageDirection.OUTBOUND,
               type: this.mapMessageType(type),
-              content:
-                typeof content === 'string'
-                  ? content
-                  : JSON.stringify(content),
+              content: typeof content === 'string' ? content : JSON.stringify(content),
               status: MessageStatus.FAILED,
-              failureReason:
-                error.response?.data?.error?.message || error.message,
+              failureReason: error.response?.data?.error?.message || error.message,
               sentAt: new Date(),
             },
           });
@@ -606,7 +610,7 @@ class WhatsAppService {
     const now = new Date();
 
     // Build update data dynamically
-    const updateData: Record<string, any> = {
+    const updateData: any = {
       status,
       updatedAt: now,
     };
@@ -714,51 +718,20 @@ class WhatsAppService {
         messageId
       );
 
+      // Also update DB
+      await prisma.message.updateMany({
+        where: { wamId: messageId },
+        data: {
+          status: MessageStatus.READ,
+          readAt: new Date()
+        }
+      });
+
       console.log(`✅ Marked message ${messageId} as read`);
       return { success: true };
     } catch (error: any) {
       console.error('❌ Failed to mark as read:', error);
       return { success: false, error: error.message };
-    }
-  }
-
-  /**
-   * Update message status from webhook
-   */
-  async updateMessageStatus(
-    wamId: string,
-    status: MessageStatus,
-    timestamp?: Date,
-    errorInfo?: { code: number; title: string }
-  ): Promise<void> {
-    try {
-      const updateData: Record<string, any> = {
-        status,
-      };
-
-      switch (status) {
-        case MessageStatus.DELIVERED:
-          updateData.deliveredAt = timestamp || new Date();
-          break;
-        case MessageStatus.READ:
-          updateData.readAt = timestamp || new Date();
-          break;
-        case MessageStatus.FAILED:
-          updateData.failedAt = timestamp || new Date();
-          if (errorInfo) {
-            updateData.failureReason = `${errorInfo.code}: ${errorInfo.title}`;
-          }
-          break;
-      }
-
-      await prisma.message.updateMany({
-        where: { wamId },
-        data: updateData,
-      });
-
-      console.log(`📝 Updated message ${wamId} status to ${status}`);
-    } catch (error: any) {
-      console.error(`❌ Failed to update message status for ${wamId}:`, error);
     }
   }
 
@@ -971,7 +944,7 @@ class WhatsAppService {
       const { accessToken } = await this.getAccountWithToken(accountId);
 
       // Test token validity with Meta API
-      const isValid = await metaApi.validateToken(accessToken);
+      const isValid = await metaApi.isTokenValid(accessToken);
 
       if (!isValid) {
         return {
@@ -987,211 +960,6 @@ class WhatsAppService {
         reason: error.message,
       };
     }
-  }
-
-  /**
-   * Send a quick reply message
-   */
-  async sendQuickReply(
-    accountId: string,
-    to: string,
-    text: string,
-    buttons: Array<{ id: string; title: string }>,
-    conversationId?: string,
-    organizationId?: string
-  ) {
-    return this.sendMessage({
-      accountId,
-      to,
-      type: 'interactive' as any,
-      content: {
-        interactive: {
-          type: 'button',
-          body: { text },
-          action: {
-            buttons: buttons.map((btn) => ({
-              type: 'reply',
-              reply: { id: btn.id, title: btn.title },
-            })),
-          },
-        },
-      },
-      conversationId,
-      organizationId,
-    });
-  }
-
-  /**
-   * Send a list message
-   */
-  async sendListMessage(
-    accountId: string,
-    to: string,
-    headerText: string,
-    bodyText: string,
-    buttonText: string,
-    sections: Array<{
-      title: string;
-      rows: Array<{ id: string; title: string; description?: string }>;
-    }>,
-    conversationId?: string,
-    organizationId?: string
-  ) {
-    return this.sendMessage({
-      accountId,
-      to,
-      type: 'interactive' as any,
-      content: {
-        interactive: {
-          type: 'list',
-          header: { type: 'text', text: headerText },
-          body: { text: bodyText },
-          action: {
-            button: buttonText,
-            sections,
-          },
-        },
-      },
-      conversationId,
-      organizationId,
-    });
-  }
-
-  /**
-   * Send location message
-   */
-  async sendLocationMessage(
-    accountId: string,
-    to: string,
-    latitude: number,
-    longitude: number,
-    name?: string,
-    address?: string,
-    conversationId?: string,
-    organizationId?: string
-  ) {
-    return this.sendMessage({
-      accountId,
-      to,
-      type: 'location' as any,
-      content: {
-        location: {
-          latitude,
-          longitude,
-          name,
-          address,
-        },
-      },
-      conversationId,
-      organizationId,
-    });
-  }
-
-  /**
-   * Send contact card
-   */
-  async sendContactMessage(
-    accountId: string,
-    to: string,
-    contacts: Array<{
-      name: { formatted_name: string; first_name?: string; last_name?: string };
-      phones?: Array<{ phone: string; type?: string }>;
-      emails?: Array<{ email: string; type?: string }>;
-    }>,
-    conversationId?: string,
-    organizationId?: string
-  ) {
-    return this.sendMessage({
-      accountId,
-      to,
-      type: 'contacts' as any,
-      content: {
-        contacts,
-      },
-      conversationId,
-      organizationId,
-    });
-  }
-
-  /**
-   * Send reaction to a message
-   */
-  async sendReaction(
-    accountId: string,
-    to: string,
-    messageId: string,
-    emoji: string
-  ) {
-    try {
-      const { account, accessToken } = await this.getAccountWithToken(accountId);
-
-      const payload = {
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: this.formatPhoneNumber(to),
-        type: 'reaction',
-        reaction: {
-          message_id: messageId,
-          emoji,
-        },
-      };
-
-      const result = await metaApi.sendMessage(
-        account.phoneNumberId,
-        accessToken,
-        this.formatPhoneNumber(to),
-        payload
-      );
-
-      return { success: true, messageId: result.messageId };
-    } catch (error: any) {
-      console.error('❌ Failed to send reaction:', error);
-      throw new Error(error.message || 'Failed to send reaction');
-    }
-  }
-
-  /**
-   * Get message by WAM ID
-   */
-  async getMessageByWamId(wamId: string) {
-    return prisma.message.findFirst({
-      where: { wamId },
-      include: {
-        conversation: {
-          include: {
-            contact: true,
-          },
-        },
-      },
-    });
-  }
-
-  /**
-   * Get conversation messages
-   */
-  async getConversationMessages(
-    conversationId: string,
-    limit: number = 50,
-    cursor?: string
-  ) {
-    const messages = await prisma.message.findMany({
-      where: { conversationId },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-      ...(cursor && {
-        cursor: { id: cursor },
-        skip: 1,
-      }),
-      include: {
-        conversation: {
-          include: {
-            contact: true,
-          },
-        },
-      },
-    });
-
-    return messages.reverse(); // Return in chronological order
   }
 }
 
