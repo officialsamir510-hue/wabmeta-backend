@@ -288,6 +288,149 @@ class MetaController {
   }
 
   /**
+   * Reset all Meta connections for organization
+   * ⚠️ DANGEROUS: This will delete all WhatsApp accounts and connections
+   * Use only for development/debugging
+   */
+  async resetAccount(req: Request, res: Response, next: NextFunction) {
+    try {
+      // Get organization ID from query or user
+      const orgFromQuery = getString(req.query.organizationId);
+      const orgFromUser = (req.user as any)?.organizationId;
+      const organizationId = orgFromQuery || orgFromUser;
+
+      if (!organizationId) {
+        return errorResponse(res, 'Organization ID required', 400);
+      }
+
+      // Verify user has access to this organization
+      const hasAccess = await this.verifyOrgAccess(req.user!.id, organizationId);
+      if (!hasAccess) {
+        return errorResponse(res, 'You do not have access to this organization', 403);
+      }
+
+      console.log(`⚠️ RESET REQUEST for organization: ${organizationId}`);
+
+      // Start transaction to ensure data consistency
+      const result = await prisma.$transaction(async (tx) => {
+        // 1. Get all WhatsApp accounts for this organization
+        const accounts = await tx.whatsAppAccount.findMany({
+          where: { organizationId },
+          select: { id: true, phoneNumber: true }
+        });
+
+        console.log(`Found ${accounts.length} WhatsApp accounts to delete`);
+
+        // 2. Delete all WhatsApp accounts
+        const deletedAccounts = await tx.whatsAppAccount.deleteMany({
+          where: { organizationId }
+        });
+
+        // 3. Delete all templates for this organization
+        const deletedTemplates = await tx.template.deleteMany({
+          where: { organizationId }
+        });
+
+        // 4. Delete all campaigns for this organization
+        const deletedCampaigns = await tx.campaign.deleteMany({
+          where: { organizationId }
+        });
+
+        // 5. Delete all messages for this organization
+        const deletedMessages = await tx.message.deleteMany({
+          where: {
+            conversation: {
+              organizationId
+            }
+          }
+        });
+
+        // 6. Delete all contacts for this organization (if needed)
+        const deletedContacts = await tx.contact.deleteMany({
+          where: { organizationId }
+        });
+
+        return {
+          deletedAccounts: deletedAccounts.count,
+          deletedTemplates: deletedTemplates.count,
+          deletedCampaigns: deletedCampaigns.count,
+          deletedMessages: deletedMessages.count,
+          deletedContacts: deletedContacts.count,
+          accountDetails: accounts
+        };
+      });
+
+      console.log('✅ Reset completed:', result);
+
+      return successResponse(res, {
+        data: {
+          success: true,
+          deleted: {
+            accounts: result.deletedAccounts,
+            templates: result.deletedTemplates,
+            campaigns: result.deletedCampaigns,
+            messages: result.deletedMessages,
+            contacts: result.deletedContacts
+          },
+          accountDetails: result.accountDetails
+        },
+        message: 'All Meta connections and related data have been reset successfully'
+      });
+
+    } catch (error: any) {
+      console.error('❌ Reset account error:', error);
+      return errorResponse(res, `Reset failed: ${error.message}`, 500);
+    }
+  }
+
+  /**
+   * Force disconnect all accounts for organization (Soft Delete)
+   * This only disconnects accounts without deleting data
+   */
+  async forceDisconnectAll(req: Request, res: Response, next: NextFunction) {
+    try {
+      const orgFromQuery = getString(req.query.organizationId);
+      const orgFromUser = (req.user as any)?.organizationId;
+      const organizationId = orgFromQuery || orgFromUser;
+
+      if (!organizationId) {
+        return errorResponse(res, 'Organization ID required', 400);
+      }
+
+      const hasAccess = await this.verifyOrgAccess(req.user!.id, organizationId);
+      if (!hasAccess) {
+        return errorResponse(res, 'Unauthorized', 403);
+      }
+
+      // Update all accounts to DISCONNECTED status
+      const result = await prisma.whatsAppAccount.updateMany({
+        where: {
+          organizationId,
+          status: WhatsAppAccountStatus.CONNECTED
+        },
+        data: {
+          status: WhatsAppAccountStatus.DISCONNECTED,
+          accessToken: null,
+          tokenExpiresAt: null
+        }
+      });
+
+      console.log(`✅ Force disconnected ${result.count} accounts for org ${organizationId}`);
+
+      return successResponse(res, {
+        data: {
+          disconnectedCount: result.count
+        },
+        message: `Successfully disconnected ${result.count} account(s)`
+      });
+
+    } catch (error: any) {
+      console.error('❌ Force disconnect error:', error);
+      return errorResponse(res, error.message, 500);
+    }
+  }
+
+  /**
    * Verify user has access to organization
    */
   private async verifyOrgAccess(userId: string, organizationId: string): Promise<boolean> {

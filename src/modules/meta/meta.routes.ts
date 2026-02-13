@@ -48,7 +48,7 @@ router.post(
 // ORGANIZATION ROUTES
 // ============================================
 
-// Get organization connection status - ✅ NEW ROUTE
+// Get organization connection status
 router.get(
   '/organizations/:organizationId/status',
   metaController.getOrganizationStatus.bind(metaController)
@@ -89,5 +89,33 @@ router.post(
   '/organizations/:organizationId/accounts/:accountId/sync-templates',
   metaController.syncTemplates.bind(metaController)
 );
+
+// ============================================
+// DANGER ZONE - Development/Debug Routes
+// ============================================
+
+// ⚠️ DANGEROUS: Reset all Meta connections and data for organization
+// This will delete all WhatsApp accounts, templates, campaigns, messages, etc.
+// Use only for development/debugging
+if (process.env.NODE_ENV !== 'production') {
+  router.post('/reset-account', metaController.resetAccount.bind(metaController));
+  router.post('/force-disconnect-all', metaController.forceDisconnectAll.bind(metaController));
+} else {
+  // In production, require special header or admin role
+  router.post('/reset-account',
+    (req, res, next) => {
+      // Add extra security check for production
+      const adminKey = req.headers['x-admin-key'];
+      if (adminKey !== process.env.ADMIN_SECRET_KEY) {
+        return res.status(403).json({
+          success: false,
+          message: 'This operation requires admin privileges'
+        });
+      }
+      next();
+    },
+    metaController.resetAccount.bind(metaController)
+  );
+}
 
 export default router;
