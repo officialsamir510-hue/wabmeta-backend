@@ -524,7 +524,7 @@ class MetaService {
   }
 
   /**
-   * Disconnect WhatsApp account
+   * Disconnect WhatsApp account - FIXED VERSION
    */
   async disconnectAccount(accountId: string, organizationId: string) {
     const account = await prisma.whatsAppAccount.findFirst({
@@ -538,12 +538,13 @@ class MetaService {
       throw new Error('WhatsApp account not found');
     }
 
-    // Update status and clear token
+    // Update status to DISCONNECTED and clear sensitive data
     await prisma.whatsAppAccount.update({
       where: { id: accountId },
       data: {
         status: WhatsAppAccountStatus.DISCONNECTED,
         accessToken: null,
+        tokenExpiresAt: null,
       },
     });
 
@@ -569,7 +570,7 @@ class MetaService {
       }
     }
 
-    return { success: true, message: 'Account disconnected' };
+    return { success: true, message: 'Account disconnected successfully' };
   }
 
   /**
@@ -581,11 +582,12 @@ class MetaService {
       where: {
         id: accountId,
         organizationId,
+        status: WhatsAppAccountStatus.CONNECTED, // Only connected accounts can be default
       },
     });
 
     if (!account) {
-      throw new Error('WhatsApp account not found');
+      throw new Error('WhatsApp account not found or not connected');
     }
 
     // Remove default from all accounts
@@ -632,7 +634,11 @@ class MetaService {
       if (!debugInfo.data.is_valid) {
         await prisma.whatsAppAccount.update({
           where: { id: accountId },
-          data: { status: WhatsAppAccountStatus.DISCONNECTED },
+          data: {
+            status: WhatsAppAccountStatus.DISCONNECTED,
+            accessToken: null,
+            tokenExpiresAt: null,
+          },
         });
 
         return {
@@ -647,6 +653,13 @@ class MetaService {
       const phone = phoneNumbers.find((p) => p.id === account.phoneNumberId);
 
       if (!phone) {
+        await prisma.whatsAppAccount.update({
+          where: { id: accountId },
+          data: {
+            status: WhatsAppAccountStatus.DISCONNECTED,
+          },
+        });
+
         return {
           healthy: false,
           reason: 'Phone number not found in WABA',
@@ -678,7 +691,11 @@ class MetaService {
 
       await prisma.whatsAppAccount.update({
         where: { id: accountId },
-        data: { status: WhatsAppAccountStatus.DISCONNECTED },
+        data: {
+          status: WhatsAppAccountStatus.DISCONNECTED,
+          accessToken: null,
+          tokenExpiresAt: null,
+        },
       });
 
       return {

@@ -4,7 +4,7 @@ import { Request, Response, NextFunction } from 'express';
 import { metaService } from './meta.service';
 import { successResponse, errorResponse } from '../../utils/response';
 import { v4 as uuidv4 } from 'uuid';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, WhatsAppAccountStatus } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -116,7 +116,7 @@ class MetaController {
   }
 
   /**
-   * Get organization connection status - ✅ NEW METHOD
+   * Get organization connection status - FIXED VERSION
    */
   async getOrganizationStatus(req: Request, res: Response, next: NextFunction) {
     try {
@@ -127,10 +127,12 @@ class MetaController {
         return errorResponse(res, 'Unauthorized', 403);
       }
 
-      // Check if any account is connected
+      // Get all accounts for the organization
       const accounts = await metaService.getAccounts(organizationId);
-      const connectedAccounts = accounts.filter((a: any) =>
-        a.status === 'CONNECTED' || a.status === 'connected'
+
+      // Filter only accounts with CONNECTED status
+      const connectedAccounts = accounts.filter((account: any) =>
+        account.status === WhatsAppAccountStatus.CONNECTED
       );
 
       return successResponse(res, {
@@ -138,6 +140,14 @@ class MetaController {
           status: connectedAccounts.length > 0 ? 'CONNECTED' : 'DISCONNECTED',
           connectedCount: connectedAccounts.length,
           totalAccounts: accounts.length,
+          accounts: accounts.map(acc => ({
+            id: acc.id,
+            phoneNumber: acc.phoneNumber,
+            displayName: acc.displayName,
+            status: acc.status,
+            isDefault: acc.isDefault,
+            qualityRating: acc.qualityRating,
+          }))
         },
         message: 'Organization Meta connection status',
       });
@@ -200,9 +210,10 @@ class MetaController {
       const hasAccess = await this.verifyOrgAccess(req.user!.id, organizationId);
       if (!hasAccess) return errorResponse(res, 'Unauthorized', 403);
 
-      await metaService.disconnectAccount(accountId, organizationId);
+      const result = await metaService.disconnectAccount(accountId, organizationId);
 
       return successResponse(res, {
+        data: result,
         message: 'Account disconnected successfully'
       });
     } catch (error) {
@@ -221,9 +232,10 @@ class MetaController {
       const hasAccess = await this.verifyOrgAccess(req.user!.id, organizationId);
       if (!hasAccess) return errorResponse(res, 'Unauthorized', 403);
 
-      await metaService.setDefaultAccount(accountId, organizationId);
+      const result = await metaService.setDefaultAccount(accountId, organizationId);
 
       return successResponse(res, {
+        data: result,
         message: 'Default account updated'
       });
     } catch (error) {
