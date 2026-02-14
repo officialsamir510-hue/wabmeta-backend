@@ -10,9 +10,9 @@ import { metaApi } from './meta.api';
 import { config } from '../../config';
 import {
   encrypt,
-  safeDecrypt,
-  encryptIfNeeded,
+  safeDecryptStrict,
   maskToken,
+  isMetaToken,
 } from '../../utils/encryption';
 import { v4 as uuidv4 } from 'uuid';
 import { ConnectionProgress } from './meta.types';
@@ -28,12 +28,7 @@ class MetaService {
    * Check if a string looks like a Meta access token
    */
   private looksLikeAccessToken(value: string): boolean {
-    if (!value || typeof value !== 'string') return false;
-    return (
-      value.startsWith('EAA') ||
-      value.startsWith('EAAG') ||
-      value.startsWith('EAAI')
-    );
+    return isMetaToken(value);
   }
 
   /**
@@ -81,7 +76,6 @@ class MetaService {
     console.log('   App ID:', config.meta.appId);
     console.log('   Config ID:', config.meta.configId);
     console.log('   Redirect URI:', config.meta.redirectUri);
-    console.log('   State:', state);
 
     return url;
   }
@@ -125,7 +119,6 @@ class MetaService {
 
   /**
    * Complete Meta connection flow
-   * Handles both authorization code and direct access token
    */
   async completeConnection(
     codeOrToken: string,
@@ -134,7 +127,7 @@ class MetaService {
     onProgress?: (progress: ConnectionProgress) => void
   ): Promise<{ success: boolean; account?: any; error?: string }> {
     try {
-      console.log('🔄 Starting Meta connection flow...');
+      console.log('\n🔄 ========== META CONNECTION START ==========');
       console.log('   Organization ID:', organizationId);
       console.log('   User ID:', userId);
       console.log('   Input type:', this.looksLikeAccessToken(codeOrToken) ? 'Access Token' : 'Auth Code');
@@ -150,7 +143,6 @@ class MetaService {
 
       let accessToken: string;
 
-      // Check if we received a token directly (Embedded Signup sometimes does this)
       if (this.looksLikeAccessToken(codeOrToken)) {
         console.log('✅ Received access token directly:', maskToken(codeOrToken));
         accessToken = codeOrToken;
@@ -166,7 +158,7 @@ class MetaService {
         }
       }
 
-      // Try to get long-lived token (60 days validity)
+      // Try to get long-lived token
       try {
         console.log('🔄 Attempting to get long-lived token...');
         const longLivedTokenResponse = await metaApi.getLongLivedToken(accessToken);
@@ -176,6 +168,13 @@ class MetaService {
       } catch (error) {
         console.log('⚠️ Could not get long-lived token, using short-lived token');
       }
+
+      // VERIFY: Token must start with EAA
+      if (!this.looksLikeAccessToken(accessToken)) {
+        throw new Error('Invalid access token format received from Meta');
+      }
+
+      console.log('✅ Final token to save:', maskToken(accessToken));
 
       onProgress?.({
         step: 'TOKEN_EXCHANGE',
@@ -192,7 +191,6 @@ class MetaService {
         message: 'Fetching WhatsApp Business Accounts...',
       });
 
-      // Validate token
       const debugInfo = await metaApi.debugToken(accessToken);
 
       if (!debugInfo.data.is_valid) {
@@ -308,7 +306,6 @@ class MetaService {
         console.log('✅ Webhook subscription:', webhookResult ? 'Success' : 'Already subscribed');
       } catch (webhookError: any) {
         console.warn('⚠️ Webhook subscription failed:', webhookError.message);
-        // Continue anyway - webhooks can be set up later
       }
 
       onProgress?.({
@@ -338,6 +335,24 @@ class MetaService {
 
       let savedAccount;
 
+      // ✅ ENCRYPT TOKEN BEFORE SAVING
+      console.log('🔐 Encrypting token before saving...');
+      console.log('   Plain token starts with:', accessToken.substring(0, 10));
+
+      const encryptedToken = encrypt(accessToken);
+      console.log('   Encrypted token length:', encryptedToken.length);
+      console.log('   Encrypted token starts with:', encryptedToken.substring(0, 20));
+
+      // ✅ VERIFY ENCRYPTION WORKED
+      const verifyDecrypt = safeDecryptStrict(encryptedToken);
+      if (verifyDecrypt !== accessToken) {
+        console.error('❌ Encryption verification FAILED!');
+        console.error('   Original:', maskToken(accessToken));
+        console.error('   After decrypt:', verifyDecrypt ? maskToken(verifyDecrypt) : 'NULL');
+        throw new Error('Token encryption verification failed');
+      }
+      console.log('✅ Encryption verified successfully');
+
       if (existingAccount) {
         // Account exists - check ownership
         if (existingAccount.organizationId !== organizationId) {
@@ -348,17 +363,12 @@ class MetaService {
 
         // Update existing account
         console.log('🔄 Updating existing account:', existingAccount.id);
-        console.log('🔐 Encrypting token before saving...');
-
-        // ✅ ENCRYPT TOKEN BEFORE SAVING
-        const encryptedToken = encrypt(accessToken);
-        console.log('✅ Token encrypted:', maskToken(encryptedToken));
 
         savedAccount = await prisma.whatsAppAccount.update({
           where: { id: existingAccount.id },
           data: {
-            accessToken: encryptedToken,  // ✅ Save encrypted token
-            tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), // 60 days
+            accessToken: encryptedToken,
+            tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
             displayName: primaryPhone.verifiedName || primaryPhone.displayPhoneNumber,
             qualityRating: primaryPhone.qualityRating,
             status: WhatsAppAccountStatus.CONNECTED,
@@ -375,24 +385,13 @@ class MetaService {
       } else {
         // Create new account
         console.log('🔄 Creating new account...');
-        console.log('🔐 Encrypting token before saving...');
 
-        // Generate webhook verify token
         const webhookVerifyToken = uuidv4();
-
-        // Check if this is the first account (make it default)
         const accountCount = await prisma.whatsAppAccount.count({
           where: { organizationId },
         });
-
-        // Clean phone number (digits only)
         const cleanPhoneNumber = primaryPhone.displayPhoneNumber.replace(/\D/g, '');
-
-        // ✅ ENCRYPT TOKEN BEFORE SAVING
-        const encryptedToken = encrypt(accessToken);
         const encryptedWebhookSecret = encrypt(webhookVerifyToken);
-
-        console.log('✅ Token encrypted:', maskToken(encryptedToken));
 
         savedAccount = await prisma.whatsAppAccount.create({
           data: {
@@ -402,11 +401,11 @@ class MetaService {
             phoneNumber: cleanPhoneNumber,
             displayName: primaryPhone.verifiedName || primaryPhone.displayPhoneNumber,
             qualityRating: primaryPhone.qualityRating,
-            accessToken: encryptedToken,  // ✅ Save encrypted token
-            tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), // 60 days
-            webhookSecret: encryptedWebhookSecret,  // ✅ Save encrypted webhook secret
+            accessToken: encryptedToken,
+            tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+            webhookSecret: encryptedWebhookSecret,
             status: WhatsAppAccountStatus.CONNECTED,
-            isDefault: accountCount === 0, // First account is default
+            isDefault: accountCount === 0,
           },
         });
 
@@ -419,10 +418,12 @@ class MetaService {
         });
       }
 
-      // Sync templates in background (don't await)
+      // Sync templates in background
       this.syncTemplatesBackground(savedAccount.id, wabaId, accessToken).catch((err) => {
         console.error('Background template sync failed:', err);
       });
+
+      console.log('🔄 ========== META CONNECTION END ==========\n');
 
       return {
         success: true,
@@ -502,24 +503,34 @@ class MetaService {
       return null;
     }
 
-    console.log(`🔐 Decrypting token for account ${accountId}...`);
+    console.log(`\n🔐 ========== TOKEN RETRIEVAL ==========`);
+    console.log(`   Account ID: ${accountId}`);
+    console.log(`   Stored token length: ${account.accessToken.length}`);
+    console.log(`   Stored token starts with: ${account.accessToken.substring(0, 20)}...`);
 
-    // ✅ DECRYPT TOKEN
-    const decryptedToken = safeDecrypt(account.accessToken);
+    // ✅ STRICT decrypt: only returns valid Meta tokens
+    const decryptedToken = safeDecryptStrict(account.accessToken);
 
     if (!decryptedToken) {
       console.error(`❌ Failed to decrypt token for account: ${accountId}`);
+      console.error(`   This usually means:`);
+      console.error(`   1. Token was stored incorrectly (not encrypted)`);
+      console.error(`   2. Encryption key changed`);
+      console.error(`   3. Token is corrupted`);
+      console.error(`   Solution: Reconnect the WhatsApp account`);
       return null;
     }
 
-    // ✅ Verify it's a valid Meta token
+    // Double-check it's a valid Meta token
     if (!this.looksLikeAccessToken(decryptedToken)) {
-      console.error(`❌ Decrypted value doesn't look like a valid Meta token`);
+      console.error(`❌ Decrypted value is not a valid Meta token`);
+      console.error(`   Expected: EAA...`);
       console.error(`   Got: ${maskToken(decryptedToken)}`);
       return null;
     }
 
     console.log(`✅ Token decrypted successfully: ${maskToken(decryptedToken)}`);
+    console.log(`🔐 ========== TOKEN RETRIEVAL END ==========\n`);
 
     return {
       account,
@@ -528,24 +539,28 @@ class MetaService {
   }
 
   /**
-   * Update account access token - ✅ FIXED
+   * Update account access token
    */
   async updateAccountToken(accountId: string, newToken: string) {
     console.log(`🔐 Encrypting new token for account ${accountId}...`);
 
-    // ✅ ENCRYPT TOKEN BEFORE SAVING
+    // Verify it's a valid Meta token before encrypting
+    if (!this.looksLikeAccessToken(newToken)) {
+      throw new Error('Invalid token format: Must start with EAA');
+    }
+
     const encryptedToken = encrypt(newToken);
 
     await prisma.whatsAppAccount.update({
       where: { id: accountId },
       data: {
         accessToken: encryptedToken,
-        tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), // 60 days
+        tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
         status: WhatsAppAccountStatus.CONNECTED,
       },
     });
 
-    console.log(`✅ Token updated for account ${accountId}: ${maskToken(newToken)}`);
+    console.log(`✅ Token updated for account ${accountId}`);
   }
 
   /**
@@ -563,7 +578,6 @@ class MetaService {
       throw new Error('WhatsApp account not found');
     }
 
-    // Update status to DISCONNECTED and clear sensitive data
     await prisma.whatsAppAccount.update({
       where: { id: accountId },
       data: {
@@ -602,12 +616,11 @@ class MetaService {
    * Set account as default
    */
   async setDefaultAccount(accountId: string, organizationId: string) {
-    // Verify account exists and belongs to organization
     const account = await prisma.whatsAppAccount.findFirst({
       where: {
         id: accountId,
         organizationId,
-        status: WhatsAppAccountStatus.CONNECTED, // Only connected accounts can be default
+        status: WhatsAppAccountStatus.CONNECTED,
       },
     });
 
@@ -615,13 +628,11 @@ class MetaService {
       throw new Error('WhatsApp account not found or not connected');
     }
 
-    // Remove default from all accounts
     await prisma.whatsAppAccount.updateMany({
       where: { organizationId },
       data: { isDefault: false },
     });
 
-    // Set new default
     await prisma.whatsAppAccount.update({
       where: { id: accountId },
       data: { isDefault: true },
@@ -633,7 +644,7 @@ class MetaService {
   }
 
   // ============================================
-  // HEALTH & STATUS - ✅ FIXED
+  // HEALTH & STATUS
   // ============================================
 
   /**
@@ -643,7 +654,7 @@ class MetaService {
     const result = await this.getAccountWithToken(accountId);
 
     if (!result) {
-      throw new Error('Account not found or token unavailable');
+      throw new Error('Account not found or token unavailable. Please reconnect.');
     }
 
     const { account, accessToken } = result;
@@ -653,7 +664,6 @@ class MetaService {
     }
 
     try {
-      // Validate token
       const debugInfo = await metaApi.debugToken(accessToken);
 
       if (!debugInfo.data.is_valid) {
@@ -673,16 +683,13 @@ class MetaService {
         };
       }
 
-      // Get phone number health
       const phoneNumbers = await metaApi.getPhoneNumbers(account.wabaId, accessToken);
       const phone = phoneNumbers.find((p) => p.id === account.phoneNumberId);
 
       if (!phone) {
         await prisma.whatsAppAccount.update({
           where: { id: accountId },
-          data: {
-            status: WhatsAppAccountStatus.DISCONNECTED,
-          },
+          data: { status: WhatsAppAccountStatus.DISCONNECTED },
         });
 
         return {
@@ -692,7 +699,6 @@ class MetaService {
         };
       }
 
-      // Update account with latest info
       await prisma.whatsAppAccount.update({
         where: { id: accountId },
         data: {
@@ -732,12 +738,9 @@ class MetaService {
   }
 
   // ============================================
-  // TEMPLATE MANAGEMENT - ✅ FIXED
+  // TEMPLATE MANAGEMENT
   // ============================================
 
-  /**
-   * Sync templates from Meta
-   */
   async syncTemplates(accountId: string, organizationId: string) {
     const result = await this.getAccountWithToken(accountId);
 
@@ -762,7 +765,6 @@ class MetaService {
       try {
         const mappedStatus = this.mapTemplateStatus(template.status);
 
-        // Skip DRAFT templates
         if (mappedStatus === 'DRAFT') {
           skippedCount++;
           continue;
@@ -817,9 +819,6 @@ class MetaService {
     };
   }
 
-  /**
-   * Background template sync (fire and forget)
-   */
   private async syncTemplatesBackground(
     accountId: string,
     wabaId: string,
@@ -830,7 +829,6 @@ class MetaService {
 
       const templates = await metaApi.getTemplates(wabaId, accessToken);
 
-      // Get organization ID from account
       const account = await prisma.whatsAppAccount.findUnique({
         where: { id: accountId },
         select: { organizationId: true },
@@ -878,7 +876,7 @@ class MetaService {
 
           syncedCount++;
         } catch (err) {
-          // Silently skip failed templates in background sync
+          // Silently skip failed templates
         }
       }
 
@@ -889,7 +887,7 @@ class MetaService {
   }
 
   // ============================================
-  // TEMPLATE PARSING HELPERS
+  // TEMPLATE HELPERS
   // ============================================
 
   private mapCategory(category: string): TemplateCategory {
@@ -956,6 +954,5 @@ class MetaService {
   }
 }
 
-// Export singleton instance
 export const metaService = new MetaService();
 export default metaService;
