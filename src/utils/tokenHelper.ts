@@ -1,100 +1,104 @@
 // src/utils/tokenHelper.ts
 
-import { encrypt, decrypt, safeDecrypt, encryptIfNeeded, isEncrypted, maskToken } from './encryption';
-import { PrismaClient, WhatsAppAccount, MetaConnection } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { WhatsAppAccount } from '@prisma/client';
+import { encrypt, decrypt, encryptIfNeeded, isEncrypted, isMetaToken, maskToken } from './encryption';
 
 /**
- * Safely get decrypted token from WhatsApp Account
+ * Prepare token for storage (encrypt if needed)
  */
-export async function getDecryptedToken(accountId: string): Promise<string | null> {
-    const account = await prisma.whatsAppAccount.findUnique({
-        where: { id: accountId },
-        select: { accessToken: true }
-    });
-
-    if (!account?.accessToken) return null;
-
-    return safeDecrypt(account.accessToken);
-}
-
-/**
- * Update token with encryption
- */
-export async function updateEncryptedToken(
-    accountId: string,
-    newToken: string
-): Promise<void> {
-    const encryptedToken = encrypt(newToken);
-
-    await prisma.whatsAppAccount.update({
-        where: { id: accountId },
-        data: {
-            accessToken: encryptedToken,
-            tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000) // 60 days
-        }
-    });
-}
-
-/**
- * Log token info safely
- */
-export function logTokenSafely(token: string | null, context: string): void {
+export function prepareTokenForStorage(token: string): string {
     if (!token) {
-        console.log(`[${context}] Token: EMPTY`);
-        return;
+        throw new Error('Token is required');
     }
 
-    const masked = maskToken(token);
-    const encrypted = isEncrypted(token);
+    // Check if it's a valid Meta token
+    if (!isMetaToken(token)) {
+        throw new Error('Invalid Meta token format');
+    }
 
-    console.log(`[${context}] Token: ${masked} (encrypted: ${encrypted})`);
+    // Encrypt if not already encrypted
+    return encryptIfNeeded(token);
 }
 
 /**
- * Get all accounts with plain text tokens (for migration)
+ * Get decrypted token from account
  */
-export async function getAccountsWithPlainTokens() {
-    const accounts = await prisma.whatsAppAccount.findMany({
-        where: {
-            accessToken: { not: null }
-        },
-        select: {
-            id: true,
-            phoneNumber: true,
-            accessToken: true,
-            webhookSecret: true
-        }
-    });
+export function getDecryptedToken(account: WhatsAppAccount): string | null {
+    if (!account.accessToken) {
+        return null;
+    }
 
-    return accounts.filter(account =>
-        (account.accessToken && !isEncrypted(account.accessToken)) ||
-        (account.webhookSecret && !isEncrypted(account.webhookSecret))
-    );
+    try {
+        // If not encrypted (legacy), return as is
+        if (!isEncrypted(account.accessToken)) {
+            // Check if it's a valid token
+            if (isMetaToken(account.accessToken)) {
+                return account.accessToken;
+            }
+            return null;
+        }
+
+        // Decrypt the token
+        const decrypted = decrypt(account.accessToken);
+
+        // Validate it's a proper Meta token
+        if (!isMetaToken(decrypted)) {
+            console.error('Decrypted token is not a valid Meta token');
+            return null;
+        }
+
+        return decrypted;
+    } catch (error: any) {
+        console.error('Failed to decrypt token:', error.message);
+        return null;
+    }
 }
 
 /**
- * Get all Meta connections with plain text tokens
+ * Validate and prepare token
  */
-export async function getMetaConnectionsWithPlainTokens() {
-    const connections = await prisma.metaConnection.findMany({
-        select: {
-            id: true,
-            wabaId: true,
-            accessToken: true
+export function validateAndPrepareToken(token: string): {
+    valid: boolean;
+    encrypted?: string;
+    error?: string;
+} {
+    try {
+        if (!token) {
+            return { valid: false, error: 'Token is empty' };
         }
-    });
 
-    return connections.filter(conn =>
-        conn.accessToken && !isEncrypted(conn.accessToken)
-    );
+        // If already encrypted, decrypt to validate
+        let plainToken = token;
+        if (isEncrypted(token)) {
+            const decrypted = decrypt(token);
+            if (!decrypted) {
+                return { valid: false, error: 'Failed to decrypt token' };
+            }
+            plainToken = decrypted;
+        }
+
+        // Validate token format
+        if (!isMetaToken(plainToken)) {
+            return { valid: false, error: 'Invalid Meta token format' };
+        }
+
+        // Encrypt for storage
+        const encrypted = encryptIfNeeded(plainToken);
+
+        return {
+            valid: true,
+            encrypted,
+        };
+    } catch (error: any) {
+        return {
+            valid: false,
+            error: error.message || 'Token validation failed',
+        };
+    }
 }
 
 export default {
+    prepareTokenForStorage,
     getDecryptedToken,
-    updateEncryptedToken,
-    logTokenSafely,
-    getAccountsWithPlainTokens,
-    getMetaConnectionsWithPlainTokens
+    validateAndPrepareToken,
 };

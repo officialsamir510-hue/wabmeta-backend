@@ -1,135 +1,125 @@
 // src/scripts/encryptTokens.ts
 
-import { PrismaClient } from '@prisma/client';
-import { encrypt, isEncrypted, validateEncryptionKey } from '../utils/encryption';
+import { PrismaClient, WhatsAppAccountStatus } from '@prisma/client';
+import {
+    encrypt,
+    isEncrypted,
+    validateEncryptionKey,
+    isMetaToken,
+    maskToken
+} from '../utils/encryption';
 
 const prisma = new PrismaClient();
 
-async function migrateTokens() {
-    console.log('🔐 Starting token encryption migration...\n');
+async function encryptTokens() {
+    console.log('🔐 Starting token encryption process...\n');
 
-    // Validate encryption key first
+    // Validate encryption key
     if (!validateEncryptionKey()) {
-        console.error('❌ Invalid encryption key! Aborting migration.');
+        console.error('❌ Invalid encryption key. Please set ENCRYPTION_KEY in .env');
         process.exit(1);
     }
 
     try {
-        // Migrate WhatsApp Accounts
-        console.log('📱 Migrating WhatsApp Account tokens...');
+        // Get all WhatsApp accounts with tokens
         const accounts = await prisma.whatsAppAccount.findMany({
-            where: { accessToken: { not: null } }
+            where: {
+                accessToken: { not: null },
+            },
+            select: {
+                id: true,
+                phoneNumber: true,
+                organizationId: true,
+                accessToken: true,
+                status: true,
+            },
         });
 
-        let migratedAccounts = 0;
+        console.log(`Found ${accounts.length} accounts with tokens\n`);
+
+        let encryptedCount = 0;
+        let alreadyEncryptedCount = 0;
+        let invalidCount = 0;
+        let errorCount = 0;
+
         for (const account of accounts) {
-            const updates: any = {};
+            try {
+                const token = account.accessToken!;
 
-            if (account.accessToken && !isEncrypted(account.accessToken)) {
-                updates.accessToken = encrypt(account.accessToken);
-                console.log(`  Encrypting token for account: ${account.phoneNumber}`);
-            }
+                // Check if already encrypted
+                if (isEncrypted(token)) {
+                    console.log(`✅ Account ${account.id}: Already encrypted`);
+                    alreadyEncryptedCount++;
+                    continue;
+                }
 
-            if (account.webhookSecret && !isEncrypted(account.webhookSecret)) {
-                updates.webhookSecret = encrypt(account.webhookSecret);
-            }
+                // Check if it's a valid Meta token
+                if (!isMetaToken(token)) {
+                    console.log(`❌ Account ${account.id}: Invalid token format - marking as disconnected`);
 
-            if (Object.keys(updates).length > 0) {
+                    await prisma.whatsAppAccount.update({
+                        where: { id: account.id },
+                        data: {
+                            status: WhatsAppAccountStatus.DISCONNECTED,
+                            accessToken: null,
+                            tokenExpiresAt: null,
+                        },
+                    });
+
+                    invalidCount++;
+                    continue;
+                }
+
+                // Encrypt the token
+                console.log(`🔄 Account ${account.id}: Encrypting token...`);
+                console.log(`   Original: ${maskToken(token)}`);
+
+                const encryptedToken = encrypt(token);
+                console.log(`   Encrypted: ${encryptedToken.substring(0, 50)}...`);
+
+                // Update in database
                 await prisma.whatsAppAccount.update({
                     where: { id: account.id },
-                    data: updates
+                    data: {
+                        accessToken: encryptedToken,
+                    },
                 });
-                migratedAccounts++;
+
+                console.log(`✅ Account ${account.id}: Token encrypted successfully\n`);
+                encryptedCount++;
+
+            } catch (error: any) {
+                console.error(`❌ Account ${account.id}: Error - ${error.message}\n`);
+                errorCount++;
             }
         }
 
-        console.log(`✅ Migrated ${migratedAccounts}/${accounts.length} WhatsApp accounts\n`);
+        console.log('\n📊 Encryption Summary:');
+        console.log(`   ✅ Encrypted: ${encryptedCount}`);
+        console.log(`   ✅ Already encrypted: ${alreadyEncryptedCount}`);
+        console.log(`   ❌ Invalid tokens: ${invalidCount}`);
+        console.log(`   ❌ Errors: ${errorCount}`);
+        console.log(`   📊 Total: ${accounts.length}`);
 
-        // Migrate Meta Connections
-        console.log('🔗 Migrating Meta Connection tokens...');
-        const connections = await prisma.metaConnection.findMany();
-
-        let migratedConnections = 0;
-        for (const conn of connections) {
-            if (conn.accessToken && !isEncrypted(conn.accessToken)) {
-                await prisma.metaConnection.update({
-                    where: { id: conn.id },
-                    data: { accessToken: encrypt(conn.accessToken) }
-                });
-                console.log(`  Encrypted token for WABA: ${conn.wabaId}`);
-                migratedConnections++;
-            }
-        }
-
-        console.log(`✅ Migrated ${migratedConnections}/${connections.length} Meta connections\n`);
-
-        // Migrate API Keys
-        console.log('🔑 Migrating API Key secrets...');
-        const apiKeys = await prisma.apiKey.findMany();
-
-        let migratedApiKeys = 0;
-        for (const key of apiKeys) {
-            if (key.secret && !isEncrypted(key.secret)) {
-                await prisma.apiKey.update({
-                    where: { id: key.id },
-                    data: { secret: encrypt(key.secret) }
-                });
-                migratedApiKeys++;
-            }
-        }
-
-        console.log(`✅ Migrated ${migratedApiKeys}/${apiKeys.length} API keys\n`);
-
-        console.log('🎉 Token encryption migration completed successfully!');
-
-        // Verification
-        console.log('\n📊 Verification:');
-        const unencryptedAccounts = await prisma.whatsAppAccount.findMany({
-            where: { accessToken: { not: null } }
-        });
-
-        let unencryptedCount = 0;
-        for (const acc of unencryptedAccounts) {
-            if (acc.accessToken && !isEncrypted(acc.accessToken)) {
-                unencryptedCount++;
-                console.warn(`⚠️ Unencrypted token found: ${acc.phoneNumber}`);
-            }
-        }
-
-        if (unencryptedCount === 0) {
-            console.log('✅ All tokens are encrypted!');
-        } else {
-            console.warn(`⚠️ ${unencryptedCount} tokens remain unencrypted`);
-        }
-
-    } catch (error) {
-        console.error('❌ Migration failed:', error);
+    } catch (error: any) {
+        console.error('Fatal error:', error);
         process.exit(1);
     } finally {
         await prisma.$disconnect();
     }
 }
 
-// Check for dry-run mode
-const isDryRun = process.argv.includes('--dry-run');
-
-if (isDryRun) {
-    console.log('🔍 DRY RUN MODE - No changes will be made\n');
-
-    prisma.whatsAppAccount.findMany({
-        where: { accessToken: { not: null } }
-    }).then(accounts => {
-        let needsMigration = 0;
-        accounts.forEach(acc => {
-            if (acc.accessToken && !isEncrypted(acc.accessToken)) {
-                console.log(`Would encrypt: ${acc.phoneNumber}`);
-                needsMigration++;
-            }
+// Run if called directly
+if (require.main === module) {
+    encryptTokens()
+        .then(() => {
+            console.log('\n✅ Token encryption completed');
+            process.exit(0);
+        })
+        .catch((error) => {
+            console.error('❌ Token encryption failed:', error);
+            process.exit(1);
         });
-        console.log(`\n📊 ${needsMigration} accounts need encryption`);
-        process.exit(0);
-    });
-} else {
-    // Run migration
-    migrateTokens();
 }
+
+export default encryptTokens;
