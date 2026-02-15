@@ -7,20 +7,20 @@ interface AuthRequest extends Request {
     };
 }
 export declare class CampaignsController {
-    create(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    create(req: AuthRequest, res: Response, next: NextFunction): Promise<any>;
     getList(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
-    getById(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
-    update(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
-    delete(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
-    start(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
-    pause(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
-    resume(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
-    cancel(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    getById(req: AuthRequest, res: Response, next: NextFunction): Promise<any>;
+    update(req: AuthRequest, res: Response, next: NextFunction): Promise<any>;
+    delete(req: AuthRequest, res: Response, next: NextFunction): Promise<any>;
+    start(req: AuthRequest, res: Response, next: NextFunction): Promise<any>;
+    pause(req: AuthRequest, res: Response, next: NextFunction): Promise<any>;
+    resume(req: AuthRequest, res: Response, next: NextFunction): Promise<any>;
+    cancel(req: AuthRequest, res: Response, next: NextFunction): Promise<any>;
     getContacts(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
-    retry(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
-    duplicate(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
-    getStats(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
-    getAnalytics(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    retry(req: AuthRequest, res: Response, next: NextFunction): Promise<any>;
+    duplicate(req: AuthRequest, res: Response, next: NextFunction): Promise<any>;
+    getStats(req: AuthRequest, res: Response, next: NextFunction): Promise<any>;
+    getAnalytics(req: AuthRequest, res: Response, next: NextFunction): Promise<any>;
 }
 export declare const campaignsController: CampaignsController;
 export {};

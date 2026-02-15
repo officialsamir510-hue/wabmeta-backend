@@ -1,49 +1,35 @@
-import { Template, TemplateStatus, TemplateCategory } from '@prisma/client';
-export declare const TEMPLATE_HEADER_TYPES: readonly ["NONE", "TEXT", "IMAGE", "VIDEO", "DOCUMENT"];
-export type TemplateHeaderType = typeof TEMPLATE_HEADER_TYPES[number];
-export declare const TEMPLATE_BUTTON_TYPES: readonly ["NONE", "CALL_TO_ACTION", "QUICK_REPLY"];
-export type TemplateButtonType = typeof TEMPLATE_BUTTON_TYPES[number];
-export declare const TEMPLATE_CTA_TYPES: readonly ["URL", "PHONE_NUMBER"];
-export type TemplateCTAType = typeof TEMPLATE_CTA_TYPES[number];
-export interface QuickReplyButton {
-    type: 'QUICK_REPLY';
+import { TemplateStatus, TemplateCategory } from '@prisma/client';
+export interface TemplateButton {
+    type: 'URL' | 'PHONE_NUMBER' | 'QUICK_REPLY';
     text: string;
+    url?: string;
+    phoneNumber?: string;
 }
-export interface URLButton {
-    type: 'URL';
-    text: string;
-    url: string;
-}
-export interface PhoneButton {
-    type: 'PHONE_NUMBER';
-    text: string;
-    phoneNumber: string;
-}
-export type TemplateButton = QuickReplyButton | URLButton | PhoneButton;
 export interface TemplateVariable {
     index: number;
     type: 'text' | 'currency' | 'date_time' | 'image' | 'document' | 'video';
-    example?: string;
+    defaultValue?: string;
 }
 export interface CreateTemplateInput {
     name: string;
     language: string;
     category: TemplateCategory;
-    headerType?: TemplateHeaderType;
-    headerContent?: string;
+    headerType?: string | null;
+    headerContent?: string | null;
     bodyText: string;
-    footerText?: string;
+    footerText?: string | null;
     buttons?: TemplateButton[];
     variables?: TemplateVariable[];
+    whatsappAccountId?: string;
 }
 export interface UpdateTemplateInput {
     name?: string;
     language?: string;
     category?: TemplateCategory;
-    headerType?: TemplateHeaderType;
-    headerContent?: string;
+    headerType?: string | null;
+    headerContent?: string | null;
     bodyText?: string;
-    footerText?: string;
+    footerText?: string | null;
     buttons?: TemplateButton[];
     variables?: TemplateVariable[];
 }
@@ -54,15 +40,9 @@ export interface TemplatesQueryInput {
     status?: TemplateStatus;
     category?: TemplateCategory;
     language?: string;
-    sortBy?: 'createdAt' | 'name' | 'status';
+    sortBy?: 'createdAt' | 'updatedAt' | 'name' | 'status';
     sortOrder?: 'asc' | 'desc';
-}
-export interface SubmitTemplateInput {
-    templateId: string;
-    whatsappAccountId: string;
-}
-export interface SyncTemplatesInput {
-    whatsappAccountId: string;
+    whatsappAccountId?: string;
 }
 export interface TemplateResponse {
     id: string;
@@ -80,13 +60,13 @@ export interface TemplateResponse {
     rejectionReason: string | null;
     createdAt: Date;
     updatedAt: Date;
-    wabaId?: string | null;
-    whatsappAccountId?: string | null;
     whatsappAccount?: {
         id: string;
-        phoneNumber: string | null;
-        displayName: string | null;
+        phoneNumber: string;
+        displayName: string;
     };
+    wabaId: string | null;
+    whatsappAccountId: string | null;
 }
 export interface TemplatesListResponse {
     templates: TemplateResponse[];
@@ -117,27 +97,4 @@ export interface TemplatePreview {
         text: string;
     }[];
 }
-export interface MetaTemplateComponent {
-    type: 'HEADER' | 'BODY' | 'FOOTER' | 'BUTTONS';
-    format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT';
-    text?: string;
-    buttons?: {
-        type: 'URL' | 'PHONE_NUMBER' | 'QUICK_REPLY';
-        text: string;
-        url?: string;
-        phone_number?: string;
-    }[];
-    example?: {
-        header_text?: string[];
-        body_text?: string[][];
-        header_handle?: string[];
-    };
-}
-export interface MetaTemplatePayload {
-    name: string;
-    language: string;
-    category: string;
-    components: MetaTemplateComponent[];
-}
-export type SafeTemplate = Omit<Template, 'organizationId'>;
 //# sourceMappingURL=templates.types.d.ts.map

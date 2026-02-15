@@ -6,8 +6,9 @@ import { successResponse, errorResponse } from '../../utils/response';
 import { AppError } from '../../middleware/errorHandler';
 import { TemplateStatus, TemplateCategory } from '@prisma/client';
 import prisma from '../../config/database';
+import { metaService } from '../meta/meta.service';
 
-// Extended Request interface with user context
+// Extended Request interface
 interface AuthRequest extends Request {
   user?: {
     id: string;
@@ -17,11 +18,13 @@ interface AuthRequest extends Request {
 }
 
 class TemplatesController {
+
   // ==========================================
   // HELPER: Get default WhatsApp account
   // ==========================================
   private async getDefaultAccountId(organizationId: string): Promise<string | undefined> {
-    const defaultAccount = await prisma.whatsAppAccount.findFirst({
+    // First try default account
+    let account = await prisma.whatsAppAccount.findFirst({
       where: {
         organizationId,
         status: 'CONNECTED',
@@ -29,7 +32,20 @@ class TemplatesController {
       },
       select: { id: true },
     });
-    return defaultAccount?.id;
+
+    // If no default, get any connected account
+    if (!account) {
+      account = await prisma.whatsAppAccount.findFirst({
+        where: {
+          organizationId,
+          status: 'CONNECTED',
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      });
+    }
+
+    return account?.id;
   }
 
   // ==========================================
@@ -44,11 +60,11 @@ class TemplatesController {
 
       const input = req.body;
 
-      // Validate template
-      const validation = templatesService.validateTemplate(input);
-      if (!validation.valid) {
-        throw new AppError(validation.errors.join(', '), 400);
-      }
+      console.log('📝 Creating template:', {
+        organizationId,
+        name: input.name,
+        whatsappAccountId: input.whatsappAccountId,
+      });
 
       // If no whatsappAccountId provided, use default
       if (!input.whatsappAccountId) {
@@ -57,10 +73,10 @@ class TemplatesController {
 
       const template = await templatesService.create(organizationId, input);
 
-      return successResponse(res, {
-        data: template,
+      return res.status(201).json({
+        success: true,
         message: 'Template created successfully',
-        statusCode: 201,
+        data: template,
       });
     } catch (error) {
       next(error);
@@ -77,7 +93,7 @@ class TemplatesController {
         throw new AppError('Organization context required', 400);
       }
 
-      // ✅ Parse query params safely
+      // Parse query params safely
       const page = req.query.page ? parseInt(req.query.page as string) : 1;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 20;
       const search = (req.query.search as string)?.trim() || undefined;
@@ -86,12 +102,7 @@ class TemplatesController {
       const language = (req.query.language as string)?.trim() || undefined;
       const sortBy = (req.query.sortBy as string) || 'createdAt';
       const sortOrder = (req.query.sortOrder as 'asc' | 'desc') || 'desc';
-      let whatsappAccountId = (req.query.whatsappAccountId as string)?.trim() || undefined;
-
-      // ✅ If no whatsappAccountId, use default account
-      if (!whatsappAccountId) {
-        whatsappAccountId = await this.getDefaultAccountId(organizationId);
-      }
+      const whatsappAccountId = (req.query.whatsappAccountId as string)?.trim() || undefined;
 
       console.log('📋 Fetching templates:', {
         organizationId,
@@ -99,8 +110,6 @@ class TemplatesController {
         limit,
         search,
         status,
-        category,
-        whatsappAccountId,
       });
 
       const result = await templatesService.getList(organizationId, {
@@ -143,9 +152,10 @@ class TemplatesController {
 
       const template = await templatesService.getById(organizationId, id);
 
-      return successResponse(res, {
-        data: template,
+      return res.json({
+        success: true,
         message: 'Template fetched successfully',
+        data: template,
       });
     } catch (error) {
       next(error);
@@ -170,9 +180,10 @@ class TemplatesController {
       const input = req.body;
       const template = await templatesService.update(organizationId, id, input);
 
-      return successResponse(res, {
-        data: template,
+      return res.json({
+        success: true,
         message: 'Template updated successfully',
+        data: template,
       });
     } catch (error) {
       next(error);
@@ -196,9 +207,9 @@ class TemplatesController {
 
       const result = await templatesService.delete(organizationId, id);
 
-      return successResponse(res, {
-        data: result,
-        message: 'Template deleted successfully',
+      return res.json({
+        success: true,
+        message: result.message,
       });
     } catch (error) {
       next(error);
@@ -232,10 +243,10 @@ class TemplatesController {
         whatsappAccountId
       );
 
-      return successResponse(res, {
-        data: template,
+      return res.status(201).json({
+        success: true,
         message: 'Template duplicated successfully',
-        statusCode: 201,
+        data: template,
       });
     } catch (error) {
       next(error);
@@ -252,18 +263,14 @@ class TemplatesController {
         throw new AppError('Organization context required', 400);
       }
 
-      let whatsappAccountId = (req.query.whatsappAccountId as string)?.trim() || undefined;
-
-      // ✅ If no whatsappAccountId, use default account
-      if (!whatsappAccountId) {
-        whatsappAccountId = await this.getDefaultAccountId(organizationId);
-      }
+      const whatsappAccountId = (req.query.whatsappAccountId as string)?.trim() || undefined;
 
       const stats = await templatesService.getStats(organizationId, whatsappAccountId);
 
-      return successResponse(res, {
-        data: stats,
+      return res.json({
+        success: true,
         message: 'Stats fetched successfully',
+        data: stats,
       });
     } catch (error) {
       next(error);
@@ -290,9 +297,10 @@ class TemplatesController {
         buttons
       );
 
-      return successResponse(res, {
-        data: preview,
+      return res.json({
+        success: true,
         message: 'Preview generated successfully',
+        data: preview,
       });
     } catch (error) {
       next(error);
@@ -311,16 +319,17 @@ class TemplatesController {
 
       let whatsappAccountId = (req.query.whatsappAccountId as string)?.trim() || undefined;
 
-      // ✅ If no whatsappAccountId, use default account
+      // If no account specified, use default
       if (!whatsappAccountId) {
         whatsappAccountId = await this.getDefaultAccountId(organizationId);
       }
 
-      // ✅ If still no account, return empty array (not error)
+      // If still no account, return empty array
       if (!whatsappAccountId) {
-        return successResponse(res, {
-          data: [],
+        return res.json({
+          success: true,
           message: 'No WhatsApp account connected',
+          data: [],
         });
       }
 
@@ -329,9 +338,10 @@ class TemplatesController {
         whatsappAccountId
       );
 
-      return successResponse(res, {
-        data: templates,
+      return res.json({
+        success: true,
         message: 'Approved templates fetched successfully',
+        data: templates,
       });
     } catch (error) {
       next(error);
@@ -348,18 +358,14 @@ class TemplatesController {
         throw new AppError('Organization context required', 400);
       }
 
-      let whatsappAccountId = (req.query.whatsappAccountId as string)?.trim() || undefined;
-
-      // ✅ If no whatsappAccountId, use default account
-      if (!whatsappAccountId) {
-        whatsappAccountId = await this.getDefaultAccountId(organizationId);
-      }
+      const whatsappAccountId = (req.query.whatsappAccountId as string)?.trim() || undefined;
 
       const languages = await templatesService.getLanguages(organizationId, whatsappAccountId);
 
-      return successResponse(res, {
-        data: languages,
+      return res.json({
+        success: true,
         message: 'Languages fetched successfully',
+        data: languages,
       });
     } catch (error) {
       next(error);
@@ -381,11 +387,14 @@ class TemplatesController {
         throw new AppError('Template ID is required', 400);
       }
 
-      const result = await templatesService.submitToMeta(organizationId, id);
+      const { whatsappAccountId } = req.body;
 
-      return successResponse(res, {
-        data: result,
+      const result = await templatesService.submitToMeta(organizationId, id, whatsappAccountId);
+
+      return res.json({
+        success: true,
         message: result.message,
+        data: result,
       });
     } catch (error) {
       next(error);
@@ -404,30 +413,116 @@ class TemplatesController {
 
       let whatsappAccountId = req.body?.whatsappAccountId?.trim() || undefined;
 
-      // ✅ If no whatsappAccountId, use default account
+      // If no account specified, use default
       if (!whatsappAccountId) {
         whatsappAccountId = await this.getDefaultAccountId(organizationId);
       }
 
-      // ✅ If still no account, return error
+      // If still no account, return error
       if (!whatsappAccountId) {
-        return errorResponse(res, 'No WhatsApp account connected. Please connect a WhatsApp account first.', 400);
+        return res.status(400).json({
+          success: false,
+          message: 'No WhatsApp account connected. Please connect a WhatsApp account first.',
+        });
       }
 
       console.log('🔄 Syncing templates for account:', whatsappAccountId);
 
       const result = await templatesService.syncFromMeta(organizationId, whatsappAccountId);
 
-      return successResponse(res, {
-        data: result,
+      return res.json({
+        success: true,
         message: result.message,
+        data: result,
       });
     } catch (error) {
       next(error);
     }
   }
+
+  // ==========================================
+  // CHECK WHATSAPP CONNECTION
+  // ==========================================
+  async checkConnection(req: Request, res: Response, next: NextFunction) {
+    try {
+      const organizationId = (req as AuthRequest).user?.organizationId;
+      if (!organizationId) {
+        throw new AppError('Organization context required', 400);
+      }
+
+      // Check for any WhatsApp accounts
+      const accounts = await prisma.whatsAppAccount.findMany({
+        where: { organizationId },
+        select: {
+          id: true,
+          phoneNumber: true,
+          displayName: true,
+          status: true,
+          isDefault: true,
+          wabaId: true,
+          createdAt: true,
+          tokenExpiresAt: true,
+        },
+        orderBy: [
+          { isDefault: 'desc' },
+          { createdAt: 'desc' },
+        ],
+      });
+
+      if (accounts.length === 0) {
+        return res.json({
+          success: false,
+          message: 'No WhatsApp accounts found',
+          hasConnection: false,
+          accounts: [],
+          connectedCount: 0,
+          totalCount: 0,
+        });
+      }
+
+      // Check which accounts are truly connected
+      const accountsWithStatus = await Promise.all(
+        accounts.map(async (account) => {
+          let canDecrypt = false;
+          let isExpired = false;
+
+          try {
+            const result = await metaService.getAccountWithToken(account.id);
+            canDecrypt = !!result;
+          } catch (err) {
+            // Silent fail
+          }
+
+          if (account.tokenExpiresAt) {
+            isExpired = account.tokenExpiresAt < new Date();
+          }
+
+          return {
+            ...account,
+            canDecrypt,
+            isExpired,
+            isReady: account.status === 'CONNECTED' && canDecrypt && !isExpired,
+          };
+        })
+      );
+
+      const connectedAccounts = accountsWithStatus.filter(a => a.isReady);
+      const defaultAccount = accountsWithStatus.find(a => a.isDefault);
+
+      return res.json({
+        success: true,
+        hasConnection: connectedAccounts.length > 0,
+        defaultAccount: defaultAccount || connectedAccounts[0] || null,
+        accounts: accountsWithStatus,
+        connectedCount: connectedAccounts.length,
+        totalCount: accounts.length,
+      });
+    } catch (error: any) {
+      console.error('❌ Error checking connection:', error.message);
+      next(error);
+    }
+  }
 }
 
-// Export singleton instance
 export const templatesController = new TemplatesController();
 export default templatesController;

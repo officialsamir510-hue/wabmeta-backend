@@ -125,9 +125,9 @@ export declare const getUsersSchema: z.ZodObject<{
         status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
     }, {
         search?: string | undefined;
+        status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
         sortBy?: "email" | "firstName" | "lastLoginAt" | "createdAt" | undefined;
         sortOrder?: "desc" | "asc" | undefined;
     }>;
@@ -143,9 +143,9 @@ export declare const getUsersSchema: z.ZodObject<{
 }, {
     query: {
         search?: string | undefined;
+        status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
         sortBy?: "email" | "firstName" | "lastLoginAt" | "createdAt" | undefined;
         sortOrder?: "desc" | "asc" | undefined;
     };
@@ -256,9 +256,9 @@ export declare const getOrganizationsSchema: z.ZodObject<{
         planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
     }, {
         search?: string | undefined;
+        planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
         sortBy?: "name" | "createdAt" | "planType" | undefined;
         sortOrder?: "desc" | "asc" | undefined;
     }>;
@@ -274,9 +274,9 @@ export declare const getOrganizationsSchema: z.ZodObject<{
 }, {
     query: {
         search?: string | undefined;
+        planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
         sortBy?: "name" | "createdAt" | "planType" | undefined;
         sortOrder?: "desc" | "asc" | undefined;
     };
@@ -637,10 +637,10 @@ export declare const getActivityLogsSchema: z.ZodObject<{
         startDate?: string | undefined;
         endDate?: string | undefined;
     }, {
-        page?: string | undefined;
-        limit?: string | undefined;
         userId?: string | undefined;
         organizationId?: string | undefined;
+        page?: string | undefined;
+        limit?: string | undefined;
         action?: string | undefined;
         startDate?: string | undefined;
         endDate?: string | undefined;
@@ -657,10 +657,10 @@ export declare const getActivityLogsSchema: z.ZodObject<{
     };
 }, {
     query: {
-        page?: string | undefined;
-        limit?: string | undefined;
         userId?: string | undefined;
         organizationId?: string | undefined;
+        page?: string | undefined;
+        limit?: string | undefined;
         action?: string | undefined;
         startDate?: string | undefined;
         endDate?: string | undefined;

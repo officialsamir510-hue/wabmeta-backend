@@ -16,7 +16,6 @@ export declare class TemplatesService {
         message: string;
         synced: number;
     }>;
-    private extractVariablesFromComponents;
     getById(organizationId: string, templateId: string): Promise<TemplateResponse>;
     update(organizationId: string, templateId: string, input: UpdateTemplateInput): Promise<TemplateResponse>;
     delete(organizationId: string, templateId: string): Promise<{

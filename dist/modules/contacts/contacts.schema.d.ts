@@ -145,10 +145,10 @@ export declare const getContactsSchema: z.ZodObject<{
         groupId?: string | undefined;
     }, {
         search?: string | undefined;
-        page?: string | undefined;
-        limit?: string | undefined;
         status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         tags?: string | undefined;
+        page?: string | undefined;
+        limit?: string | undefined;
         groupId?: string | undefined;
         sortBy?: "firstName" | "lastName" | "createdAt" | "lastMessageAt" | undefined;
         sortOrder?: "desc" | "asc" | undefined;
@@ -167,10 +167,10 @@ export declare const getContactsSchema: z.ZodObject<{
 }, {
     query: {
         search?: string | undefined;
-        page?: string | undefined;
-        limit?: string | undefined;
         status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         tags?: string | undefined;
+        page?: string | undefined;
+        limit?: string | undefined;
         groupId?: string | undefined;
         sortBy?: "firstName" | "lastName" | "createdAt" | "lastMessageAt" | undefined;
         sortOrder?: "desc" | "asc" | undefined;
