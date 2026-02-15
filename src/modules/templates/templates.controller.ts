@@ -2,7 +2,6 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { templatesService } from './templates.service';
-import { successResponse, errorResponse } from '../../utils/response';
 import { AppError } from '../../middleware/errorHandler';
 import { TemplateStatus, TemplateCategory } from '@prisma/client';
 import prisma from '../../config/database';

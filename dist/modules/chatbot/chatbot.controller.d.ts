@@ -8,14 +8,14 @@ interface AuthRequest extends Request {
 }
 export declare class ChatbotController {
     getAll(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
-    getById(req: AuthRequest, res: Response, next: NextFunction): Promise<any>;
-    create(req: AuthRequest, res: Response, next: NextFunction): Promise<any>;
-    update(req: AuthRequest, res: Response, next: NextFunction): Promise<any>;
-    delete(req: AuthRequest, res: Response, next: NextFunction): Promise<any>;
-    activate(req: AuthRequest, res: Response, next: NextFunction): Promise<any>;
-    deactivate(req: AuthRequest, res: Response, next: NextFunction): Promise<any>;
-    duplicate(req: AuthRequest, res: Response, next: NextFunction): Promise<any>;
-    getStats(req: AuthRequest, res: Response, next: NextFunction): Promise<any>;
+    getById(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    create(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    update(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    delete(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    activate(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    deactivate(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    duplicate(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    getStats(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
 }
 export declare const chatbotController: ChatbotController;
 export {};

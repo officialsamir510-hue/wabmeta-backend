@@ -22,12 +22,12 @@ export declare const getConversationsSchema: z.ZodObject<{
         labels?: string | undefined;
     }, {
         search?: string | undefined;
+        page?: string | undefined;
+        limit?: string | undefined;
         isArchived?: string | undefined;
         isRead?: string | undefined;
         assignedTo?: string | undefined;
         labels?: string | undefined;
-        page?: string | undefined;
-        limit?: string | undefined;
         sortBy?: "createdAt" | "lastMessageAt" | "unreadCount" | undefined;
         sortOrder?: "desc" | "asc" | undefined;
     }>;
@@ -46,12 +46,12 @@ export declare const getConversationsSchema: z.ZodObject<{
 }, {
     query: {
         search?: string | undefined;
+        page?: string | undefined;
+        limit?: string | undefined;
         isArchived?: string | undefined;
         isRead?: string | undefined;
         assignedTo?: string | undefined;
         labels?: string | undefined;
-        page?: string | undefined;
-        limit?: string | undefined;
         sortBy?: "createdAt" | "lastMessageAt" | "unreadCount" | undefined;
         sortOrder?: "desc" | "asc" | undefined;
     };

@@ -445,12 +445,12 @@ export declare const getTemplatesQuerySchema: z.ZodObject<{
         sortOrder?: "desc" | "asc" | undefined;
     }, {
         search?: string | undefined;
+        page?: string | undefined;
+        limit?: string | undefined;
         status?: "PENDING" | "APPROVED" | "REJECTED" | undefined;
         language?: string | undefined;
         category?: "MARKETING" | "UTILITY" | "AUTHENTICATION" | undefined;
         whatsappAccountId?: string | undefined;
-        page?: string | undefined;
-        limit?: string | undefined;
         sortBy?: string | undefined;
         sortOrder?: "desc" | "asc" | undefined;
     }>>;
@@ -469,12 +469,12 @@ export declare const getTemplatesQuerySchema: z.ZodObject<{
 }, {
     query?: {
         search?: string | undefined;
+        page?: string | undefined;
+        limit?: string | undefined;
         status?: "PENDING" | "APPROVED" | "REJECTED" | undefined;
         language?: string | undefined;
         category?: "MARKETING" | "UTILITY" | "AUTHENTICATION" | undefined;
         whatsappAccountId?: string | undefined;
-        page?: string | undefined;
-        limit?: string | undefined;
         sortBy?: string | undefined;
         sortOrder?: "desc" | "asc" | undefined;
     } | undefined;

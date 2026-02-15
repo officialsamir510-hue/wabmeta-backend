@@ -309,9 +309,9 @@ export declare const getCampaignsSchema: z.ZodObject<{
         status?: "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
     }, {
         search?: string | undefined;
-        status?: "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
+        status?: "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
         sortBy?: "name" | "createdAt" | "scheduledAt" | "sentCount" | undefined;
         sortOrder?: "desc" | "asc" | undefined;
     }>;
@@ -327,9 +327,9 @@ export declare const getCampaignsSchema: z.ZodObject<{
 }, {
     query: {
         search?: string | undefined;
-        status?: "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
+        status?: "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
         sortBy?: "name" | "createdAt" | "scheduledAt" | "sentCount" | undefined;
         sortOrder?: "desc" | "asc" | undefined;
     };
@@ -391,9 +391,9 @@ export declare const getCampaignContactsSchema: z.ZodObject<{
         limit: number;
         status?: "PENDING" | "SENT" | "DELIVERED" | "READ" | "FAILED" | undefined;
     }, {
-        status?: "PENDING" | "SENT" | "DELIVERED" | "READ" | "FAILED" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
+        status?: "PENDING" | "SENT" | "DELIVERED" | "READ" | "FAILED" | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     query: {
@@ -406,9 +406,9 @@ export declare const getCampaignContactsSchema: z.ZodObject<{
     };
 }, {
     query: {
-        status?: "PENDING" | "SENT" | "DELIVERED" | "READ" | "FAILED" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
+        status?: "PENDING" | "SENT" | "DELIVERED" | "READ" | "FAILED" | undefined;
     };
     params: {
         id: string;
