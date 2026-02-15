@@ -13,6 +13,10 @@ import {
   duplicateTemplateSchema,
   submitTemplateSchema,
   previewTemplateSchema,
+  syncTemplatesSchema,
+  getStatsSchema,
+  getApprovedTemplatesSchema,
+  getLanguagesSchema,
 } from './templates.schema';
 
 const router = Router();
@@ -21,23 +25,14 @@ const router = Router();
 router.use(authenticate);
 
 // ============================================
-// TEMPLATE ROUTES
+// TEMPLATE LISTING ROUTES
 // ============================================
-
-/**
- * @route   POST /api/v1/templates
- * @desc    Create new template
- * @access  Private
- */
-router.post(
-  '/',
-  validate(createTemplateSchema),
-  templatesController.create.bind(templatesController)
-);
 
 /**
  * @route   GET /api/v1/templates
  * @desc    Get templates list with pagination
+ * @query   whatsappAccountId - Filter by specific WhatsApp account (optional)
+ * @query   page, limit, search, status, category, language, sortBy, sortOrder
  * @access  Private
  */
 router.get(
@@ -49,23 +44,54 @@ router.get(
 /**
  * @route   GET /api/v1/templates/stats
  * @desc    Get template statistics
+ * @query   whatsappAccountId - Filter by specific WhatsApp account (optional)
  * @access  Private
  */
-router.get('/stats', templatesController.getStats.bind(templatesController));
+router.get(
+  '/stats',
+  validate(getStatsSchema),
+  templatesController.getStats.bind(templatesController)
+);
 
 /**
  * @route   GET /api/v1/templates/approved
  * @desc    Get only approved templates (for campaigns)
+ * @query   whatsappAccountId - Filter by specific WhatsApp account (optional)
  * @access  Private
  */
-router.get('/approved', templatesController.getApproved.bind(templatesController));
+router.get(
+  '/approved',
+  validate(getApprovedTemplatesSchema),
+  templatesController.getApproved.bind(templatesController)
+);
 
 /**
  * @route   GET /api/v1/templates/languages
  * @desc    Get languages used in templates
+ * @query   whatsappAccountId - Filter by specific WhatsApp account (optional)
  * @access  Private
  */
-router.get('/languages', templatesController.getLanguages.bind(templatesController));
+router.get(
+  '/languages',
+  validate(getLanguagesSchema),
+  templatesController.getLanguages.bind(templatesController)
+);
+
+// ============================================
+// TEMPLATE ACTION ROUTES
+// ============================================
+
+/**
+ * @route   POST /api/v1/templates
+ * @desc    Create new template
+ * @body    whatsappAccountId - Link to specific WhatsApp account (optional, uses default)
+ * @access  Private
+ */
+router.post(
+  '/',
+  validate(createTemplateSchema),
+  templatesController.create.bind(templatesController)
+);
 
 /**
  * @route   POST /api/v1/templates/preview
@@ -81,9 +107,18 @@ router.post(
 /**
  * @route   POST /api/v1/templates/sync
  * @desc    Sync templates from Meta
+ * @body    whatsappAccountId - Sync from specific WhatsApp account (optional, uses default)
  * @access  Private
  */
-router.post('/sync', templatesController.sync.bind(templatesController));
+router.post(
+  '/sync',
+  validate(syncTemplatesSchema),
+  templatesController.sync.bind(templatesController)
+);
+
+// ============================================
+// SINGLE TEMPLATE ROUTES
+// ============================================
 
 /**
  * @route   GET /api/v1/templates/:id
@@ -121,6 +156,8 @@ router.delete(
 /**
  * @route   POST /api/v1/templates/:id/duplicate
  * @desc    Duplicate template
+ * @body    newName - Name for duplicated template (required)
+ * @body    whatsappAccountId - Target WhatsApp account for duplicate (optional)
  * @access  Private
  */
 router.post(

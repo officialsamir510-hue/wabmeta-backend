@@ -15,6 +15,7 @@ import {
   TemplateVariable,
 } from './templates.types';
 import { whatsappApi } from '../whatsapp/whatsapp.api';
+import { metaService } from '../meta/meta.service';
 
 // ============================================
 // HELPERS
@@ -36,6 +37,14 @@ const formatTemplate = (template: any): TemplateResponse => ({
   rejectionReason: template.rejectionReason,
   createdAt: template.createdAt,
   updatedAt: template.updatedAt,
+  // Add WhatsApp account info if included
+  whatsappAccount: (template as any).whatsappAccount ? {
+    id: (template as any).whatsappAccount.id,
+    phoneNumber: (template as any).whatsappAccount.phoneNumber,
+    displayName: (template as any).whatsappAccount.displayName,
+  } : undefined,
+  wabaId: (template as any).wabaId,
+  whatsappAccountId: (template as any).whatsappAccountId,
 });
 
 // Extract variables from body text ({{1}}, {{2}}, etc.)
@@ -58,15 +67,20 @@ const toJsonValue = (value: any): Prisma.InputJsonValue => JSON.parse(JSON.strin
 const toMetaLanguage = (lang: string) => {
   if (!lang) return 'en_US';
   if (lang.includes('_')) return lang;
-  
+
   const languageMap: Record<string, string> = {
     'en': 'en_US',
     'hi': 'hi_IN',
     'es': 'es_ES',
     'pt': 'pt_BR',
     'ar': 'ar_SA',
+    'fr': 'fr_FR',
+    'de': 'de_DE',
+    'it': 'it_IT',
+    'ru': 'ru_RU',
+    'zh': 'zh_CN',
   };
-  
+
   return languageMap[lang] || 'en_US';
 };
 
@@ -88,19 +102,19 @@ const buildMetaTemplatePayload = (t: {
   const components: any[] = [];
   const headerType = normalizeHeaderType(t.headerType);
 
-  // HEADER (TEXT supported)
+  // HEADER
   if (headerType && headerType !== 'NONE') {
     if (headerType === 'TEXT' && t.headerContent) {
       const headerVars = extractVariables(t.headerContent);
-      const headerComp: any = { 
-        type: 'HEADER', 
-        format: 'TEXT', 
-        text: t.headerContent 
+      const headerComp: any = {
+        type: 'HEADER',
+        format: 'TEXT',
+        text: t.headerContent
       };
 
       if (headerVars.length > 0) {
-        headerComp.example = { 
-          header_text: headerVars.map((i) => `Example${i}`) 
+        headerComp.example = {
+          header_text: headerVars.map((i) => `Example${i}`)
         };
       }
       components.push(headerComp);
@@ -118,8 +132,8 @@ const buildMetaTemplatePayload = (t: {
   const bodyComp: any = { type: 'BODY', text: t.bodyText };
 
   if (bodyVars.length > 0) {
-    bodyComp.example = { 
-      body_text: [bodyVars.map((i) => `Example${i}`)] 
+    bodyComp.example = {
+      body_text: [bodyVars.map((i) => `Example${i}`)]
     };
   }
   components.push(bodyComp);
@@ -159,49 +173,16 @@ const buildMetaTemplatePayload = (t: {
 };
 
 /**
- * ✅ Multi-tenant credentials resolver (UPDATED)
- * Priority:
- * 1) MetaConnection (new connect flow)
- * 2) WhatsAppAccount (old/manual connect flow)
+ * Get WhatsApp Account with decrypted token
  */
-const getConnectedWabaCredentials = async (
-  organizationId: string, 
+const getWhatsAppAccountWithToken = async (
+  organizationId: string,
   whatsappAccountId?: string
 ) => {
   try {
-    console.log('🔍 Getting WABA credentials for org:', organizationId);
+    console.log('🔍 Getting WhatsApp account for org:', organizationId, 'accountId:', whatsappAccountId);
 
-    // 1) Try MetaConnection first (new system)
-    const metaConn = await prisma.metaConnection.findUnique({
-      where: { organizationId },
-      include: {
-        PhoneNumber: {  // ✅ Fixed: phoneNumbers -> PhoneNumber (capital P)
-          where: { isActive: true },
-          orderBy: [{ isPrimary: 'desc' }, { createdAt: 'desc' }],
-          take: 1,
-        },
-      },
-    });
-
-    if (metaConn && metaConn.status === 'CONNECTED' && metaConn.accessToken && metaConn.wabaId) {
-      console.log('✅ Using MetaConnection credentials');
-      
-      // Token is already stored as plain text in your current implementation
-      // If you're using encryption, uncomment the next line:
-      // const accessToken = EncryptionUtil.decrypt(metaConn.accessToken);
-      const accessToken = metaConn.accessToken;
-
-      return {
-        source: 'META_CONNECTION' as const,
-        wabaId: metaConn.wabaId,
-        accessToken,
-        phoneNumberId: metaConn.PhoneNumber?.[0]?.phoneNumberId || null,  // ✅ Fixed: phoneNumbers -> PhoneNumber
-      };
-    }
-
-    console.log('⚠️ MetaConnection not found or not connected, trying WhatsAppAccount...');
-
-    // 2) Fallback to WhatsAppAccount (old system)
+    // Get WhatsApp account
     const where: Prisma.WhatsAppAccountWhereInput = {
       organizationId,
       status: 'CONNECTED',
@@ -213,41 +194,44 @@ const getConnectedWabaCredentials = async (
       where.isDefault = true;
     }
 
-    const wa = await prisma.whatsAppAccount.findFirst({
+    const waAccount = await prisma.whatsAppAccount.findFirst({
       where,
       orderBy: { isDefault: 'desc' },
     });
 
-    if (!wa) {
+    if (!waAccount) {
       throw new AppError(
         'No connected WhatsApp account found. Please connect WhatsApp first.',
         400
       );
     }
 
-    if (!wa.wabaId) {
+    if (!waAccount.wabaId) {
       throw new AppError('WABA ID missing on WhatsApp account.', 400);
     }
 
-    if (!wa.accessToken) {
-      throw new AppError('Access token missing on WhatsApp account.', 400);
+    // Get decrypted token using metaService
+    const accountWithToken = await metaService.getAccountWithToken(waAccount.id);
+
+    if (!accountWithToken) {
+      throw new AppError('Failed to decrypt access token. Please reconnect WhatsApp.', 400);
     }
 
-    console.log('✅ Using WhatsAppAccount credentials');
+    console.log('✅ Using WhatsApp Account:', waAccount.id, 'WABA:', waAccount.wabaId);
 
     return {
-      source: 'WHATSAPP_ACCOUNT' as const,
-      wabaId: wa.wabaId,
-      accessToken: wa.accessToken,
-      phoneNumberId: wa.phoneNumberId || null,
+      account: waAccount,
+      accessToken: accountWithToken.accessToken,
+      wabaId: waAccount.wabaId,
+      phoneNumberId: waAccount.phoneNumberId,
     };
   } catch (error: any) {
-    console.error('❌ Get WABA credentials error:', error);
-    
+    console.error('❌ Get WhatsApp account error:', error);
+
     if (error instanceof AppError) {
       throw error;
     }
-    
+
     throw new AppError(
       'Failed to get WhatsApp credentials: ' + error.message,
       500
@@ -256,7 +240,7 @@ const getConnectedWabaCredentials = async (
 };
 
 // ============================================
-// SERVICE
+// SERVICE CLASS
 // ============================================
 
 export class TemplatesService {
@@ -317,8 +301,22 @@ export class TemplatesService {
   // ==========================================
   // CREATE TEMPLATE
   // ==========================================
-  async create(organizationId: string, input: CreateTemplateInput): Promise<TemplateResponse> {
-    const { name, language, category, headerType, headerContent, bodyText, footerText, buttons, variables } = input;
+  async create(
+    organizationId: string,
+    input: CreateTemplateInput & { whatsappAccountId?: string }
+  ): Promise<TemplateResponse> {
+    const {
+      name,
+      language,
+      category,
+      headerType,
+      headerContent,
+      bodyText,
+      footerText,
+      buttons,
+      variables,
+      whatsappAccountId
+    } = input;
 
     // Validate template
     const validation = this.validateTemplate(input);
@@ -326,15 +324,21 @@ export class TemplatesService {
       throw new AppError(`Validation failed: ${validation.errors.join(', ')}`, 400);
     }
 
-    // Check for duplicates
-    const existing = await prisma.template.findUnique({
+    // Get WhatsApp account
+    const waData = await getWhatsAppAccountWithToken(organizationId, whatsappAccountId);
+
+    // Check for duplicates (now considers WABA)
+    const existing = await prisma.template.findFirst({
       where: {
-        organizationId_name_language: { organizationId, name, language },
-      },
+        organizationId,
+        name,
+        language,
+        wabaId: waData.wabaId,
+      } as any,
     });
 
     if (existing) {
-      throw new AppError('Template with this name and language already exists', 409);
+      throw new AppError('Template with this name and language already exists for this WhatsApp account', 409);
     }
 
     // Auto-extract variables if not provided
@@ -344,10 +348,12 @@ export class TemplatesService {
         ? variables
         : extractedVars.map((index) => ({ index, type: 'text' as const }));
 
-    // Create local template first
+    // Create local template first - LINKED TO WHATSAPP ACCOUNT
     const template = await prisma.template.create({
       data: {
         organizationId,
+        whatsappAccountId: waData.account.id,
+        wabaId: waData.wabaId,
         name,
         language,
         category,
@@ -360,15 +366,13 @@ export class TemplatesService {
         status: 'PENDING',
         metaTemplateId: null,
         rejectionReason: null,
-      },
+      } as any,
     });
 
-    console.log(`✅ Template created locally: ${template.id}`);
+    console.log(`✅ Template created locally: ${template.id} for WABA: ${waData.wabaId}`);
 
     // Submit to Meta
     try {
-      const wa = await getConnectedWabaCredentials(organizationId);
-
       const metaPayload = buildMetaTemplatePayload({
         name,
         language,
@@ -380,9 +384,14 @@ export class TemplatesService {
         buttons: (buttons || []) as any,
       });
 
-      console.log('📤 Submitting template to Meta:', { name, wabaId: wa.wabaId });
+      console.log('📤 Submitting template to Meta:', { name, wabaId: waData.wabaId });
 
-      const metaRes = await whatsappApi.createMessageTemplate(wa.wabaId, wa.accessToken, metaPayload);
+      const metaRes = await whatsappApi.createMessageTemplate(
+        waData.wabaId,
+        waData.accessToken,
+        metaPayload
+      );
+
       const metaTemplateId = metaRes?.id || metaRes?.template_id;
 
       if (!metaTemplateId) {
@@ -398,7 +407,7 @@ export class TemplatesService {
         },
       });
 
-      console.log('✅ Meta template created:', { metaTemplateId, name, source: wa.source });
+      console.log('✅ Meta template created:', { metaTemplateId, name });
     } catch (e: any) {
       const msg = String(e?.response?.data?.error?.message || e?.message || 'Meta submission failed');
       console.error('❌ Meta template create failed:', e?.response?.data || e);
@@ -413,91 +422,29 @@ export class TemplatesService {
       });
     }
 
-    const latest = await prisma.template.findUnique({ where: { id: template.id } });
-    return formatTemplate(latest);
-  }
-
-  // ==========================================
-  // DUPLICATE TEMPLATE
-  // ==========================================
-  async duplicate(organizationId: string, templateId: string, newName: string): Promise<TemplateResponse> {
-    const original = await prisma.template.findFirst({ 
-      where: { id: templateId, organizationId } 
-    });
-    
-    if (!original) {
-      throw new AppError('Template not found', 404);
-    }
-
-    const dup = await prisma.template.findUnique({
-      where: {
-        organizationId_name_language: {
-          organizationId,
-          name: newName,
-          language: original.language,
+    const latest = await prisma.template.findUnique({
+      where: { id: template.id },
+      include: {
+        whatsappAccount: {
+          select: {
+            id: true,
+            phoneNumber: true,
+            displayName: true,
+          },
         },
-      },
+      } as any,
     });
 
-    if (dup) {
-      throw new AppError('Template with this name already exists', 409);
-    }
-
-    const created = await prisma.template.create({
-      data: {
-        organizationId,
-        name: newName,
-        language: original.language,
-        category: original.category,
-        headerType: original.headerType,
-        headerContent: original.headerContent,
-        bodyText: original.bodyText,
-        footerText: original.footerText,
-        buttons: original.buttons || toJsonValue([]),
-        variables: original.variables || toJsonValue([]),
-        status: 'PENDING',
-        metaTemplateId: null,
-        rejectionReason: null,
-      },
-    });
-
-    console.log(`📋 Template duplicated: ${templateId} -> ${created.id}`);
-
-    return formatTemplate(created);
-  }
-
-  // ==========================================
-  // GET APPROVED TEMPLATES
-  // ==========================================
-  async getApprovedTemplates(organizationId: string): Promise<TemplateResponse[]> {
-    const templates = await prisma.template.findMany({
-      where: { organizationId, status: 'APPROVED' },
-      orderBy: { name: 'asc' },
-    });
-    return templates.map(formatTemplate);
-  }
-
-  // ==========================================
-  // GET LANGUAGES
-  // ==========================================
-  async getLanguages(organizationId: string): Promise<{ language: string; count: number }[]> {
-    const templates = await prisma.template.groupBy({
-      by: ['language'],
-      where: { organizationId },
-      _count: { language: true },
-      orderBy: { _count: { language: 'desc' } },
-    });
-
-    return templates.map((t) => ({ 
-      language: t.language, 
-      count: t._count.language 
-    }));
+    return formatTemplate(latest);
   }
 
   // ==========================================
   // GET TEMPLATES LIST
   // ==========================================
-  async getList(organizationId: string, query: TemplatesQueryInput): Promise<TemplatesListResponse> {
+  async getList(
+    organizationId: string,
+    query: TemplatesQueryInput & { whatsappAccountId?: string }
+  ): Promise<TemplatesListResponse> {
     const {
       page = 1,
       limit = 20,
@@ -507,11 +454,45 @@ export class TemplatesService {
       language,
       sortBy = 'createdAt',
       sortOrder = 'desc',
+      whatsappAccountId,
     } = query;
 
     const skip = (page - 1) * limit;
-
     const where: Prisma.TemplateWhereInput = { organizationId };
+
+    // Filter by WhatsApp account
+    if (whatsappAccountId) {
+      const waAccount = await prisma.whatsAppAccount.findFirst({
+        where: {
+          id: whatsappAccountId,
+          organizationId,
+        },
+        select: { wabaId: true },
+      });
+
+      if (waAccount) {
+        (where as any).wabaId = waAccount.wabaId;
+      } else {
+        return {
+          templates: [],
+          meta: { page, limit, total: 0, totalPages: 0 },
+        };
+      }
+    } else {
+      // Default account's WABA
+      const defaultAccount = await prisma.whatsAppAccount.findFirst({
+        where: {
+          organizationId,
+          isDefault: true,
+          status: 'CONNECTED',
+        },
+        select: { wabaId: true },
+      });
+
+      if (defaultAccount) {
+        (where as any).wabaId = defaultAccount.wabaId;
+      }
+    }
 
     if (search) {
       where.OR = [
@@ -525,38 +506,192 @@ export class TemplatesService {
     if (language) where.language = language;
 
     const [templates, total] = await Promise.all([
-      prisma.template.findMany({ 
-        where, 
-        skip, 
-        take: limit, 
-        orderBy: { [sortBy]: sortOrder } 
+      prisma.template.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder },
+        include: {
+          whatsappAccount: {
+            select: {
+              id: true,
+              phoneNumber: true,
+              displayName: true,
+            },
+          },
+        } as any,
       }),
       prisma.template.count({ where }),
     ]);
 
     return {
       templates: templates.map(formatTemplate),
-      meta: { 
-        page, 
-        limit, 
-        total, 
-        totalPages: Math.ceil(total / limit) 
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
       },
     };
+  }
+
+  // ==========================================
+  // GET APPROVED TEMPLATES
+  // ==========================================
+  async getApprovedTemplates(
+    organizationId: string,
+    whatsappAccountId?: string
+  ): Promise<TemplateResponse[]> {
+    const where: Prisma.TemplateWhereInput = {
+      organizationId,
+      status: 'APPROVED',
+    };
+
+    if (whatsappAccountId) {
+      const waAccount = await prisma.whatsAppAccount.findFirst({
+        where: {
+          id: whatsappAccountId,
+          organizationId,
+        },
+        select: { wabaId: true },
+      });
+
+      if (waAccount) {
+        (where as any).wabaId = waAccount.wabaId;
+      } else {
+        return [];
+      }
+    }
+
+    const templates = await prisma.template.findMany({
+      where,
+      orderBy: { name: 'asc' },
+      include: {
+        whatsappAccount: {
+          select: {
+            id: true,
+            phoneNumber: true,
+            displayName: true,
+          },
+        },
+      } as any,
+    });
+
+    return templates.map(formatTemplate);
+  }
+
+  // ==========================================
+  // SYNC FROM META
+  // ==========================================
+  async syncFromMeta(
+    organizationId: string,
+    whatsappAccountId?: string
+  ): Promise<{ message: string; synced: number }> {
+    console.log('🔄 Syncing templates from Meta...');
+
+    const waData = await getWhatsAppAccountWithToken(organizationId, whatsappAccountId);
+
+    const metaTemplates = await whatsappApi.listMessageTemplates(
+      waData.wabaId,
+      waData.accessToken
+    );
+
+    console.log(`📥 Found ${metaTemplates.length} templates in Meta for WABA: ${waData.wabaId}`);
+
+    let synced = 0;
+    for (const mt of metaTemplates) {
+      const metaId = String(mt.id);
+      const metaName = String(mt.name);
+      const metaLang = String(mt.language);
+
+      const metaStatusRaw = String(mt.status || 'PENDING').toUpperCase();
+      const mappedStatus: TemplateStatus =
+        metaStatusRaw === 'APPROVED' ? 'APPROVED' :
+          metaStatusRaw === 'REJECTED' ? 'REJECTED' : 'PENDING';
+
+      const local = await prisma.template.findFirst({
+        where: {
+          organizationId,
+          wabaId: waData.wabaId,
+          OR: [
+            { metaTemplateId: metaId },
+            { name: metaName, language: metaLang }
+          ],
+        } as any,
+      });
+
+      const rejectionReason = mt.rejected_reason || mt.rejection_reason || null;
+
+      // Extract template components
+      const bodyComponent = mt.components?.find((c: any) => c.type === 'BODY');
+      const headerComponent = mt.components?.find((c: any) => c.type === 'HEADER');
+      const footerComponent = mt.components?.find((c: any) => c.type === 'FOOTER');
+      const buttonsComponent = mt.components?.find((c: any) => c.type === 'BUTTONS');
+
+      if (local) {
+        // Update existing
+        await prisma.template.update({
+          where: { id: local.id },
+          data: {
+            metaTemplateId: metaId,
+            status: mappedStatus,
+            rejectionReason,
+            whatsappAccountId: waData.account.id,
+          } as any,
+        });
+      } else {
+        // Create new
+        await prisma.template.create({
+          data: {
+            organizationId,
+            whatsappAccountId: waData.account.id,
+            wabaId: waData.wabaId,
+            name: metaName,
+            language: metaLang,
+            category: (String(mt.category || 'UTILITY').toUpperCase()) as any,
+            bodyText: bodyComponent?.text || 'Imported from Meta',
+            headerType: headerComponent?.format || null,
+            headerContent: headerComponent?.text || null,
+            footerText: footerComponent?.text || null,
+            status: mappedStatus,
+            metaTemplateId: metaId,
+            buttons: toJsonValue(buttonsComponent?.buttons || []),
+            variables: toJsonValue(this.extractVariablesFromComponents(mt.components)),
+            rejectionReason,
+          } as any,
+        });
+      }
+
+      synced++;
+    }
+
+    console.log(`✅ Synced ${synced} templates from Meta for WABA: ${waData.wabaId}`);
+
+    return { message: 'Templates synced from Meta', synced };
   }
 
   // ==========================================
   // GET TEMPLATE BY ID
   // ==========================================
   async getById(organizationId: string, templateId: string): Promise<TemplateResponse> {
-    const template = await prisma.template.findFirst({ 
-      where: { id: templateId, organizationId } 
+    const template = await prisma.template.findFirst({
+      where: { id: templateId, organizationId },
+      include: {
+        whatsappAccount: {
+          select: {
+            id: true,
+            phoneNumber: true,
+            displayName: true,
+            wabaId: true,
+          },
+        },
+      } as any,
     });
-    
+
     if (!template) {
       throw new AppError('Template not found', 404);
     }
-    
+
     return formatTemplate(template);
   }
 
@@ -564,14 +699,14 @@ export class TemplatesService {
   // UPDATE TEMPLATE
   // ==========================================
   async update(
-    organizationId: string, 
-    templateId: string, 
+    organizationId: string,
+    templateId: string,
     input: UpdateTemplateInput
   ): Promise<TemplateResponse> {
-    const existing = await prisma.template.findFirst({ 
-      where: { id: templateId, organizationId } 
+    const existing = await prisma.template.findFirst({
+      where: { id: templateId, organizationId }
     });
-    
+
     if (!existing) {
       throw new AppError('Template not found', 404);
     }
@@ -609,9 +744,18 @@ export class TemplatesService {
       updateData.status = 'PENDING';
     }
 
-    const updated = await prisma.template.update({ 
-      where: { id: templateId }, 
-      data: updateData 
+    const updated = await prisma.template.update({
+      where: { id: templateId },
+      data: updateData,
+      include: {
+        whatsappAccount: {
+          select: {
+            id: true,
+            phoneNumber: true,
+            displayName: true,
+          },
+        },
+      } as any,
     });
 
     console.log(`✅ Template updated: ${templateId}`);
@@ -623,10 +767,10 @@ export class TemplatesService {
   // DELETE TEMPLATE
   // ==========================================
   async delete(organizationId: string, templateId: string): Promise<{ message: string }> {
-    const template = await prisma.template.findFirst({ 
-      where: { id: templateId, organizationId } 
+    const template = await prisma.template.findFirst({
+      where: { id: templateId, organizationId }
     });
-    
+
     if (!template) {
       throw new AppError('Template not found', 404);
     }
@@ -641,16 +785,35 @@ export class TemplatesService {
   // ==========================================
   // GET TEMPLATE STATS
   // ==========================================
-  async getStats(organizationId: string): Promise<TemplateStats> {
+  async getStats(
+    organizationId: string,
+    whatsappAccountId?: string
+  ): Promise<TemplateStats> {
     try {
+      const where: Prisma.TemplateWhereInput = { organizationId };
+
+      if (whatsappAccountId) {
+        const waAccount = await prisma.whatsAppAccount.findFirst({
+          where: {
+            id: whatsappAccountId,
+            organizationId,
+          },
+          select: { wabaId: true },
+        });
+
+        if (waAccount) {
+          (where as any).wabaId = waAccount.wabaId;
+        }
+      }
+
       const [total, pending, approved, rejected, marketing, utility, authentication] = await Promise.all([
-        prisma.template.count({ where: { organizationId } }),
-        prisma.template.count({ where: { organizationId, status: 'PENDING' } }),
-        prisma.template.count({ where: { organizationId, status: 'APPROVED' } }),
-        prisma.template.count({ where: { organizationId, status: 'REJECTED' } }),
-        prisma.template.count({ where: { organizationId, category: 'MARKETING' } }),
-        prisma.template.count({ where: { organizationId, category: 'UTILITY' } }),
-        prisma.template.count({ where: { organizationId, category: 'AUTHENTICATION' } }),
+        prisma.template.count({ where }),
+        prisma.template.count({ where: { ...where, status: 'PENDING' } }),
+        prisma.template.count({ where: { ...where, status: 'APPROVED' } }),
+        prisma.template.count({ where: { ...where, status: 'REJECTED' } }),
+        prisma.template.count({ where: { ...where, category: 'MARKETING' } }),
+        prisma.template.count({ where: { ...where, category: 'UTILITY' } }),
+        prisma.template.count({ where: { ...where, category: 'AUTHENTICATION' } }),
       ]);
 
       return {
@@ -666,20 +829,102 @@ export class TemplatesService {
       };
     } catch (error: any) {
       console.error('❌ Get template stats error:', error);
-      
-      // Return empty stats on error
-      if (error.code === 'P2024') {
-        return {
-          total: 0,
-          pending: 0,
-          approved: 0,
-          rejected: 0,
-          byCategory: { marketing: 0, utility: 0, authentication: 0 },
-        };
-      }
-      
-      throw new AppError('Failed to fetch template statistics', 500);
+
+      return {
+        total: 0,
+        pending: 0,
+        approved: 0,
+        rejected: 0,
+        byCategory: { marketing: 0, utility: 0, authentication: 0 },
+      };
     }
+  }
+
+  // ==========================================
+  // DUPLICATE TEMPLATE
+  // ==========================================
+  async duplicate(
+    organizationId: string,
+    templateId: string,
+    newName: string,
+    targetWhatsappAccountId?: string
+  ): Promise<TemplateResponse> {
+    const original = await prisma.template.findFirst({
+      where: { id: templateId, organizationId },
+      include: {
+        whatsappAccount: true,
+      } as any,
+    });
+
+    if (!original) {
+      throw new AppError('Template not found', 404);
+    }
+
+    // Determine target account
+    const targetAccountId = targetWhatsappAccountId || (original as any).whatsappAccountId;
+    let targetWabaId = (original as any).wabaId;
+
+    if (targetWhatsappAccountId && targetWhatsappAccountId !== (original as any).whatsappAccountId) {
+      // Get target account's WABA ID
+      const targetAccount = await prisma.whatsAppAccount.findFirst({
+        where: {
+          id: targetWhatsappAccountId,
+          organizationId,
+        },
+        select: { wabaId: true },
+      });
+
+      if (targetAccount) {
+        targetWabaId = targetAccount.wabaId;
+      }
+    }
+
+    // Check for duplicates in target WABA
+    const dup = await prisma.template.findFirst({
+      where: {
+        organizationId,
+        name: newName,
+        language: original.language,
+        wabaId: targetWabaId,
+      } as any,
+    });
+
+    if (dup) {
+      throw new AppError('Template with this name already exists for this WhatsApp account', 409);
+    }
+
+    const created = await prisma.template.create({
+      data: {
+        organizationId,
+        whatsappAccountId: targetAccountId,
+        wabaId: targetWabaId,
+        name: newName,
+        language: original.language,
+        category: original.category,
+        headerType: original.headerType,
+        headerContent: original.headerContent,
+        bodyText: original.bodyText,
+        footerText: original.footerText,
+        buttons: original.buttons || toJsonValue([]),
+        variables: original.variables || toJsonValue([]),
+        status: 'PENDING',
+        metaTemplateId: null,
+        rejectionReason: null,
+      } as any,
+      include: {
+        whatsappAccount: {
+          select: {
+            id: true,
+            phoneNumber: true,
+            displayName: true,
+          },
+        },
+      },
+    } as any);
+
+    console.log(`📋 Template duplicated: ${templateId} -> ${created.id}`);
+
+    return formatTemplate(created);
   }
 
   // ==========================================
@@ -693,12 +938,12 @@ export class TemplatesService {
     footerText?: string,
     buttons?: TemplateButton[]
   ): Promise<TemplatePreview> {
-    const preview: TemplatePreview = { 
-      body: replaceVariables(bodyText, variables) 
+    const preview: TemplatePreview = {
+      body: replaceVariables(bodyText, variables)
     };
 
     const normalizedHeaderType = normalizeHeaderType(headerType);
-    
+
     if (normalizedHeaderType === 'TEXT' && headerContent) {
       preview.header = replaceVariables(headerContent, variables);
     } else if (normalizedHeaderType !== 'NONE') {
@@ -710,9 +955,9 @@ export class TemplatesService {
     }
 
     if (buttons && buttons.length > 0) {
-      preview.buttons = buttons.map((btn) => ({ 
-        type: btn.type, 
-        text: btn.text 
+      preview.buttons = buttons.map((btn) => ({
+        type: btn.type,
+        text: btn.text
       }));
     }
 
@@ -724,18 +969,18 @@ export class TemplatesService {
   // ==========================================
   async submitToMeta(
     organizationId: string,
-    templateId: string,
-    whatsappAccountId?: string
+    templateId: string
   ): Promise<{ message: string; metaTemplateId?: string }> {
-    const template = await prisma.template.findFirst({ 
-      where: { id: templateId, organizationId } 
+    const template = await prisma.template.findFirst({
+      where: { id: templateId, organizationId }
     });
-    
+
     if (!template) {
       throw new AppError('Template not found', 404);
     }
 
-    const wa = await getConnectedWabaCredentials(organizationId, whatsappAccountId);
+    // Use the template's linked WhatsApp account
+    const waData = await getWhatsAppAccountWithToken(organizationId, (template as any).whatsappAccountId || undefined);
 
     const metaPayload = buildMetaTemplatePayload({
       name: template.name,
@@ -750,7 +995,12 @@ export class TemplatesService {
 
     console.log('📤 Submitting template to Meta:', { templateId, name: template.name });
 
-    const metaRes = await whatsappApi.createMessageTemplate(wa.wabaId, wa.accessToken, metaPayload);
+    const metaRes = await whatsappApi.createMessageTemplate(
+      waData.wabaId,
+      waData.accessToken,
+      metaPayload
+    );
+
     const metaTemplateId = metaRes?.id || metaRes?.template_id;
 
     await prisma.template.update({
@@ -771,96 +1021,81 @@ export class TemplatesService {
   }
 
   // ==========================================
-  // SYNC FROM META
+  // GET LANGUAGES
   // ==========================================
-  async syncFromMeta(
+  async getLanguages(
     organizationId: string,
     whatsappAccountId?: string
-  ): Promise<{ message: string; synced: number }> {
-    console.log('🔄 Syncing templates from Meta...');
+  ): Promise<{ language: string; count: number }[]> {
+    const where: Prisma.TemplateWhereInput = { organizationId };
 
-    const wa = await getConnectedWabaCredentials(organizationId, whatsappAccountId);
-
-    const metaTemplates = await whatsappApi.listMessageTemplates(wa.wabaId, wa.accessToken);
-
-    console.log(`📥 Found ${metaTemplates.length} templates in Meta`);
-
-    let synced = 0;
-    for (const mt of metaTemplates) {
-      const metaId = String(mt.id);
-      const metaName = String(mt.name);
-      const metaLang = String(mt.language);
-
-      const metaStatusRaw = String(mt.status || 'PENDING').toUpperCase();
-      const mappedStatus: TemplateStatus =
-        metaStatusRaw === 'APPROVED' ? 'APPROVED' : 
-        metaStatusRaw === 'REJECTED' ? 'REJECTED' : 'PENDING';
-
-      const local = await prisma.template.findFirst({
+    if (whatsappAccountId) {
+      const waAccount = await prisma.whatsAppAccount.findFirst({
         where: {
+          id: whatsappAccountId,
           organizationId,
-          OR: [
-            { metaTemplateId: metaId }, 
-            { name: metaName, language: metaLang }
-          ],
         },
+        select: { wabaId: true },
       });
 
-      const rejectionReason = mt.rejected_reason || mt.rejection_reason || null;
-
-      if (local) {
-        // Update existing
-        await prisma.template.update({
-          where: { id: local.id },
-          data: { 
-            metaTemplateId: metaId, 
-            status: mappedStatus, 
-            rejectionReason 
-          },
-        });
-      } else {
-        // Create new
-        await prisma.template.create({
-          data: {
-            organizationId,
-            name: metaName,
-            language: metaLang,
-            category: (String(mt.category || 'UTILITY').toUpperCase()) as any,
-            bodyText: mt.components?.find((c: any) => c.type === 'BODY')?.text || 'Imported from Meta',
-            status: mappedStatus,
-            metaTemplateId: metaId,
-            buttons: toJsonValue([]),
-            variables: toJsonValue([]),
-            rejectionReason,
-          },
-        });
+      if (waAccount) {
+        (where as any).wabaId = waAccount.wabaId;
       }
-
-      synced++;
     }
 
-    console.log(`✅ Synced ${synced} templates from Meta`);
+    const templates = await prisma.template.groupBy({
+      by: ['language'],
+      where,
+      _count: { language: true },
+      orderBy: { _count: { language: 'desc' } },
+    });
 
-    return { message: 'Templates synced from Meta', synced };
+    return templates.map((t) => ({
+      language: t.language,
+      count: t._count.language
+    }));
   }
 
   // ==========================================
   // UPDATE STATUS (Internal - webhook handler)
   // ==========================================
   async updateStatus(
-    metaTemplateId: string, 
-    status: TemplateStatus, 
+    metaTemplateId: string,
+    status: TemplateStatus,
     rejectionReason?: string
   ): Promise<void> {
     await prisma.template.updateMany({
       where: { metaTemplateId },
-      data: { 
-        status, 
-        rejectionReason: rejectionReason || null 
+      data: {
+        status,
+        rejectionReason: rejectionReason || null
       },
     });
 
     console.log(`✅ Template status updated: ${metaTemplateId} -> ${status}`);
+  }
+
+  // Helper to extract variables from Meta components
+  private extractVariablesFromComponents(components: any[]): any {
+    if (!Array.isArray(components)) return [];
+
+    const variables: any[] = [];
+
+    // Check body component
+    const body = components.find((c) => c.type === 'BODY');
+    if (body && body.text) {
+      const matches = body.text.match(/\{\{(\d+)\}\}/g);
+      if (matches) {
+        matches.forEach((match: string, index: number) => {
+          variables.push({
+            index: index + 1,
+            type: 'text',
+          });
+        });
+      }
+    }
+
+    return variables;
   }
 }
 

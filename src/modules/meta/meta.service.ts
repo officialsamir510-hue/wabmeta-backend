@@ -5,6 +5,7 @@ import {
   WhatsAppAccountStatus,
   TemplateStatus,
   TemplateCategory,
+  WhatsAppAccount,
 } from '@prisma/client';
 import { metaApi } from './meta.api';
 import { config } from '../../config';
@@ -494,7 +495,7 @@ class MetaService {
    * Get account with decrypted token (internal use only) - ✅ FIXED
    */
   async getAccountWithToken(accountId: string): Promise<{
-    account: any;
+    account: WhatsAppAccount;
     accessToken: string;
   } | null> {
     const account = await prisma.whatsAppAccount.findUnique({
@@ -743,7 +744,7 @@ class MetaService {
   }
 
   // ============================================
-  // TEMPLATE MANAGEMENT
+  // TEMPLATE MANAGEMENT - FIXED
   // ============================================
 
   async syncTemplates(accountId: string, organizationId: string) {
@@ -759,54 +760,84 @@ class MetaService {
       throw new Error('Unauthorized access to account');
     }
 
-    console.log(`🔄 Syncing templates for account ${accountId}...`);
+    console.log(`🔄 Syncing templates for WABA ${account.wabaId}...`);
 
+    // ✅ STEP 1: Fetch templates from Meta
     const templates = await metaApi.getTemplates(account.wabaId, accessToken);
+    console.log(`📥 Fetched ${templates.length} templates from Meta`);
+
+    // ✅ STEP 2: Get existing template names for this WABA
+    const existingTemplates = await prisma.template.findMany({
+      where: {
+        organizationId,
+        wabaId: account.wabaId,
+      } as any,
+      select: {
+        id: true,
+        name: true,
+        language: true,
+        metaTemplateId: true,
+      },
+    });
+
+    const existingMap = new Map(
+      existingTemplates.map(t => [`${t.name}_${t.language}`, t])
+    );
+
+    // ✅ STEP 3: Track which templates are in Meta
+    const metaTemplateKeys = new Set<string>();
 
     let syncedCount = 0;
+    let createdCount = 0;
+    let updatedCount = 0;
     let skippedCount = 0;
 
     for (const template of templates) {
       try {
         const mappedStatus = this.mapTemplateStatus(template.status);
 
+        // Skip draft templates
         if (mappedStatus === 'DRAFT') {
           skippedCount++;
           continue;
         }
 
-        await prisma.template.upsert({
-          where: {
-            organizationId_name_language: {
-              organizationId,
-              name: template.name,
-              language: template.language,
-            },
-          },
-          create: {
-            organizationId,
-            metaTemplateId: template.id,
-            name: template.name,
-            language: template.language,
-            category: this.mapCategory(template.category),
-            status: mappedStatus as TemplateStatus,
-            bodyText: this.extractBodyText(template.components),
-            headerType: this.extractHeaderType(template.components),
-            headerContent: this.extractHeaderContent(template.components),
-            footerText: this.extractFooterText(template.components),
-            buttons: this.extractButtons(template.components),
-          },
-          update: {
-            metaTemplateId: template.id,
-            status: mappedStatus as TemplateStatus,
-            category: this.mapCategory(template.category),
-            bodyText: this.extractBodyText(template.components),
-            headerType: this.extractHeaderType(template.components),
-            headerContent: this.extractHeaderContent(template.components),
-            footerText: this.extractFooterText(template.components),
-            buttons: this.extractButtons(template.components),
-          },
-        });
+        const templateKey = `${template.name}_${template.language}`;
+        metaTemplateKeys.add(templateKey);
+
+        const existing = existingMap.get(templateKey);
+
+        const templateData = {
+          organizationId,
+          whatsappAccountId: account.id,  // ✅ Link to WhatsApp account
+          wabaId: account.wabaId,         // ✅ Link to WABA
+          metaTemplateId: template.id,
+          name: template.name,
+          language: template.language,
+          category: this.mapCategory(template.category),
+          status: mappedStatus as TemplateStatus,
+          bodyText: this.extractBodyText(template.components),
+          headerType: this.extractHeaderType(template.components),
+          headerContent: this.extractHeaderContent(template.components),
+          footerText: this.extractFooterText(template.components),
+          buttons: this.extractButtons(template.components),
+          variables: this.extractVariables(template.components),
+        };
+
+        if (existing) {
+          // Update existing
+          await prisma.template.update({
+            where: { id: existing.id },
+            data: templateData,
+          });
+          updatedCount++;
+        } else {
+          // Create new
+          await prisma.template.create({
+            data: templateData,
+          });
+          createdCount++;
+        }
 
         syncedCount++;
       } catch (templateError: any) {
@@ -815,34 +846,91 @@ class MetaService {
       }
     }
 
-    console.log(`✅ Template sync completed: ${syncedCount} synced, ${skippedCount} skipped`);
+    // ✅ STEP 4: Mark templates not in Meta as deleted/hidden
+    // (Templates that exist in DB but not in Meta API response)
+    const templatesToRemove = existingTemplates.filter(
+      t => !metaTemplateKeys.has(`${t.name}_${t.language}`)
+    );
+
+    if (templatesToRemove.length > 0) {
+      console.log(`🗑️ Removing ${templatesToRemove.length} templates not found in Meta`);
+
+      await prisma.template.deleteMany({
+        where: {
+          id: { in: templatesToRemove.map(t => t.id) },
+        },
+      });
+    }
+
+    console.log(`✅ Template sync completed for WABA ${account.wabaId}:`);
+    console.log(`   Created: ${createdCount}`);
+    console.log(`   Updated: ${updatedCount}`);
+    console.log(`   Skipped: ${skippedCount}`);
+    console.log(`   Removed: ${templatesToRemove.length}`);
 
     return {
       synced: syncedCount,
+      created: createdCount,
+      updated: updatedCount,
       skipped: skippedCount,
+      removed: templatesToRemove.length,
       total: templates.length,
     };
   }
 
+  // ✅ Extract variables from template components
+  private extractVariables(components: any[]): any {
+    if (!Array.isArray(components)) return [];
+
+    const variables: any[] = [];
+
+    for (const component of components) {
+      if (component.type === 'BODY' && component.text) {
+        // Find {{1}}, {{2}}, etc.
+        const matches = component.text.match(/\{\{(\d+)\}\}/g);
+        if (matches) {
+          matches.forEach((match: string, index: number) => {
+            variables.push({
+              index: index + 1,
+              type: 'text',
+              placeholder: match,
+            });
+          });
+        }
+      }
+    }
+
+    return variables;
+  }
+
+  // ✅ Background sync - UPDATED
   private async syncTemplatesBackground(
     accountId: string,
     wabaId: string,
     accessToken: string
   ) {
     try {
-      console.log(`🔄 Background template sync for account ${accountId}...`);
+      console.log(`🔄 Background template sync for WABA ${wabaId}...`);
 
       const templates = await metaApi.getTemplates(wabaId, accessToken);
 
       const account = await prisma.whatsAppAccount.findUnique({
         where: { id: accountId },
-        select: { organizationId: true },
+        select: { organizationId: true, id: true, wabaId: true },
       });
 
       if (!account) {
         console.error('Account not found for background sync');
         return;
       }
+
+      // ✅ Delete old templates for this WABA first
+      await prisma.template.deleteMany({
+        where: {
+          organizationId: account.organizationId,
+          wabaId: account.wabaId,
+        } as any,
+      });
 
       let syncedCount = 0;
 
@@ -852,16 +940,11 @@ class MetaService {
 
           if (mappedStatus === 'DRAFT') continue;
 
-          await prisma.template.upsert({
-            where: {
-              organizationId_name_language: {
-                organizationId: account.organizationId,
-                name: template.name,
-                language: template.language,
-              },
-            },
-            create: {
+          await prisma.template.create({
+            data: {
               organizationId: account.organizationId,
+              whatsappAccountId: account.id,
+              wabaId: account.wabaId,
               metaTemplateId: template.id,
               name: template.name,
               language: template.language,
@@ -872,20 +955,17 @@ class MetaService {
               headerContent: this.extractHeaderContent(template.components),
               footerText: this.extractFooterText(template.components),
               buttons: this.extractButtons(template.components),
-            },
-            update: {
-              metaTemplateId: template.id,
-              status: mappedStatus as TemplateStatus,
-            },
+              variables: this.extractVariables(template.components),
+            } as any,
           });
 
           syncedCount++;
-        } catch (err) {
-          // Silently skip failed templates
+        } catch (err: any) {
+          console.error(`Background sync error for ${template.name}:`, err.message);
         }
       }
 
-      console.log(`✅ Background sync: ${syncedCount}/${templates.length} templates`);
+      console.log(`✅ Background sync: ${syncedCount}/${templates.length} templates for WABA ${wabaId}`);
     } catch (error) {
       console.error('❌ Background template sync failed:', error);
     }
