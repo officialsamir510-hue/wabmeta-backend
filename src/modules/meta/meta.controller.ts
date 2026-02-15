@@ -5,6 +5,7 @@ import { metaService } from './meta.service';
 import { successResponse, errorResponse } from '../../utils/response';
 import { v4 as uuidv4 } from 'uuid';
 import { PrismaClient, WhatsAppAccountStatus } from '@prisma/client';
+import { isMetaToken, maskToken, safeDecryptStrict } from '../../utils/encryption';
 
 const prisma = new PrismaClient();
 
@@ -284,6 +285,186 @@ class MetaController {
       });
     } catch (error) {
       next(error);
+    }
+  }
+
+  /**
+   * Debug token encryption/decryption for an account
+   * @route   GET /api/meta/debug-token/:accountId
+   * @desc    Debug token encryption/decryption issues
+   * @access  Private - Only accessible to organization members
+   */
+  async debugToken(req: Request, res: Response, next: NextFunction) {
+    try {
+      const accountId = getString(req.params.accountId);
+
+      // First, get the account to check organization
+      const account = await prisma.whatsAppAccount.findUnique({
+        where: { id: accountId },
+      });
+
+      if (!account) {
+        return errorResponse(res, 'Account not found', 404);
+      }
+
+      // Verify user has access to this organization
+      const hasAccess = await this.verifyOrgAccess(req.user!.id, account.organizationId);
+      if (!hasAccess) {
+        return errorResponse(res, 'Unauthorized', 403);
+      }
+
+      console.log('\n🔍 ========== TOKEN DEBUG START ==========');
+      console.log('   Account ID:', accountId);
+      console.log('   Organization ID:', account.organizationId);
+      console.log('   User ID:', req.user!.id);
+
+      // Try to get decrypted token
+      const result = await metaService.getAccountWithToken(accountId);
+
+      // Prepare debug info
+      const debugInfo = {
+        account: {
+          id: account.id,
+          organizationId: account.organizationId,
+          phoneNumber: account.phoneNumber,
+          displayName: account.displayName,
+          status: account.status,
+          isDefault: account.isDefault,
+          qualityRating: account.qualityRating,
+          createdAt: account.createdAt,
+          updatedAt: account.updatedAt,
+        },
+        tokenStorage: {
+          hasStoredToken: !!account.accessToken,
+          storedTokenLength: account.accessToken?.length || 0,
+          storedTokenPreview: account.accessToken ?
+            `${account.accessToken.substring(0, 30)}...${account.accessToken.substring(account.accessToken.length - 10)}` :
+            null,
+          tokenExpiresAt: account.tokenExpiresAt,
+          isExpired: account.tokenExpiresAt ? account.tokenExpiresAt < new Date() : null,
+          expiresInDays: account.tokenExpiresAt ?
+            Math.floor((account.tokenExpiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) :
+            null,
+        },
+        decryption: {
+          canDecrypt: !!result,
+          decryptedSuccessfully: !!result?.accessToken,
+          decryptedTokenValid: result ? isMetaToken(result.accessToken) : false,
+          decryptedTokenPreview: result ? maskToken(result.accessToken) : null,
+        },
+        validation: {
+          isValidFormat: result ? result.accessToken.startsWith('EAA') : false,
+          tokenLength: result ? result.accessToken.length : 0,
+          containsSpecialChars: result ? /[^A-Za-z0-9_-]/.test(result.accessToken) : null,
+          directDecryptWorks: undefined as boolean | undefined,
+          directDecryptValid: undefined as boolean | undefined,
+          directDecryptError: undefined as string | undefined,
+        },
+        recommendations: [] as string[],
+      };
+
+      // Add recommendations based on findings
+      if (!account.accessToken) {
+        debugInfo.recommendations.push('No token stored. Reconnect the WhatsApp account.');
+      } else if (!result) {
+        debugInfo.recommendations.push('Token exists but cannot decrypt. Possible encryption key mismatch.');
+        debugInfo.recommendations.push('Check ENCRYPTION_KEY in .env file.');
+        debugInfo.recommendations.push('Reconnect the WhatsApp account to fix.');
+      } else if (!isMetaToken(result.accessToken)) {
+        debugInfo.recommendations.push('Decrypted value is not a valid Meta token.');
+        debugInfo.recommendations.push('Token may be corrupted. Reconnect the account.');
+      } else if (debugInfo.tokenStorage.isExpired) {
+        debugInfo.recommendations.push('Token has expired. Reconnect to refresh.');
+      } else {
+        debugInfo.recommendations.push('Token appears valid and working correctly.');
+      }
+
+      // Test direct decryption (for extra debugging)
+      if (account.accessToken && process.env.NODE_ENV !== 'production') {
+        try {
+          const directDecrypt = safeDecryptStrict(account.accessToken);
+          debugInfo.validation = {
+            ...debugInfo.validation,
+            directDecryptWorks: !!directDecrypt,
+            directDecryptValid: directDecrypt ? isMetaToken(directDecrypt) : false,
+          };
+        } catch (err) {
+          debugInfo.validation = {
+            ...debugInfo.validation,
+            directDecryptWorks: false,
+            directDecryptError: (err as Error).message,
+          };
+        }
+      }
+
+      console.log('🔍 Debug info compiled:', JSON.stringify(debugInfo, null, 2));
+      console.log('🔍 ========== TOKEN DEBUG END ==========\n');
+
+      return successResponse(res, {
+        data: debugInfo,
+        message: 'Token debug information retrieved',
+      });
+
+    } catch (error: any) {
+      console.error('❌ Token debug error:', error);
+      return errorResponse(res, `Debug failed: ${error.message}`, 500);
+    }
+  }
+
+  /**
+   * Debug all accounts for an organization
+   * @route   GET /api/meta/debug-all/:organizationId
+   * @desc    Debug all accounts' token status
+   * @access  Private
+   */
+  async debugAllTokens(req: Request, res: Response, next: NextFunction) {
+    try {
+      const organizationId = getString(req.params.organizationId);
+
+      const hasAccess = await this.verifyOrgAccess(req.user!.id, organizationId);
+      if (!hasAccess) {
+        return errorResponse(res, 'Unauthorized', 403);
+      }
+
+      const accounts = await prisma.whatsAppAccount.findMany({
+        where: { organizationId },
+      });
+
+      const debugResults = await Promise.all(
+        accounts.map(async (account) => {
+          const result = await metaService.getAccountWithToken(account.id);
+          return {
+            accountId: account.id,
+            phoneNumber: account.phoneNumber,
+            status: account.status,
+            hasToken: !!account.accessToken,
+            canDecrypt: !!result,
+            tokenValid: result ? isMetaToken(result.accessToken) : false,
+            tokenExpired: account.tokenExpiresAt ? account.tokenExpiresAt < new Date() : null,
+          };
+        })
+      );
+
+      const summary = {
+        totalAccounts: debugResults.length,
+        connected: debugResults.filter(r => r.status === WhatsAppAccountStatus.CONNECTED).length,
+        withTokens: debugResults.filter(r => r.hasToken).length,
+        canDecrypt: debugResults.filter(r => r.canDecrypt).length,
+        validTokens: debugResults.filter(r => r.tokenValid).length,
+        expiredTokens: debugResults.filter(r => r.tokenExpired).length,
+      };
+
+      return successResponse(res, {
+        data: {
+          summary,
+          accounts: debugResults,
+        },
+        message: 'Organization token debug complete',
+      });
+
+    } catch (error: any) {
+      console.error('❌ Debug all tokens error:', error);
+      return errorResponse(res, error.message, 500);
     }
   }
 

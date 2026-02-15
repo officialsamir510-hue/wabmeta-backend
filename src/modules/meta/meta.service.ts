@@ -337,11 +337,15 @@ class MetaService {
 
       // ✅ ENCRYPT TOKEN BEFORE SAVING
       console.log('🔐 Encrypting token before saving...');
-      console.log('   Plain token starts with:', accessToken.substring(0, 10));
+      console.log('   Plain token:', maskToken(accessToken));
+
+      if (!isMetaToken(accessToken)) {
+        throw new Error('Invalid Meta token format - must start with EAA');
+      }
 
       const encryptedToken = encrypt(accessToken);
       console.log('   Encrypted token length:', encryptedToken.length);
-      console.log('   Encrypted token starts with:', encryptedToken.substring(0, 20));
+      console.log('   Encrypted token preview:', encryptedToken.substring(0, 30) + '...');
 
       // ✅ VERIFY ENCRYPTION WORKED
       const verifyDecrypt = safeDecryptStrict(encryptedToken);
@@ -352,6 +356,9 @@ class MetaService {
         throw new Error('Token encryption verification failed');
       }
       console.log('✅ Encryption verified successfully');
+
+      // Now save to database
+      const tokenExpiresAt = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000); // 60 days
 
       if (existingAccount) {
         // Account exists - check ownership
@@ -368,7 +375,7 @@ class MetaService {
           where: { id: existingAccount.id },
           data: {
             accessToken: encryptedToken,
-            tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+            tokenExpiresAt,
             displayName: primaryPhone.verifiedName || primaryPhone.displayPhoneNumber,
             qualityRating: primaryPhone.qualityRating,
             status: WhatsAppAccountStatus.CONNECTED,
@@ -386,11 +393,12 @@ class MetaService {
         // Create new account
         console.log('🔄 Creating new account...');
 
-        const webhookVerifyToken = uuidv4();
         const accountCount = await prisma.whatsAppAccount.count({
           where: { organizationId },
         });
+
         const cleanPhoneNumber = primaryPhone.displayPhoneNumber.replace(/\D/g, '');
+        const webhookVerifyToken = uuidv4();
         const encryptedWebhookSecret = encrypt(webhookVerifyToken);
 
         savedAccount = await prisma.whatsAppAccount.create({
@@ -402,7 +410,7 @@ class MetaService {
             displayName: primaryPhone.verifiedName || primaryPhone.displayPhoneNumber,
             qualityRating: primaryPhone.qualityRating,
             accessToken: encryptedToken,
-            tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+            tokenExpiresAt,
             webhookSecret: encryptedWebhookSecret,
             status: WhatsAppAccountStatus.CONNECTED,
             isDefault: accountCount === 0,
@@ -499,37 +507,34 @@ class MetaService {
     }
 
     if (!account.accessToken) {
-      console.error(`❌ No access token for account: ${accountId}`);
+      console.error(`❌ No access token stored for account: ${accountId}`);
       return null;
     }
 
     console.log(`\n🔐 ========== TOKEN RETRIEVAL ==========`);
     console.log(`   Account ID: ${accountId}`);
-    console.log(`   Stored token length: ${account.accessToken.length}`);
-    console.log(`   Stored token starts with: ${account.accessToken.substring(0, 20)}...`);
+    console.log(`   Organization: ${account.organizationId}`);
+    console.log(`   Phone: ${account.phoneNumber}`);
+    console.log(`   Stored encrypted token length: ${account.accessToken.length}`);
+    console.log(`   Stored token preview: ${account.accessToken.substring(0, 30)}...`);
 
     // ✅ STRICT decrypt: only returns valid Meta tokens
     const decryptedToken = safeDecryptStrict(account.accessToken);
 
     if (!decryptedToken) {
       console.error(`❌ Failed to decrypt token for account: ${accountId}`);
-      console.error(`   This usually means:`);
-      console.error(`   1. Token was stored incorrectly (not encrypted)`);
-      console.error(`   2. Encryption key changed`);
-      console.error(`   3. Token is corrupted`);
-      console.error(`   Solution: Reconnect the WhatsApp account`);
+      console.error(`   Possible reasons:`);
+      console.error(`   1. Token was saved incorrectly (not encrypted properly)`);
+      console.error(`   2. Encryption key changed in .env (ENCRYPTION_KEY)`);
+      console.error(`   3. Database corruption`);
+      console.error(`   4. Token format changed`);
+      console.error(`\n   ✅ SOLUTION: Reconnect WhatsApp account from Settings`);
       return null;
     }
 
-    // Double-check it's a valid Meta token
-    if (!this.looksLikeAccessToken(decryptedToken)) {
-      console.error(`❌ Decrypted value is not a valid Meta token`);
-      console.error(`   Expected: EAA...`);
-      console.error(`   Got: ${maskToken(decryptedToken)}`);
-      return null;
-    }
-
-    console.log(`✅ Token decrypted successfully: ${maskToken(decryptedToken)}`);
+    console.log(`✅ Token decrypted successfully`);
+    console.log(`   Decrypted token: ${maskToken(decryptedToken)}`);
+    console.log(`   Token is valid Meta format: ${isMetaToken(decryptedToken)}`);
     console.log(`🔐 ========== TOKEN RETRIEVAL END ==========\n`);
 
     return {

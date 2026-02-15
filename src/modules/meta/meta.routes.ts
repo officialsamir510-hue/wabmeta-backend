@@ -45,6 +45,22 @@ router.post(
 );
 
 // ============================================
+// DEBUG ROUTES
+// ============================================
+
+// Debug single account token
+router.get(
+  '/debug-token/:accountId',
+  metaController.debugToken.bind(metaController)
+);
+
+// Debug all accounts for organization
+router.get(
+  '/debug-all/:organizationId',
+  metaController.debugAllTokens.bind(metaController)
+);
+
+// ============================================
 // ORGANIZATION ROUTES
 // ============================================
 
