@@ -120,7 +120,7 @@ export declare const getUsersSchema: z.ZodObject<{
         page: number;
         limit: number;
         sortBy: "email" | "firstName" | "lastLoginAt" | "createdAt";
-        sortOrder: "asc" | "desc";
+        sortOrder: "desc" | "asc";
         search?: string | undefined;
         status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
     }, {
@@ -129,14 +129,14 @@ export declare const getUsersSchema: z.ZodObject<{
         limit?: string | undefined;
         status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
         sortBy?: "email" | "firstName" | "lastLoginAt" | "createdAt" | undefined;
-        sortOrder?: "asc" | "desc" | undefined;
+        sortOrder?: "desc" | "asc" | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     query: {
         page: number;
         limit: number;
         sortBy: "email" | "firstName" | "lastLoginAt" | "createdAt";
-        sortOrder: "asc" | "desc";
+        sortOrder: "desc" | "asc";
         search?: string | undefined;
         status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
     };
@@ -147,7 +147,7 @@ export declare const getUsersSchema: z.ZodObject<{
         limit?: string | undefined;
         status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
         sortBy?: "email" | "firstName" | "lastLoginAt" | "createdAt" | undefined;
-        sortOrder?: "asc" | "desc" | undefined;
+        sortOrder?: "desc" | "asc" | undefined;
     };
 }>;
 export declare const getUserByIdSchema: z.ZodObject<{
@@ -251,7 +251,7 @@ export declare const getOrganizationsSchema: z.ZodObject<{
         page: number;
         limit: number;
         sortBy: "name" | "createdAt" | "planType";
-        sortOrder: "asc" | "desc";
+        sortOrder: "desc" | "asc";
         search?: string | undefined;
         planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
     }, {
@@ -260,14 +260,14 @@ export declare const getOrganizationsSchema: z.ZodObject<{
         limit?: string | undefined;
         planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
         sortBy?: "name" | "createdAt" | "planType" | undefined;
-        sortOrder?: "asc" | "desc" | undefined;
+        sortOrder?: "desc" | "asc" | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     query: {
         page: number;
         limit: number;
         sortBy: "name" | "createdAt" | "planType";
-        sortOrder: "asc" | "desc";
+        sortOrder: "desc" | "asc";
         search?: string | undefined;
         planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
     };
@@ -278,7 +278,7 @@ export declare const getOrganizationsSchema: z.ZodObject<{
         limit?: string | undefined;
         planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
         sortBy?: "name" | "createdAt" | "planType" | undefined;
-        sortOrder?: "asc" | "desc" | undefined;
+        sortOrder?: "desc" | "asc" | undefined;
     };
 }>;
 export declare const getOrganizationByIdSchema: z.ZodObject<{

@@ -80,6 +80,13 @@ export interface TemplateResponse {
     rejectionReason: string | null;
     createdAt: Date;
     updatedAt: Date;
+    wabaId?: string | null;
+    whatsappAccountId?: string | null;
+    whatsappAccount?: {
+        id: string;
+        phoneNumber: string | null;
+        displayName: string | null;
+    };
 }
 export interface TemplatesListResponse {
     templates: TemplateResponse[];

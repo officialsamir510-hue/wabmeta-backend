@@ -5,30 +5,44 @@ export declare class TemplatesService {
         valid: boolean;
         errors: string[];
     };
-    create(organizationId: string, input: CreateTemplateInput): Promise<TemplateResponse>;
-    duplicate(organizationId: string, templateId: string, newName: string): Promise<TemplateResponse>;
-    getApprovedTemplates(organizationId: string): Promise<TemplateResponse[]>;
-    getLanguages(organizationId: string): Promise<{
-        language: string;
-        count: number;
-    }[]>;
-    getList(organizationId: string, query: TemplatesQueryInput): Promise<TemplatesListResponse>;
+    create(organizationId: string, input: CreateTemplateInput & {
+        whatsappAccountId?: string;
+    }): Promise<TemplateResponse>;
+    getList(organizationId: string, query: TemplatesQueryInput & {
+        whatsappAccountId?: string;
+    }): Promise<TemplatesListResponse>;
+    getApprovedTemplates(organizationId: string, whatsappAccountId?: string): Promise<TemplateResponse[]>;
+    syncFromMeta(organizationId: string, whatsappAccountId?: string): Promise<{
+        message: string;
+        synced: number;
+    }>;
+    private extractVariablesFromComponents;
     getById(organizationId: string, templateId: string): Promise<TemplateResponse>;
     update(organizationId: string, templateId: string, input: UpdateTemplateInput): Promise<TemplateResponse>;
     delete(organizationId: string, templateId: string): Promise<{
         message: string;
     }>;
-    getStats(organizationId: string): Promise<TemplateStats>;
+    getStats(organizationId: string, whatsappAccountId?: string): Promise<TemplateStats>;
+    duplicate(organizationId: string, templateId: string, newName: string, targetWhatsappAccountId?: string): Promise<TemplateResponse>;
     preview(bodyText: string, variables?: Record<string, string>, headerType?: string, headerContent?: string, footerText?: string, buttons?: TemplateButton[]): Promise<TemplatePreview>;
     submitToMeta(organizationId: string, templateId: string, whatsappAccountId?: string): Promise<{
         message: string;
         metaTemplateId?: string;
     }>;
-    syncFromMeta(organizationId: string, whatsappAccountId?: string): Promise<{
-        message: string;
-        synced: number;
-    }>;
+    getLanguages(organizationId: string, whatsappAccountId?: string): Promise<{
+        language: string;
+        count: number;
+    }[]>;
     updateStatus(metaTemplateId: string, status: TemplateStatus, rejectionReason?: string): Promise<void>;
+    syncTemplatesForAccount(organizationId: string, whatsappAccountId: string): Promise<{
+        synced: number;
+        created: number;
+        updated: number;
+        skipped: number;
+        removed: number;
+        total: number;
+    }>;
 }
 export declare const templatesService: TemplatesService;
+export default templatesService;
 //# sourceMappingURL=templates.service.d.ts.map

@@ -304,34 +304,34 @@ export declare const getCampaignsSchema: z.ZodObject<{
         page: number;
         limit: number;
         sortBy: "name" | "createdAt" | "scheduledAt" | "sentCount";
-        sortOrder: "asc" | "desc";
+        sortOrder: "desc" | "asc";
         search?: string | undefined;
-        status?: "COMPLETED" | "DRAFT" | "FAILED" | "SCHEDULED" | "RUNNING" | "PAUSED" | undefined;
+        status?: "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
     }, {
         search?: string | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        status?: "COMPLETED" | "DRAFT" | "FAILED" | "SCHEDULED" | "RUNNING" | "PAUSED" | undefined;
+        status?: "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
         sortBy?: "name" | "createdAt" | "scheduledAt" | "sentCount" | undefined;
-        sortOrder?: "asc" | "desc" | undefined;
+        sortOrder?: "desc" | "asc" | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     query: {
         page: number;
         limit: number;
         sortBy: "name" | "createdAt" | "scheduledAt" | "sentCount";
-        sortOrder: "asc" | "desc";
+        sortOrder: "desc" | "asc";
         search?: string | undefined;
-        status?: "COMPLETED" | "DRAFT" | "FAILED" | "SCHEDULED" | "RUNNING" | "PAUSED" | undefined;
+        status?: "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
     };
 }, {
     query: {
         search?: string | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        status?: "COMPLETED" | "DRAFT" | "FAILED" | "SCHEDULED" | "RUNNING" | "PAUSED" | undefined;
+        status?: "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
         sortBy?: "name" | "createdAt" | "scheduledAt" | "sentCount" | undefined;
-        sortOrder?: "asc" | "desc" | undefined;
+        sortOrder?: "desc" | "asc" | undefined;
     };
 }>;
 export declare const getCampaignByIdSchema: z.ZodObject<{

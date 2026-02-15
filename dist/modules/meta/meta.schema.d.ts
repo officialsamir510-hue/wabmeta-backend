@@ -21,69 +21,23 @@ export declare const tokenExchangeSchema: z.ZodObject<{
         organizationId: string;
     };
 }>;
-export declare const disconnectAccountSchema: z.ZodObject<{
-    params: z.ZodObject<{
-        accountId: z.ZodString;
-    }, "strip", z.ZodTypeAny, {
-        accountId: string;
-    }, {
-        accountId: string;
-    }>;
-}, "strip", z.ZodTypeAny, {
-    params: {
-        accountId: string;
-    };
-}, {
-    params: {
-        accountId: string;
-    };
-}>;
-export declare const refreshTokenSchema: z.ZodObject<{
-    params: z.ZodObject<{
-        accountId: z.ZodString;
-    }, "strip", z.ZodTypeAny, {
-        accountId: string;
-    }, {
-        accountId: string;
-    }>;
-}, "strip", z.ZodTypeAny, {
-    params: {
-        accountId: string;
-    };
-}, {
-    params: {
-        accountId: string;
-    };
-}>;
-export declare const webhookVerifySchema: z.ZodObject<{
+export declare const getOAuthUrlSchema: z.ZodObject<{
     query: z.ZodObject<{
-        'hub.mode': z.ZodString;
-        'hub.verify_token': z.ZodString;
-        'hub.challenge': z.ZodString;
+        organizationId: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
-        'hub.mode': string;
-        'hub.verify_token': string;
-        'hub.challenge': string;
+        organizationId?: string | undefined;
     }, {
-        'hub.mode': string;
-        'hub.verify_token': string;
-        'hub.challenge': string;
+        organizationId?: string | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     query: {
-        'hub.mode': string;
-        'hub.verify_token': string;
-        'hub.challenge': string;
+        organizationId?: string | undefined;
     };
 }, {
     query: {
-        'hub.mode': string;
-        'hub.verify_token': string;
-        'hub.challenge': string;
+        organizationId?: string | undefined;
     };
 }>;
-export type TokenExchangeInput = z.infer<typeof tokenExchangeSchema>;
-export type DisconnectAccountInput = z.infer<typeof disconnectAccountSchema>;
-export type RefreshTokenInput = z.infer<typeof refreshTokenSchema>;
-export type WebhookVerifyInput = z.infer<typeof webhookVerifySchema>;
+export type TokenExchangeBody = z.infer<typeof tokenExchangeSchema>['body'];
+export type GetOAuthUrlQuery = z.infer<typeof getOAuthUrlSchema>['query'];
 //# sourceMappingURL=meta.schema.d.ts.map

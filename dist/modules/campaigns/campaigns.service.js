@@ -8,6 +8,8 @@ exports.campaignsService = exports.CampaignsService = void 0;
 const database_1 = __importDefault(require("../../config/database"));
 const errorHandler_1 = require("../../middleware/errorHandler");
 const whatsapp_api_1 = require("../whatsapp/whatsapp.api");
+const uuid_1 = require("uuid");
+const meta_service_1 = require("../meta/meta.service"); // ✅ ADDED: Import metaService
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
@@ -63,7 +65,7 @@ const formatCampaign = (campaign) => {
         whatsappAccountId: campaign.whatsappAccountId,
         whatsappAccountPhone: campaign.whatsappAccount?.phoneNumber || '',
         contactGroupId: campaign.contactGroupId,
-        contactGroupName: campaign.ContactGroup?.name || null, // ✅ Fixed: contactGroup -> ContactGroup
+        contactGroupName: campaign.ContactGroup?.name || null,
         audienceFilter: campaign.audienceFilter,
         variableMapping: null,
         status: campaign.status,
@@ -85,7 +87,7 @@ const formatCampaign = (campaign) => {
 const formatCampaignContact = (cc) => ({
     id: cc.id,
     contactId: cc.contactId,
-    phone: cc.Contact?.phone || '', // ✅ Fixed: contact -> Contact
+    phone: cc.Contact?.phone || '',
     fullName: [cc.Contact?.firstName, cc.Contact?.lastName].filter(Boolean).join(' ') || cc.Contact?.phone || '',
     status: cc.status,
     waMessageId: cc.waMessageId,
@@ -106,7 +108,7 @@ const toJsonValue = (value) => {
 // ============================================
 class CampaignsService {
     // ==========================================
-    // ✅ FIXED: FIND WHATSAPP ACCOUNT (ROBUST)
+    // FIND WHATSAPP ACCOUNT (ROBUST)
     // ==========================================
     async findWhatsAppAccount(organizationId, whatsappAccountId, phoneNumberId) {
         console.log('🔍 Finding WhatsApp account:', {
@@ -123,44 +125,26 @@ class CampaignsService {
                     organizationId
                 },
             });
-            if (waAccount) {
-                console.log('✅ Found by exact match (id + org):', waAccount.id);
+            if (waAccount)
                 return waAccount;
-            }
         }
         // Method 2: Try by ID only (check if organizationId is missing/null)
         if (!waAccount && whatsappAccountId) {
             const byIdOnly = await database_1.default.whatsAppAccount.findUnique({
                 where: { id: whatsappAccountId },
             });
-            console.log('🔍 WhatsApp account by ID only:', byIdOnly ? {
-                id: byIdOnly.id,
-                organizationId: byIdOnly.organizationId,
-                status: byIdOnly.status,
-                phoneNumber: byIdOnly.phoneNumber,
-            } : 'NOT FOUND');
             if (byIdOnly) {
-                // Case A: organizationId is null/missing -> backfill it
                 if (!byIdOnly.organizationId) {
-                    console.log('⚠️ WhatsApp account has no organizationId, backfilling...');
                     waAccount = await database_1.default.whatsAppAccount.update({
                         where: { id: byIdOnly.id },
                         data: { organizationId },
                     });
-                    console.log('✅ Backfilled organizationId:', waAccount.id);
                     return waAccount;
                 }
-                // Case B: organizationId exists but different -> security block
                 if (byIdOnly.organizationId !== organizationId) {
-                    console.error('❌ WhatsApp account belongs to different org:', {
-                        accountOrg: byIdOnly.organizationId,
-                        requestOrg: organizationId,
-                    });
                     throw new errorHandler_1.AppError('WhatsApp account belongs to another organization', 403);
                 }
-                // Case C: organizationId matches (shouldn't reach here, but just in case)
-                waAccount = byIdOnly;
-                return waAccount;
+                return byIdOnly;
             }
         }
         // Method 3: Try by phoneNumberId
@@ -171,27 +155,21 @@ class CampaignsService {
                     organizationId
                 },
             });
-            if (waAccount) {
-                console.log('✅ Found by phoneNumberId:', waAccount.id);
+            if (waAccount)
                 return waAccount;
-            }
-            // Try phoneNumberId without org filter
             const byPhoneNumberId = await database_1.default.whatsAppAccount.findFirst({
                 where: { phoneNumberId },
             });
             if (byPhoneNumberId && !byPhoneNumberId.organizationId) {
-                console.log('⚠️ Found by phoneNumberId, backfilling org...');
                 waAccount = await database_1.default.whatsAppAccount.update({
                     where: { id: byPhoneNumberId.id },
                     data: { organizationId },
                 });
-                console.log('✅ Backfilled organizationId:', waAccount.id);
                 return waAccount;
             }
         }
         // Method 4: Fallback - get default/first connected account for this org
         if (!waAccount) {
-            console.log('🔍 Trying fallback: default/connected account for org...');
             waAccount = await database_1.default.whatsAppAccount.findFirst({
                 where: {
                     organizationId,
@@ -202,29 +180,22 @@ class CampaignsService {
                     { createdAt: 'desc' },
                 ],
             });
-            if (waAccount) {
-                console.log('✅ Found by fallback (default/connected):', waAccount.id);
+            if (waAccount)
                 return waAccount;
-            }
         }
         // Method 5: Last resort - any account for this org
         if (!waAccount) {
-            console.log('🔍 Trying last resort: any account for org...');
             waAccount = await database_1.default.whatsAppAccount.findFirst({
                 where: { organizationId },
                 orderBy: { createdAt: 'desc' },
             });
-            if (waAccount) {
-                console.log('✅ Found by last resort:', waAccount.id);
+            if (waAccount)
                 return waAccount;
-            }
         }
-        // Nothing found
-        console.error('❌ No WhatsApp account found for org:', organizationId);
         return null;
     }
     // ==========================================
-    // ✅ FIXED: CREATE CAMPAIGN
+    // CREATE CAMPAIGN
     // ==========================================
     async create(organizationId, input) {
         const { name, description, templateId, whatsappAccountId, phoneNumberId, contactGroupId, contactIds, audienceFilter, scheduledAt, } = input;
@@ -243,16 +214,11 @@ class CampaignsService {
         if (!template) {
             throw new errorHandler_1.AppError('Template not found', 404);
         }
-        // ✅ FIXED: Robust WhatsApp account lookup
+        // Find WhatsApp Account
         const waAccount = await this.findWhatsAppAccount(organizationId, whatsappAccountId, phoneNumberId);
         if (!waAccount) {
-            throw new errorHandler_1.AppError('WhatsApp account not found. Please connect WhatsApp first in Settings → WhatsApp.', 404);
+            throw new errorHandler_1.AppError('WhatsApp account not found. Please connect WhatsApp first in Settings → WhatsApp.', 400);
         }
-        console.log('✅ Using WhatsApp account:', {
-            id: waAccount.id,
-            phoneNumber: waAccount.phoneNumber,
-            status: waAccount.status,
-        });
         // Validate contact group if provided
         if (contactGroupId) {
             const group = await database_1.default.contactGroup.findFirst({
@@ -333,12 +299,11 @@ class CampaignsService {
                 include: {
                     template: { select: { name: true } },
                     whatsappAccount: { select: { phoneNumber: true } },
-                    ContactGroup: { select: { name: true } }, // ✅ Fixed: contactGroup -> ContactGroup
+                    ContactGroup: { select: { name: true } },
                 },
             });
-            // ✅ Fixed: Add required fields for CampaignContact
             const campaignContactsData = targetContacts.map((contact) => ({
-                id: cuid(), // ✅ Generate ID
+                id: (0, uuid_1.v4)(),
                 campaignId: newCampaign.id,
                 contactId: contact.id,
                 status: 'PENDING',
@@ -380,7 +345,7 @@ class CampaignsService {
                 include: {
                     template: { select: { name: true } },
                     whatsappAccount: { select: { phoneNumber: true } },
-                    ContactGroup: { select: { name: true } }, // ✅ Fixed
+                    ContactGroup: { select: { name: true } },
                 },
             }),
             database_1.default.campaign.count({ where }),
@@ -436,7 +401,7 @@ class CampaignsService {
             ...formatCampaign(campaign),
             template: campaign.template,
             whatsappAccount: campaign.whatsappAccount,
-            contactGroup: campaign.ContactGroup, // ✅ Fixed
+            contactGroup: campaign.ContactGroup,
         };
     }
     // ==========================================
@@ -480,7 +445,7 @@ class CampaignsService {
             include: {
                 template: { select: { name: true } },
                 whatsappAccount: { select: { phoneNumber: true } },
-                ContactGroup: { select: { name: true } }, // ✅ Fixed
+                ContactGroup: { select: { name: true } },
             },
         });
         return formatCampaign(updated);
@@ -508,15 +473,16 @@ class CampaignsService {
         return { message: 'Campaign deleted successfully' };
     }
     // ==========================================
-    // START CAMPAIGN
+    // START CAMPAIGN - ✅ FIXED
     // ==========================================
     async start(organizationId, campaignId) {
         const campaign = await database_1.default.campaign.findFirst({
             where: { id: campaignId, organizationId },
             include: { template: true, whatsappAccount: true },
         });
-        if (!campaign)
+        if (!campaign) {
             throw new errorHandler_1.AppError('Campaign not found', 404);
+        }
         if (!['DRAFT', 'SCHEDULED', 'PAUSED'].includes(campaign.status)) {
             throw new errorHandler_1.AppError(`Cannot start campaign with status: ${campaign.status}`, 400);
         }
@@ -526,6 +492,21 @@ class CampaignsService {
         if (campaign.whatsappAccount.status !== 'CONNECTED') {
             throw new errorHandler_1.AppError('WhatsApp account is not connected', 400);
         }
+        // ✅ ADDED: Check token expiry BEFORE starting
+        const now = new Date();
+        if (campaign.whatsappAccount.tokenExpiresAt &&
+            campaign.whatsappAccount.tokenExpiresAt < now) {
+            throw new errorHandler_1.AppError('WhatsApp account token expired. Please reconnect in Settings → WhatsApp.', 400);
+        }
+        // ✅ ADDED: Verify token can be decrypted
+        const accountData = await meta_service_1.metaService.getAccountWithToken(campaign.whatsappAccountId);
+        if (!accountData) {
+            throw new errorHandler_1.AppError('WhatsApp account token is invalid or unavailable. Please reconnect in Settings → WhatsApp.', 400);
+        }
+        if (!accountData.accessToken.startsWith('EAA')) {
+            throw new errorHandler_1.AppError('WhatsApp account token is corrupted. Please reconnect in Settings → WhatsApp.', 400);
+        }
+        console.log(`✅ Token validated for campaign: ${campaignId}`);
         const updated = await database_1.default.campaign.update({
             where: { id: campaignId },
             data: {
@@ -535,7 +516,7 @@ class CampaignsService {
             include: {
                 template: { select: { name: true, language: true, variables: true } },
                 whatsappAccount: { select: { id: true, phoneNumber: true } },
-                ContactGroup: { select: { name: true } }, // ✅ Fixed
+                ContactGroup: { select: { name: true } },
             },
         });
         console.log(`🚀 Starting campaign: ${campaignId}`);
@@ -567,7 +548,7 @@ class CampaignsService {
             include: {
                 template: { select: { name: true } },
                 whatsappAccount: { select: { phoneNumber: true } },
-                ContactGroup: { select: { name: true } }, // ✅ Fixed
+                ContactGroup: { select: { name: true } },
             },
         });
         console.log(`⏸️ Campaign paused: ${campaignId}`);
@@ -589,13 +570,18 @@ class CampaignsService {
         if (campaign.status !== 'PAUSED') {
             throw new errorHandler_1.AppError('Only paused campaigns can be resumed', 400);
         }
+        // ✅ ADDED: Verify token before resuming
+        const accountData = await meta_service_1.metaService.getAccountWithToken(campaign.whatsappAccountId);
+        if (!accountData || !accountData.accessToken.startsWith('EAA')) {
+            throw new errorHandler_1.AppError('WhatsApp account token is invalid. Please reconnect before resuming.', 400);
+        }
         const updated = await database_1.default.campaign.update({
             where: { id: campaignId },
             data: { status: 'RUNNING' },
             include: {
                 template: { select: { name: true } },
                 whatsappAccount: { select: { phoneNumber: true } },
-                ContactGroup: { select: { name: true } }, // ✅ Fixed
+                ContactGroup: { select: { name: true } },
             },
         });
         console.log(`▶️ Campaign resumed: ${campaignId}`);
@@ -630,7 +616,7 @@ class CampaignsService {
             include: {
                 template: { select: { name: true } },
                 whatsappAccount: { select: { phoneNumber: true } },
-                ContactGroup: { select: { name: true } }, // ✅ Fixed
+                ContactGroup: { select: { name: true } },
             },
         });
         console.log(`❌ Campaign cancelled: ${campaignId}`);
@@ -698,6 +684,11 @@ class CampaignsService {
         if (!campaign) {
             throw new errorHandler_1.AppError('Campaign not found', 404);
         }
+        // ✅ ADDED: Verify token before retry
+        const accountData = await meta_service_1.metaService.getAccountWithToken(campaign.whatsappAccountId);
+        if (!accountData || !accountData.accessToken.startsWith('EAA')) {
+            throw new errorHandler_1.AppError('WhatsApp account token is invalid. Please reconnect before retrying.', 400);
+        }
         const statusesToRetry = [];
         if (retryFailed)
             statusesToRetry.push('FAILED');
@@ -723,8 +714,12 @@ class CampaignsService {
                 where: { id: campaignId },
                 data: { status: 'RUNNING' },
             });
+            // Resume sending
+            void this.processCampaignSending(organizationId, campaignId).catch((e) => {
+                console.error('❌ Campaign retry send failed:', e);
+            });
         }
-        console.log(`🔄 Retrying ${result.count} messages for campaign: ${campaignId}`);
+        console.log(`🔄 Campaign retry: ${result.count} messages queued`);
         return {
             message: `${result.count} messages queued for retry`,
             retryCount: result.count,
@@ -765,13 +760,13 @@ class CampaignsService {
                 include: {
                     template: { select: { name: true } },
                     whatsappAccount: { select: { phoneNumber: true } },
-                    ContactGroup: { select: { name: true } }, // ✅ Fixed
+                    ContactGroup: { select: { name: true } },
                 },
             });
             if (originalContacts.length > 0) {
                 await tx.campaignContact.createMany({
                     data: originalContacts.map((c) => ({
-                        id: cuid(), // ✅ Generate ID
+                        id: (0, uuid_1.v4)(),
                         campaignId: newCampaign.id,
                         contactId: c.contactId,
                         status: 'PENDING',
@@ -782,52 +777,89 @@ class CampaignsService {
             }
             return newCampaign;
         });
-        console.log(`📋 Campaign duplicated: ${campaignId} -> ${duplicate.id}`);
+        console.log(`📋 Campaign duplicated: ${campaignId} → ${duplicate.id}`);
         return formatCampaign(duplicate);
     }
-    // Rest of the methods remain the same with the following fixes:
-    // - All `contactGroup` changed to `ContactGroup`
-    // - All `contact` changed to `Contact` in includes
-    // - CampaignContact createMany now includes id, createdAt, updatedAt
     // ==========================================
-    // PROCESS CAMPAIGN SENDING (Internal)
+    // PROCESS CAMPAIGN SENDING - ✅ COMPLETELY FIXED
     // ==========================================
     async processCampaignSending(organizationId, campaignId) {
+        console.log(`📤 Starting send process for campaign: ${campaignId}`);
         const campaign = await database_1.default.campaign.findFirst({
             where: { id: campaignId, organizationId },
             include: { template: true, whatsappAccount: true },
         });
-        if (!campaign)
-            return;
-        if (campaign.status !== 'RUNNING')
-            return;
-        const wa = campaign.whatsappAccount;
-        if (!wa?.accessToken || !wa?.phoneNumberId) {
-            console.error('❌ WhatsApp account token/phoneNumberId missing');
+        if (!campaign) {
+            console.error('❌ Campaign not found');
             return;
         }
+        if (campaign.status !== 'RUNNING') {
+            console.log(`⚠️ Campaign status is ${campaign.status}, stopping send process`);
+            return;
+        }
+        // ✅ FIX: Get DECRYPTED token using metaService
+        const accountData = await meta_service_1.metaService.getAccountWithToken(campaign.whatsappAccountId);
+        if (!accountData) {
+            console.error('❌ WhatsApp account not found or token unavailable');
+            // Mark campaign as failed
+            await database_1.default.campaign.update({
+                where: { id: campaignId },
+                data: {
+                    status: 'FAILED',
+                    completedAt: new Date(),
+                },
+            });
+            return;
+        }
+        const { account, accessToken } = accountData; // ✅ accessToken is now DECRYPTED
+        // Verify token is valid format
+        if (!accessToken.startsWith('EAA')) {
+            console.error('❌ Invalid access token format:', accessToken.substring(0, 10) + '...');
+            await database_1.default.campaign.update({
+                where: { id: campaignId },
+                data: {
+                    status: 'FAILED',
+                    completedAt: new Date(),
+                },
+            });
+            return;
+        }
+        console.log('✅ Using decrypted token:', accessToken.substring(0, 10) + '...');
         const template = campaign.template;
         const templateName = template?.name;
         const templateLang = template?.language || 'en_US';
         if (!templateName) {
             console.error('❌ Campaign template missing');
+            await database_1.default.campaign.update({
+                where: { id: campaignId },
+                data: {
+                    status: 'FAILED',
+                    completedAt: new Date(),
+                },
+            });
             return;
         }
         const vars = template.variables || [];
         const varCount = Array.isArray(vars) ? vars.length : 0;
-        console.log(`🚀 Sending campaign ${campaignId} to pending contacts...`);
-        while (true) {
+        let batchCount = 0;
+        const MAX_BATCHES = 100; // Prevent infinite loops
+        let totalSent = 0;
+        let totalFailed = 0;
+        while (batchCount < MAX_BATCHES) {
+            batchCount++;
+            // Check campaign status before each batch
             const currentCampaign = await database_1.default.campaign.findUnique({
                 where: { id: campaignId },
                 select: { status: true },
             });
             if (!currentCampaign || currentCampaign.status !== 'RUNNING') {
-                console.log(`⏹️ Campaign stopped: ${campaignId}`);
+                console.log(`⚠️ Campaign stopped at batch ${batchCount} (status: ${currentCampaign?.status})`);
                 break;
             }
+            // Get pending contacts
             const pending = await database_1.default.campaignContact.findMany({
                 where: { campaignId, status: 'PENDING' },
-                take: 25,
+                take: 25, // Process 25 at a time
                 orderBy: { createdAt: 'asc' },
                 include: {
                     Contact: {
@@ -841,44 +873,91 @@ class CampaignsService {
                     },
                 },
             });
-            if (!pending.length)
+            if (!pending.length) {
+                console.log(`✅ No more pending contacts (batch ${batchCount})`);
                 break;
+            }
+            console.log(`📤 Processing batch ${batchCount}: ${pending.length} contacts`);
+            // Process each contact
             for (const cc of pending) {
-                const to = cc.Contact?.phone; // ✅ Fixed
+                const to = cc.Contact?.phone;
                 if (!to) {
                     await this.updateContactStatus(campaignId, cc.contactId, 'FAILED', undefined, 'Contact phone missing');
+                    totalFailed++;
                     continue;
                 }
                 try {
-                    const params = buildParamsFromContact(cc.Contact, varCount); // ✅ Fixed
+                    // Build template parameters
+                    const params = buildParamsFromContact(cc.Contact, varCount);
+                    // Build message payload
                     const payload = buildTemplateSendPayload({
                         to,
                         templateName,
                         language: templateLang,
                         params,
                     });
-                    const res = await whatsapp_api_1.whatsappApi.sendMessage(wa.phoneNumberId, wa.accessToken, payload);
+                    // ✅ FIX: Use DECRYPTED token
+                    const res = await whatsapp_api_1.whatsappApi.sendMessage(account.phoneNumberId, accessToken, // ✅ Now plaintext!
+                    payload);
                     const waMessageId = res?.messages?.[0]?.id;
+                    if (!waMessageId) {
+                        throw new Error('No message ID returned from WhatsApp API');
+                    }
+                    // Update contact status to SENT
                     await this.updateContactStatus(campaignId, cc.contactId, 'SENT', waMessageId);
-                    console.log('✅ Sent:', { campaignId, contactId: cc.contactId, waMessageId });
+                    totalSent++;
+                    console.log(`✅ Message sent to ${to} (${waMessageId})`);
+                    // Rate limiting: ~80 messages/second max (WhatsApp limit)
                     await new Promise((r) => setTimeout(r, 80));
                 }
                 catch (e) {
+                    console.error(`❌ Failed to send to ${to}:`, e.message);
+                    // Check if it's a token error (code 190)
+                    if (e?.response?.data?.error?.code === 190) {
+                        console.error('❌ OAuth token invalid - stopping campaign');
+                        // Mark account as disconnected
+                        await database_1.default.whatsAppAccount.update({
+                            where: { id: account.id },
+                            data: {
+                                status: 'DISCONNECTED',
+                                accessToken: null,
+                                tokenExpiresAt: null,
+                            },
+                        });
+                        // Mark campaign as failed
+                        await database_1.default.campaign.update({
+                            where: { id: campaignId },
+                            data: {
+                                status: 'FAILED',
+                                completedAt: new Date(),
+                            },
+                        });
+                        console.log(`❌ Campaign failed due to invalid token. Total sent: ${totalSent}, Total failed: ${totalFailed}`);
+                        return; // Stop processing entirely
+                    }
+                    // Check for rate limit error (code 130429)
+                    if (e?.response?.data?.error?.code === 130429) {
+                        console.warn('⚠️ Rate limit hit, waiting 60 seconds...');
+                        await new Promise((r) => setTimeout(r, 60000)); // Wait 1 minute
+                    }
                     const reason = e?.response?.data?.error?.message || e?.message || 'Send failed';
-                    console.error('❌ Send failed:', reason);
                     await this.updateContactStatus(campaignId, cc.contactId, 'FAILED', undefined, reason);
+                    totalFailed++;
                 }
             }
         }
+        if (batchCount >= MAX_BATCHES) {
+            console.warn(`⚠️ Campaign stopped: max batches (${MAX_BATCHES}) reached`);
+        }
+        console.log(`📊 Campaign ${campaignId} send process completed. Sent: ${totalSent}, Failed: ${totalFailed}`);
+        // Check if campaign is complete
         await this.checkAndComplete(campaignId);
-        console.log(`✅ Campaign processing done: ${campaignId}`);
     }
     // ==========================================
     // GET CAMPAIGN STATS
     // ==========================================
     async getStats(organizationId) {
         try {
-            console.log('📊 Fetching campaign stats for org:', organizationId);
             const stats = await database_1.default.campaign.aggregate({
                 where: { organizationId },
                 _count: { id: true },
@@ -922,9 +1001,7 @@ class CampaignsService {
             };
         }
         catch (error) {
-            console.error('❌ Get campaign stats error:', error);
             if (error.code === 'P2024') {
-                console.warn('⚠️ Database timeout, returning empty stats');
                 return {
                     total: 0,
                     draft: 0,
@@ -973,7 +1050,7 @@ class CampaignsService {
         };
     }
     // ==========================================
-    // UPDATE CAMPAIGN CONTACT STATUS (Internal)
+    // UPDATE CAMPAIGN CONTACT STATUS
     // ==========================================
     async updateContactStatus(campaignId, contactId, status, waMessageId, failureReason) {
         const now = new Date();
@@ -1003,6 +1080,7 @@ class CampaignsService {
             },
             data: updateData,
         });
+        // Update campaign counts
         const countField = `${status.toLowerCase()}Count`;
         if (['SENT', 'DELIVERED', 'READ', 'FAILED'].includes(status)) {
             await database_1.default.campaign.update({
@@ -1014,7 +1092,7 @@ class CampaignsService {
         }
     }
     // ==========================================
-    // CHECK AND COMPLETE CAMPAIGN (Internal)
+    // CHECK AND COMPLETE CAMPAIGN
     // ==========================================
     async checkAndComplete(campaignId) {
         const campaign = await database_1.default.campaign.findUnique({
@@ -1042,7 +1120,4 @@ class CampaignsService {
 }
 exports.CampaignsService = CampaignsService;
 exports.campaignsService = new CampaignsService();
-function cuid() {
-    throw new Error('Function not implemented.');
-}
 //# sourceMappingURL=campaigns.service.js.map

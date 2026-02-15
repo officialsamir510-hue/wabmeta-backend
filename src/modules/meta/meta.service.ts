@@ -766,12 +766,12 @@ class MetaService {
     const templates = await metaApi.getTemplates(account.wabaId, accessToken);
     console.log(`📥 Fetched ${templates.length} templates from Meta`);
 
-    // ✅ STEP 2: Get existing template names for this WABA
+    // ✅ STEP 2: Get existing templates for organization
     const existingTemplates = await prisma.template.findMany({
       where: {
         organizationId,
-        wabaId: account.wabaId,
-      } as any,
+        // Removed wabaId filter as templates are organization-wide
+      },
       select: {
         id: true,
         name: true,
@@ -809,8 +809,7 @@ class MetaService {
 
         const templateData = {
           organizationId,
-          whatsappAccountId: account.id,  // ✅ Link to WhatsApp account
-          wabaId: account.wabaId,         // ✅ Link to WABA
+          // Removed whatsappAccountId and wabaId
           metaTemplateId: template.id,
           name: template.name,
           language: template.language,
@@ -848,6 +847,21 @@ class MetaService {
 
     // ✅ STEP 4: Mark templates not in Meta as deleted/hidden
     // (Templates that exist in DB but not in Meta API response)
+    // Note: Since we are syncing for ONE specific account but templates are shared,
+    // deleting templates that are not in THIS account's list might be dangerous if they belong to another account?
+    // BUT, we earlier said templates are org-wide. So if they are in the org, they should be in the list?
+    // Wait, if an org has multiple WABAs, `getTemplates` only returns for one WABA.
+    // If we delete templates not in this WABA, we might delete templates from another WABA!
+    // Danger!
+    // So we should NOT delete templates here unless we are sure they were supposed to be from this WABA.
+    // But we don't store WABA ID anymore.
+    // So we cannot know which WABA a template "belongs" to.
+    // This logic of "deleting missing templates" is flawed in a shared model.
+    // We should SKIP the deletion step or make it very specific (e.g. only if metaTemplateId matches?).
+    // Actually, if we don't delete, we are fine.
+
+    // Safety: disabling deletion for now to prevent data loss across multiple WABAs.
+    /*
     const templatesToRemove = existingTemplates.filter(
       t => !metaTemplateKeys.has(`${t.name}_${t.language}`)
     );
@@ -861,19 +875,22 @@ class MetaService {
         },
       });
     }
+    */
+
+    const removedCount = 0; // templatesToRemove.length;
 
     console.log(`✅ Template sync completed for WABA ${account.wabaId}:`);
     console.log(`   Created: ${createdCount}`);
     console.log(`   Updated: ${updatedCount}`);
     console.log(`   Skipped: ${skippedCount}`);
-    console.log(`   Removed: ${templatesToRemove.length}`);
+    console.log(`   Removed: ${removedCount}`);
 
     return {
       synced: syncedCount,
       created: createdCount,
       updated: updatedCount,
       skipped: skippedCount,
-      removed: templatesToRemove.length,
+      removed: removedCount,
       total: templates.length,
     };
   }
@@ -916,7 +933,7 @@ class MetaService {
 
       const account = await prisma.whatsAppAccount.findUnique({
         where: { id: accountId },
-        select: { organizationId: true, id: true, wabaId: true },
+        select: { organizationId: true, id: true },
       });
 
       if (!account) {
@@ -924,13 +941,8 @@ class MetaService {
         return;
       }
 
-      // ✅ Delete old templates for this WABA first
-      await prisma.template.deleteMany({
-        where: {
-          organizationId: account.organizationId,
-          wabaId: account.wabaId,
-        } as any,
-      });
+      // Note: We do NOT delete old templates anymore to prevent data loss.
+      // We upsert instead.
 
       let syncedCount = 0;
 
@@ -940,24 +952,41 @@ class MetaService {
 
           if (mappedStatus === 'DRAFT') continue;
 
-          await prisma.template.create({
-            data: {
+          // Check if exists
+          const existing = await prisma.template.findFirst({
+            where: {
               organizationId: account.organizationId,
-              whatsappAccountId: account.id,
-              wabaId: account.wabaId,
-              metaTemplateId: template.id,
               name: template.name,
               language: template.language,
-              category: this.mapCategory(template.category),
-              status: mappedStatus as TemplateStatus,
-              bodyText: this.extractBodyText(template.components),
-              headerType: this.extractHeaderType(template.components),
-              headerContent: this.extractHeaderContent(template.components),
-              footerText: this.extractFooterText(template.components),
-              buttons: this.extractButtons(template.components),
-              variables: this.extractVariables(template.components),
-            } as any,
+            }
           });
+
+          const templateData = {
+            organizationId: account.organizationId,
+            // whatsappAccountId / wabaId removed
+            metaTemplateId: template.id,
+            name: template.name,
+            language: template.language,
+            category: this.mapCategory(template.category),
+            status: mappedStatus as TemplateStatus,
+            bodyText: this.extractBodyText(template.components),
+            headerType: this.extractHeaderType(template.components),
+            headerContent: this.extractHeaderContent(template.components),
+            footerText: this.extractFooterText(template.components),
+            buttons: this.extractButtons(template.components),
+            variables: this.extractVariables(template.components),
+          };
+
+          if (existing) {
+            await prisma.template.update({
+              where: { id: existing.id },
+              data: templateData,
+            });
+          } else {
+            await prisma.template.create({
+              data: templateData
+            });
+          }
 
           syncedCount++;
         } catch (err: any) {

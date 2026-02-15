@@ -138,7 +138,7 @@ export declare const getContactsSchema: z.ZodObject<{
         page: number;
         limit: number;
         sortBy: "firstName" | "lastName" | "createdAt" | "lastMessageAt";
-        sortOrder: "asc" | "desc";
+        sortOrder: "desc" | "asc";
         search?: string | undefined;
         status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         tags?: string | undefined;
@@ -151,14 +151,14 @@ export declare const getContactsSchema: z.ZodObject<{
         tags?: string | undefined;
         groupId?: string | undefined;
         sortBy?: "firstName" | "lastName" | "createdAt" | "lastMessageAt" | undefined;
-        sortOrder?: "asc" | "desc" | undefined;
+        sortOrder?: "desc" | "asc" | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     query: {
         page: number;
         limit: number;
         sortBy: "firstName" | "lastName" | "createdAt" | "lastMessageAt";
-        sortOrder: "asc" | "desc";
+        sortOrder: "desc" | "asc";
         search?: string | undefined;
         status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         tags?: string | undefined;
@@ -173,7 +173,7 @@ export declare const getContactsSchema: z.ZodObject<{
         tags?: string | undefined;
         groupId?: string | undefined;
         sortBy?: "firstName" | "lastName" | "createdAt" | "lastMessageAt" | undefined;
-        sortOrder?: "asc" | "desc" | undefined;
+        sortOrder?: "desc" | "asc" | undefined;
     };
 }>;
 export declare const getContactByIdSchema: z.ZodObject<{

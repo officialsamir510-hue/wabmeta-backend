@@ -125,27 +125,27 @@ export declare const sendTemplateMessageSchema: z.ZodObject<{
                     filename?: string | undefined;
                 }>>;
             }, "strip", z.ZodTypeAny, {
-                type: "text" | "image" | "document" | "video" | "currency" | "date_time";
+                type: "text" | "document" | "image" | "video" | "currency" | "date_time";
                 text?: string | undefined;
-                image?: {
-                    link: string;
-                } | undefined;
                 document?: {
                     link: string;
                     filename?: string | undefined;
+                } | undefined;
+                image?: {
+                    link: string;
                 } | undefined;
                 video?: {
                     link: string;
                 } | undefined;
             }, {
-                type: "text" | "image" | "document" | "video" | "currency" | "date_time";
+                type: "text" | "document" | "image" | "video" | "currency" | "date_time";
                 text?: string | undefined;
-                image?: {
-                    link: string;
-                } | undefined;
                 document?: {
                     link: string;
                     filename?: string | undefined;
+                } | undefined;
+                image?: {
+                    link: string;
                 } | undefined;
                 video?: {
                     link: string;
@@ -154,14 +154,14 @@ export declare const sendTemplateMessageSchema: z.ZodObject<{
         }, "strip", z.ZodTypeAny, {
             type: "body" | "header" | "button";
             parameters: {
-                type: "text" | "image" | "document" | "video" | "currency" | "date_time";
+                type: "text" | "document" | "image" | "video" | "currency" | "date_time";
                 text?: string | undefined;
-                image?: {
-                    link: string;
-                } | undefined;
                 document?: {
                     link: string;
                     filename?: string | undefined;
+                } | undefined;
+                image?: {
+                    link: string;
                 } | undefined;
                 video?: {
                     link: string;
@@ -172,14 +172,14 @@ export declare const sendTemplateMessageSchema: z.ZodObject<{
         }, {
             type: "body" | "header" | "button";
             parameters: {
-                type: "text" | "image" | "document" | "video" | "currency" | "date_time";
+                type: "text" | "document" | "image" | "video" | "currency" | "date_time";
                 text?: string | undefined;
-                image?: {
-                    link: string;
-                } | undefined;
                 document?: {
                     link: string;
                     filename?: string | undefined;
+                } | undefined;
+                image?: {
+                    link: string;
                 } | undefined;
                 video?: {
                     link: string;
@@ -196,14 +196,14 @@ export declare const sendTemplateMessageSchema: z.ZodObject<{
         components?: {
             type: "body" | "header" | "button";
             parameters: {
-                type: "text" | "image" | "document" | "video" | "currency" | "date_time";
+                type: "text" | "document" | "image" | "video" | "currency" | "date_time";
                 text?: string | undefined;
-                image?: {
-                    link: string;
-                } | undefined;
                 document?: {
                     link: string;
                     filename?: string | undefined;
+                } | undefined;
+                image?: {
+                    link: string;
                 } | undefined;
                 video?: {
                     link: string;
@@ -219,14 +219,14 @@ export declare const sendTemplateMessageSchema: z.ZodObject<{
         components?: {
             type: "body" | "header" | "button";
             parameters: {
-                type: "text" | "image" | "document" | "video" | "currency" | "date_time";
+                type: "text" | "document" | "image" | "video" | "currency" | "date_time";
                 text?: string | undefined;
-                image?: {
-                    link: string;
-                } | undefined;
                 document?: {
                     link: string;
                     filename?: string | undefined;
+                } | undefined;
+                image?: {
+                    link: string;
                 } | undefined;
                 video?: {
                     link: string;
@@ -246,14 +246,14 @@ export declare const sendTemplateMessageSchema: z.ZodObject<{
         components?: {
             type: "body" | "header" | "button";
             parameters: {
-                type: "text" | "image" | "document" | "video" | "currency" | "date_time";
+                type: "text" | "document" | "image" | "video" | "currency" | "date_time";
                 text?: string | undefined;
-                image?: {
-                    link: string;
-                } | undefined;
                 document?: {
                     link: string;
                     filename?: string | undefined;
+                } | undefined;
+                image?: {
+                    link: string;
                 } | undefined;
                 video?: {
                     link: string;
@@ -271,14 +271,14 @@ export declare const sendTemplateMessageSchema: z.ZodObject<{
         components?: {
             type: "body" | "header" | "button";
             parameters: {
-                type: "text" | "image" | "document" | "video" | "currency" | "date_time";
+                type: "text" | "document" | "image" | "video" | "currency" | "date_time";
                 text?: string | undefined;
-                image?: {
-                    link: string;
-                } | undefined;
                 document?: {
                     link: string;
                     filename?: string | undefined;
+                } | undefined;
+                image?: {
+                    link: string;
                 } | undefined;
                 video?: {
                     link: string;
@@ -299,14 +299,14 @@ export declare const sendMediaMessageSchema: z.ZodObject<{
         caption: z.ZodOptional<z.ZodString>;
         filename: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
-        type: "image" | "document" | "video" | "audio";
+        type: "document" | "image" | "video" | "audio";
         to: string;
         mediaUrl: string;
         whatsappAccountId: string;
         caption?: string | undefined;
         filename?: string | undefined;
     }, {
-        type: "image" | "document" | "video" | "audio";
+        type: "document" | "image" | "video" | "audio";
         to: string;
         mediaUrl: string;
         whatsappAccountId: string;
@@ -315,7 +315,7 @@ export declare const sendMediaMessageSchema: z.ZodObject<{
     }>;
 }, "strip", z.ZodTypeAny, {
     body: {
-        type: "image" | "document" | "video" | "audio";
+        type: "document" | "image" | "video" | "audio";
         to: string;
         mediaUrl: string;
         whatsappAccountId: string;
@@ -324,7 +324,7 @@ export declare const sendMediaMessageSchema: z.ZodObject<{
     };
 }, {
     body: {
-        type: "image" | "document" | "video" | "audio";
+        type: "document" | "image" | "video" | "audio";
         to: string;
         mediaUrl: string;
         whatsappAccountId: string;

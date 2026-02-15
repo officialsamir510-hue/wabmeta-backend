@@ -24,13 +24,7 @@ const phoneButtonSchema = z.object({
   phoneNumber: z.string().regex(/^\+[1-9]\d{10,14}$/, 'Invalid phone number'),
 });
 
-const buttonSchema = z.discriminatedUnion('type', [
-  quickReplyButtonSchema,
-  urlButtonSchema,
-  phoneButtonSchema,
-]);
-
-// Simple button schema for flexible input
+// Flexible button schema for easy input
 const simpleButtonSchema = z.object({
   type: z.enum(['QUICK_REPLY', 'URL', 'PHONE_NUMBER']),
   text: z.string().min(1).max(25, 'Button text max 25 characters'),
@@ -46,6 +40,7 @@ const variableSchema = z.object({
   index: z.number().int().min(1).max(10),
   type: z.enum(['text', 'currency', 'date_time', 'image', 'document', 'video']).default('text'),
   example: z.string().optional(),
+  placeholder: z.string().optional(),
 });
 
 // ============================================
@@ -74,7 +69,7 @@ export const createTemplateSchema = z.object({
     footerText: z.string().max(60, 'Footer text max 60 characters').optional().nullable(),
     buttons: z.array(simpleButtonSchema).max(3, 'Maximum 3 buttons allowed').optional().default([]),
     variables: z.array(variableSchema).max(10, 'Maximum 10 variables').optional().default([]),
-    whatsappAccountId: z.string().optional(),  // ✅ Link to specific WhatsApp account
+    whatsappAccountId: z.string().optional(),
   }),
 });
 
@@ -105,32 +100,35 @@ export const updateTemplateSchema = z.object({
 });
 
 // ============================================
-// GET TEMPLATES LIST SCHEMA
+// GET TEMPLATES LIST SCHEMA - FIXED
 // ============================================
 
 export const getTemplatesSchema = z.object({
   query: z.object({
     page: z
       .string()
-      .regex(/^\d+$/)
-      .transform(Number)
       .optional()
-      .default('1'),
+      .default('1')
+      .transform(val => {
+        const num = parseInt(val);
+        return isNaN(num) || num < 1 ? 1 : num;
+      }),
     limit: z
       .string()
-      .regex(/^\d+$/)
-      .transform(Number)
-      .pipe(z.number().min(1).max(100))
       .optional()
-      .default('20'),
-    search: z.string().optional(),
+      .default('20')
+      .transform(val => {
+        const num = parseInt(val);
+        return isNaN(num) || num < 1 ? 20 : Math.min(num, 100);
+      }),
+    search: z.string().optional().transform(val => val?.trim() || undefined),
     status: z.nativeEnum(TemplateStatus).optional(),
     category: z.nativeEnum(TemplateCategory).optional(),
-    language: z.string().optional(),
+    language: z.string().optional().transform(val => val?.trim() || undefined),
     sortBy: z.enum(['createdAt', 'updatedAt', 'name', 'status']).optional().default('createdAt'),
     sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
-    whatsappAccountId: z.string().optional(),  // ✅ Filter by WhatsApp account
-  }),
+    whatsappAccountId: z.string().optional().transform(val => val?.trim() || undefined),
+  }).passthrough(), // ✅ Allow additional unknown query params
 });
 
 // ============================================
@@ -167,7 +165,7 @@ export const duplicateTemplateSchema = z.object({
       .min(1, 'New name is required')
       .max(512)
       .regex(/^[a-z0-9_]+$/, 'Name must be lowercase with underscores only'),
-    whatsappAccountId: z.string().optional(),  // ✅ Target account for duplicate
+    whatsappAccountId: z.string().optional(),
   }),
 });
 
@@ -180,7 +178,7 @@ export const submitTemplateSchema = z.object({
     id: z.string().min(1, 'Template ID is required'),
   }),
   body: z.object({
-    whatsappAccountId: z.string().optional(),  // ✅ Made optional - uses template's linked account
+    whatsappAccountId: z.string().optional(),
   }).optional(),
 });
 
@@ -195,48 +193,48 @@ export const previewTemplateSchema = z.object({
     bodyText: z.string().min(1, 'Body text is required'),
     footerText: z.string().optional(),
     buttons: z.array(simpleButtonSchema).max(3).optional(),
-    variables: z.record(z.string(), z.string()).optional().default({}), // { "1": "John", "2": "Order123" }
+    variables: z.record(z.string(), z.string()).optional().default({}),
   }),
 });
 
 // ============================================
-// SYNC TEMPLATES SCHEMA
+// SYNC TEMPLATES SCHEMA - FIXED
 // ============================================
 
 export const syncTemplatesSchema = z.object({
   body: z.object({
-    whatsappAccountId: z.string().optional(),  // ✅ Sync from specific account
-  }).optional(),
+    whatsappAccountId: z.string().optional(),
+  }).optional().default({}),
 });
 
 // ============================================
-// GET APPROVED TEMPLATES SCHEMA
+// GET APPROVED TEMPLATES SCHEMA - FIXED
 // ============================================
 
 export const getApprovedTemplatesSchema = z.object({
   query: z.object({
-    whatsappAccountId: z.string().optional(),  // ✅ Filter by WhatsApp account
-  }),
+    whatsappAccountId: z.string().optional().transform(val => val?.trim() || undefined),
+  }).passthrough(),
 });
 
 // ============================================
-// GET LANGUAGES SCHEMA
+// GET LANGUAGES SCHEMA - FIXED
 // ============================================
 
 export const getLanguagesSchema = z.object({
   query: z.object({
-    whatsappAccountId: z.string().optional(),  // ✅ Filter by WhatsApp account
-  }),
+    whatsappAccountId: z.string().optional().transform(val => val?.trim() || undefined),
+  }).passthrough(),
 });
 
 // ============================================
-// GET STATS SCHEMA
+// GET STATS SCHEMA - FIXED
 // ============================================
 
 export const getStatsSchema = z.object({
   query: z.object({
-    whatsappAccountId: z.string().optional(),  // ✅ Filter by WhatsApp account
-  }),
+    whatsappAccountId: z.string().optional().transform(val => val?.trim() || undefined),
+  }).passthrough(),
 });
 
 // ============================================
@@ -251,7 +249,7 @@ export type SubmitTemplateInput = z.infer<typeof submitTemplateSchema>;
 export type PreviewTemplateInput = z.infer<typeof previewTemplateSchema>['body'];
 export type SyncTemplatesInput = z.infer<typeof syncTemplatesSchema>;
 
-// Button types
+// Button and Variable types
 export type TemplateButton = z.infer<typeof simpleButtonSchema>;
 export type TemplateVariable = z.infer<typeof variableSchema>;
 

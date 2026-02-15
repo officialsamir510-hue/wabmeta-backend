@@ -4,38 +4,55 @@ import { Request, Response, NextFunction } from 'express';
 import { templatesService } from './templates.service';
 import { successResponse, errorResponse } from '../../utils/response';
 import { AppError } from '../../middleware/errorHandler';
-import {
-  CreateTemplateInput,
-  UpdateTemplateInput,
-  TemplatesQueryInput,
-} from './templates.types';
+import { TemplateStatus, TemplateCategory } from '@prisma/client';
+import prisma from '../../config/database';
 
 // Extended Request interface with user context
 interface AuthRequest extends Request {
   user?: {
     id: string;
     email: string;
-    organizationId?: string;
+    organizationId: string;
   };
 }
 
 class TemplatesController {
   // ==========================================
+  // HELPER: Get default WhatsApp account
+  // ==========================================
+  private async getDefaultAccountId(organizationId: string): Promise<string | undefined> {
+    const defaultAccount = await prisma.whatsAppAccount.findFirst({
+      where: {
+        organizationId,
+        status: 'CONNECTED',
+        isDefault: true,
+      },
+      select: { id: true },
+    });
+    return defaultAccount?.id;
+  }
+
+  // ==========================================
   // CREATE TEMPLATE
   // ==========================================
-  async create(req: AuthRequest, res: Response, next: NextFunction) {
+  async create(req: Request, res: Response, next: NextFunction) {
     try {
-      const organizationId = req.user?.organizationId;
+      const organizationId = (req as AuthRequest).user?.organizationId;
       if (!organizationId) {
         throw new AppError('Organization context required', 400);
       }
 
-      const input: CreateTemplateInput & { whatsappAccountId?: string } = req.body;
+      const input = req.body;
 
       // Validate template
       const validation = templatesService.validateTemplate(input);
       if (!validation.valid) {
         throw new AppError(validation.errors.join(', '), 400);
+      }
+
+      // If no whatsappAccountId provided, use default
+      if (!input.whatsappAccountId) {
+        input.whatsappAccountId = await this.getDefaultAccountId(organizationId);
       }
 
       const template = await templatesService.create(organizationId, input);
@@ -53,26 +70,50 @@ class TemplatesController {
   // ==========================================
   // GET TEMPLATES LIST
   // ==========================================
-  async getList(req: AuthRequest, res: Response, next: NextFunction) {
+  async getList(req: Request, res: Response, next: NextFunction) {
     try {
-      const organizationId = req.user?.organizationId;
+      const organizationId = (req as AuthRequest).user?.organizationId;
       if (!organizationId) {
         throw new AppError('Organization context required', 400);
       }
 
-      const query: TemplatesQueryInput & { whatsappAccountId?: string } = {
-        page: parseInt(req.query.page as string) || 1,
-        limit: parseInt(req.query.limit as string) || 20,
-        search: req.query.search as string,
-        status: req.query.status as any,
-        category: req.query.category as any,
-        language: req.query.language as string,
-        sortBy: (req.query.sortBy as any) || 'createdAt',
-        sortOrder: (req.query.sortOrder as any) || 'desc',
-        whatsappAccountId: req.query.whatsappAccountId as string, // ✅ Filter by account
-      };
+      // ✅ Parse query params safely
+      const page = req.query.page ? parseInt(req.query.page as string) : 1;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 20;
+      const search = (req.query.search as string)?.trim() || undefined;
+      const status = req.query.status as TemplateStatus | undefined;
+      const category = req.query.category as TemplateCategory | undefined;
+      const language = (req.query.language as string)?.trim() || undefined;
+      const sortBy = (req.query.sortBy as string) || 'createdAt';
+      const sortOrder = (req.query.sortOrder as 'asc' | 'desc') || 'desc';
+      let whatsappAccountId = (req.query.whatsappAccountId as string)?.trim() || undefined;
 
-      const result = await templatesService.getList(organizationId, query);
+      // ✅ If no whatsappAccountId, use default account
+      if (!whatsappAccountId) {
+        whatsappAccountId = await this.getDefaultAccountId(organizationId);
+      }
+
+      console.log('📋 Fetching templates:', {
+        organizationId,
+        page,
+        limit,
+        search,
+        status,
+        category,
+        whatsappAccountId,
+      });
+
+      const result = await templatesService.getList(organizationId, {
+        page,
+        limit,
+        search,
+        status,
+        category,
+        language,
+        sortBy: sortBy as any,
+        sortOrder,
+        whatsappAccountId,
+      });
 
       return res.json({
         success: true,
@@ -88,14 +129,18 @@ class TemplatesController {
   // ==========================================
   // GET TEMPLATE BY ID
   // ==========================================
-  async getById(req: AuthRequest, res: Response, next: NextFunction) {
+  async getById(req: Request, res: Response, next: NextFunction) {
     try {
-      const organizationId = req.user?.organizationId;
+      const organizationId = (req as AuthRequest).user?.organizationId;
       if (!organizationId) {
         throw new AppError('Organization context required', 400);
       }
 
       const id = req.params.id as string;
+      if (!id) {
+        throw new AppError('Template ID is required', 400);
+      }
+
       const template = await templatesService.getById(organizationId, id);
 
       return successResponse(res, {
@@ -110,15 +155,19 @@ class TemplatesController {
   // ==========================================
   // UPDATE TEMPLATE
   // ==========================================
-  async update(req: AuthRequest, res: Response, next: NextFunction) {
+  async update(req: Request, res: Response, next: NextFunction) {
     try {
-      const organizationId = req.user?.organizationId;
+      const organizationId = (req as AuthRequest).user?.organizationId;
       if (!organizationId) {
         throw new AppError('Organization context required', 400);
       }
 
       const id = req.params.id as string;
-      const input: UpdateTemplateInput = req.body;
+      if (!id) {
+        throw new AppError('Template ID is required', 400);
+      }
+
+      const input = req.body;
       const template = await templatesService.update(organizationId, id, input);
 
       return successResponse(res, {
@@ -133,14 +182,18 @@ class TemplatesController {
   // ==========================================
   // DELETE TEMPLATE
   // ==========================================
-  async delete(req: AuthRequest, res: Response, next: NextFunction) {
+  async delete(req: Request, res: Response, next: NextFunction) {
     try {
-      const organizationId = req.user?.organizationId;
+      const organizationId = (req as AuthRequest).user?.organizationId;
       if (!organizationId) {
         throw new AppError('Organization context required', 400);
       }
 
       const id = req.params.id as string;
+      if (!id) {
+        throw new AppError('Template ID is required', 400);
+      }
+
       const result = await templatesService.delete(organizationId, id);
 
       return successResponse(res, {
@@ -155,16 +208,19 @@ class TemplatesController {
   // ==========================================
   // DUPLICATE TEMPLATE
   // ==========================================
-  async duplicate(req: AuthRequest, res: Response, next: NextFunction) {
+  async duplicate(req: Request, res: Response, next: NextFunction) {
     try {
-      const organizationId = req.user?.organizationId;
+      const organizationId = (req as AuthRequest).user?.organizationId;
       if (!organizationId) {
         throw new AppError('Organization context required', 400);
       }
 
       const id = req.params.id as string;
-      const { name, whatsappAccountId } = req.body;
+      if (!id) {
+        throw new AppError('Template ID is required', 400);
+      }
 
+      const { name, whatsappAccountId } = req.body;
       if (!name) {
         throw new AppError('New template name is required', 400);
       }
@@ -173,7 +229,7 @@ class TemplatesController {
         organizationId,
         id,
         name,
-        whatsappAccountId // ✅ Target account for duplicate
+        whatsappAccountId
       );
 
       return successResponse(res, {
@@ -189,14 +245,20 @@ class TemplatesController {
   // ==========================================
   // GET TEMPLATE STATS
   // ==========================================
-  async getStats(req: AuthRequest, res: Response, next: NextFunction) {
+  async getStats(req: Request, res: Response, next: NextFunction) {
     try {
-      const organizationId = req.user?.organizationId;
+      const organizationId = (req as AuthRequest).user?.organizationId;
       if (!organizationId) {
         throw new AppError('Organization context required', 400);
       }
 
-      const whatsappAccountId = req.query.whatsappAccountId as string;
+      let whatsappAccountId = (req.query.whatsappAccountId as string)?.trim() || undefined;
+
+      // ✅ If no whatsappAccountId, use default account
+      if (!whatsappAccountId) {
+        whatsappAccountId = await this.getDefaultAccountId(organizationId);
+      }
+
       const stats = await templatesService.getStats(organizationId, whatsappAccountId);
 
       return successResponse(res, {
@@ -211,7 +273,7 @@ class TemplatesController {
   // ==========================================
   // PREVIEW TEMPLATE
   // ==========================================
-  async preview(req: AuthRequest, res: Response, next: NextFunction) {
+  async preview(req: Request, res: Response, next: NextFunction) {
     try {
       const { bodyText, variables, headerType, headerContent, footerText, buttons } = req.body;
 
@@ -240,14 +302,27 @@ class TemplatesController {
   // ==========================================
   // GET APPROVED TEMPLATES
   // ==========================================
-  async getApproved(req: AuthRequest, res: Response, next: NextFunction) {
+  async getApproved(req: Request, res: Response, next: NextFunction) {
     try {
-      const organizationId = req.user?.organizationId;
+      const organizationId = (req as AuthRequest).user?.organizationId;
       if (!organizationId) {
         throw new AppError('Organization context required', 400);
       }
 
-      const whatsappAccountId = req.query.whatsappAccountId as string;
+      let whatsappAccountId = (req.query.whatsappAccountId as string)?.trim() || undefined;
+
+      // ✅ If no whatsappAccountId, use default account
+      if (!whatsappAccountId) {
+        whatsappAccountId = await this.getDefaultAccountId(organizationId);
+      }
+
+      // ✅ If still no account, return empty array (not error)
+      if (!whatsappAccountId) {
+        return successResponse(res, {
+          data: [],
+          message: 'No WhatsApp account connected',
+        });
+      }
 
       const templates = await templatesService.getApprovedTemplates(
         organizationId,
@@ -266,14 +341,20 @@ class TemplatesController {
   // ==========================================
   // GET LANGUAGES
   // ==========================================
-  async getLanguages(req: AuthRequest, res: Response, next: NextFunction) {
+  async getLanguages(req: Request, res: Response, next: NextFunction) {
     try {
-      const organizationId = req.user?.organizationId;
+      const organizationId = (req as AuthRequest).user?.organizationId;
       if (!organizationId) {
         throw new AppError('Organization context required', 400);
       }
 
-      const whatsappAccountId = req.query.whatsappAccountId as string;
+      let whatsappAccountId = (req.query.whatsappAccountId as string)?.trim() || undefined;
+
+      // ✅ If no whatsappAccountId, use default account
+      if (!whatsappAccountId) {
+        whatsappAccountId = await this.getDefaultAccountId(organizationId);
+      }
+
       const languages = await templatesService.getLanguages(organizationId, whatsappAccountId);
 
       return successResponse(res, {
@@ -288,14 +369,17 @@ class TemplatesController {
   // ==========================================
   // SUBMIT TO META
   // ==========================================
-  async submit(req: AuthRequest, res: Response, next: NextFunction) {
+  async submit(req: Request, res: Response, next: NextFunction) {
     try {
-      const organizationId = req.user?.organizationId;
+      const organizationId = (req as AuthRequest).user?.organizationId;
       if (!organizationId) {
         throw new AppError('Organization context required', 400);
       }
 
       const id = req.params.id as string;
+      if (!id) {
+        throw new AppError('Template ID is required', 400);
+      }
 
       const result = await templatesService.submitToMeta(organizationId, id);
 
@@ -311,14 +395,26 @@ class TemplatesController {
   // ==========================================
   // SYNC FROM META
   // ==========================================
-  async sync(req: AuthRequest, res: Response, next: NextFunction) {
+  async sync(req: Request, res: Response, next: NextFunction) {
     try {
-      const organizationId = req.user?.organizationId;
+      const organizationId = (req as AuthRequest).user?.organizationId;
       if (!organizationId) {
         throw new AppError('Organization context required', 400);
       }
 
-      const whatsappAccountId = req.body?.whatsappAccountId as string;
+      let whatsappAccountId = req.body?.whatsappAccountId?.trim() || undefined;
+
+      // ✅ If no whatsappAccountId, use default account
+      if (!whatsappAccountId) {
+        whatsappAccountId = await this.getDefaultAccountId(organizationId);
+      }
+
+      // ✅ If still no account, return error
+      if (!whatsappAccountId) {
+        return errorResponse(res, 'No WhatsApp account connected. Please connect a WhatsApp account first.', 400);
+      }
+
+      console.log('🔄 Syncing templates for account:', whatsappAccountId);
 
       const result = await templatesService.syncFromMeta(organizationId, whatsappAccountId);
 

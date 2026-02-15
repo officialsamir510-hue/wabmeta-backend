@@ -1,9 +1,11 @@
+import { MessageStatus } from '@prisma/client';
 interface SendMessageOptions {
     accountId: string;
     to: string;
-    type: 'text' | 'template' | 'image' | 'document' | 'video' | 'audio';
+    type: 'text' | 'template' | 'image' | 'document' | 'video' | 'audio' | 'interactive' | 'location' | 'contacts';
     content: any;
     conversationId?: string;
+    organizationId?: string;
 }
 interface SendTemplateOptions {
     accountId: string;
@@ -12,12 +14,38 @@ interface SendTemplateOptions {
     templateLanguage: string;
     components?: any[];
     conversationId?: string;
+    organizationId?: string;
+}
+interface CampaignSendResult {
+    sent: number;
+    failed: number;
+    errors: string[];
 }
 declare class WhatsAppService {
     /**
+     * Check if a string looks like a Meta access token
+     */
+    private looksLikeAccessToken;
+    /**
+     * Get account with safe token decryption - ✅ FIXED VERSION
+     */
+    private getAccountWithToken;
+    /**
+     * Format phone number for WhatsApp API
+     */
+    private formatPhoneNumber;
+    /**
+     * Get or create contact
+     */
+    private getOrCreateContact;
+    /**
+     * Get or create conversation
+     */
+    private getOrCreateConversation;
+    /**
      * Send a text message
      */
-    sendTextMessage(accountId: string, to: string, text: string, conversationId?: string): Promise<{
+    sendTextMessage(accountId: string, to: string, text: string, conversationId?: string, organizationId?: string): Promise<{
         success: boolean;
         messageId: string;
         message: {
@@ -88,7 +116,7 @@ declare class WhatsAppService {
         };
     }>;
     /**
-     * Send a template message
+     * Send a template message - ✅ FIXED VERSION
      */
     sendTemplateMessage(options: SendTemplateOptions): Promise<{
         success: boolean;
@@ -163,7 +191,7 @@ declare class WhatsAppService {
     /**
      * Send a media message
      */
-    sendMediaMessage(accountId: string, to: string, mediaType: 'image' | 'document' | 'video' | 'audio', mediaUrl: string, caption?: string, conversationId?: string): Promise<{
+    sendMediaMessage(accountId: string, to: string, mediaType: 'image' | 'document' | 'video' | 'audio', mediaUrl: string, caption?: string, conversationId?: string, organizationId?: string): Promise<{
         success: boolean;
         messageId: string;
         message: {
@@ -234,7 +262,7 @@ declare class WhatsAppService {
         };
     }>;
     /**
-     * Core send message function
+     * Core send message function - ✅ FIXED VERSION
      */
     sendMessage(options: SendMessageOptions): Promise<{
         success: boolean;
@@ -307,24 +335,73 @@ declare class WhatsAppService {
         };
     }>;
     /**
-     * Send bulk campaign messages
+     * Send bulk campaign messages - ✅ FIXED VERSION
      */
-    sendCampaignMessages(campaignId: string, batchSize?: number, delayMs?: number): Promise<{
-        sent: number;
-        failed: number;
-        errors: string[];
-    }>;
+    sendCampaignMessages(campaignId: string, batchSize?: number, delayMs?: number): Promise<CampaignSendResult>;
     /**
-     * Mark messages as read
+     * Update campaign contact status
+     */
+    updateContactStatus(campaignId: string, contactId: string, status: MessageStatus, waMessageId?: string, failureReason?: string): Promise<void>;
+    /**
+     * Check if campaign is complete and update status
+     */
+    checkCampaignCompletion(campaignId: string): Promise<boolean>;
+    /**
+     * Mark message as read - ✅ FIXED VERSION
      */
     markAsRead(accountId: string, messageId: string): Promise<{
         success: boolean;
+        error?: undefined;
+    } | {
+        success: boolean;
+        error: any;
     }>;
+    /**
+     * Build template components with variables
+     */
     private buildTemplateComponents;
+    /**
+     * Extract variable placeholders from template text
+     */
     private extractVariablesFromText;
+    /**
+     * Extract and replace variables in text
+     */
     private extractVariables;
+    /**
+     * Generate message preview for conversation list
+     */
     private getMessagePreview;
+    /**
+     * Map string type to MessageType enum
+     */
     private mapMessageType;
+    /**
+     * Get default WhatsApp account for organization
+     */
+    getDefaultAccount(organizationId: string): Promise<{
+        phoneNumber: string;
+        organizationId: string;
+        id: string;
+        status: import(".prisma/client").$Enums.WhatsAppAccountStatus;
+        createdAt: Date;
+        updatedAt: Date;
+        accessToken: string | null;
+        webhookSecret: string | null;
+        phoneNumberId: string;
+        wabaId: string;
+        displayName: string;
+        qualityRating: string | null;
+        tokenExpiresAt: Date | null;
+        isDefault: boolean;
+    } | null>;
+    /**
+     * Validate account has required permissions - ✅ FIXED VERSION
+     */
+    validateAccount(accountId: string): Promise<{
+        valid: boolean;
+        reason?: string;
+    }>;
 }
 export declare const whatsappService: WhatsAppService;
 export default whatsappService;

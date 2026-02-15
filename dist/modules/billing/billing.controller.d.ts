@@ -1,22 +1,16 @@
-import { Request, Response, NextFunction } from 'express';
-interface AuthRequest extends Request {
-    user?: {
-        id: string;
-        email: string;
-        organizationId?: string;
-    };
-}
-export declare class BillingController {
-    getCurrentPlan(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
-    getUsage(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
-    getPlans(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
-    upgrade(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
-    cancel(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
-    getInvoices(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
-    getPaymentMethods(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
-    addPaymentMethod(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
-    deletePaymentMethod(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
-    setDefaultPaymentMethod(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+import { Request, Response } from 'express';
+declare class BillingController {
+    getSubscription(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+    getPlans(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+    getUsage(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+    createRazorpayOrder(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+    verifyRazorpayPayment(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+    upgradePlan(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+    cancelSubscription(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+    resumeSubscription(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+    getInvoices(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+    getInvoice(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+    downloadInvoice(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 }
 export declare const billingController: BillingController;
 export {};

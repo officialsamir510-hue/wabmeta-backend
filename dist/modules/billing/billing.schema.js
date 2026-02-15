@@ -1,48 +1,27 @@
 "use strict";
 // src/modules/billing/billing.schema.ts
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getInvoicesSchema = exports.setDefaultPaymentMethodSchema = exports.deletePaymentMethodSchema = exports.addPaymentMethodSchema = exports.upgradePlanSchema = void 0;
+exports.billingSchema = void 0;
 const zod_1 = require("zod");
-const client_1 = require("@prisma/client");
-// ============================================
-// REQUEST SCHEMAS
-// ============================================
-exports.upgradePlanSchema = zod_1.z.object({
-    body: zod_1.z.object({
-        planType: zod_1.z.nativeEnum(client_1.PlanType),
-        billingCycle: zod_1.z.enum(['monthly', 'yearly']).default('monthly'),
-        paymentMethodId: zod_1.z.string().optional(),
+exports.billingSchema = {
+    createOrder: zod_1.z.object({
+        body: zod_1.z.object({
+            planKey: zod_1.z.string().min(1, 'Plan key is required'),
+            billingCycle: zod_1.z.enum(['monthly', 'yearly']).optional().default('monthly')
+        })
     }),
-});
-exports.addPaymentMethodSchema = zod_1.z.object({
-    body: zod_1.z.object({
-        type: zod_1.z.enum(['card', 'upi', 'bank']),
-        details: zod_1.z.object({
-            cardNumber: zod_1.z.string().optional(),
-            expiryMonth: zod_1.z.string().optional(),
-            expiryYear: zod_1.z.string().optional(),
-            cvv: zod_1.z.string().optional(),
-            upiId: zod_1.z.string().optional(),
-            accountNumber: zod_1.z.string().optional(),
-            ifsc: zod_1.z.string().optional(),
-        }),
-        isDefault: zod_1.z.boolean().optional().default(false),
+    verifyPayment: zod_1.z.object({
+        body: zod_1.z.object({
+            razorpay_order_id: zod_1.z.string().min(1, 'Order ID is required'),
+            razorpay_payment_id: zod_1.z.string().min(1, 'Payment ID is required'),
+            razorpay_signature: zod_1.z.string().min(1, 'Signature is required')
+        })
     }),
-});
-exports.deletePaymentMethodSchema = zod_1.z.object({
-    params: zod_1.z.object({
-        id: zod_1.z.string().min(1, 'Payment method ID is required'),
-    }),
-});
-exports.setDefaultPaymentMethodSchema = zod_1.z.object({
-    params: zod_1.z.object({
-        id: zod_1.z.string().min(1, 'Payment method ID is required'),
-    }),
-});
-exports.getInvoicesSchema = zod_1.z.object({
-    query: zod_1.z.object({
-        page: zod_1.z.string().regex(/^\d+$/).transform(Number).optional().default('1'),
-        limit: zod_1.z.string().regex(/^\d+$/).transform(Number).optional().default('10'),
-    }),
-});
+    upgrade: zod_1.z.object({
+        body: zod_1.z.object({
+            planType: zod_1.z.string().min(1, 'Plan type is required'),
+            billingCycle: zod_1.z.enum(['monthly', 'yearly']).optional().default('monthly')
+        })
+    })
+};
 //# sourceMappingURL=billing.schema.js.map

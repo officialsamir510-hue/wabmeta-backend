@@ -1,27 +1,388 @@
-import { CurrentPlanResponse, UsageStatsResponse, InvoiceResponse, PaymentMethodResponse, AvailablePlanResponse, UpgradePlanInput } from './billing.types';
-export declare class BillingService {
-    getCurrentPlan(organizationId: string): Promise<CurrentPlanResponse>;
-    getUsageStats(organizationId: string): Promise<UsageStatsResponse>;
-    getAvailablePlans(organizationId: string): Promise<AvailablePlanResponse[]>;
-    upgradePlan(organizationId: string, userId: string, input: UpgradePlanInput): Promise<{
+declare class BillingService {
+    getSubscription(organizationId: string): Promise<{
+        plan: {
+            name: string;
+            type: import(".prisma/client").$Enums.PlanType;
+            id: string;
+            createdAt: Date;
+            updatedAt: Date;
+            slug: string;
+            description: string | null;
+            monthlyPrice: import("@prisma/client/runtime/library").Decimal;
+            yearlyPrice: import("@prisma/client/runtime/library").Decimal;
+            maxContacts: number;
+            maxMessages: number;
+            maxTeamMembers: number;
+            maxCampaigns: number;
+            maxChatbots: number;
+            maxTemplates: number;
+            features: import("@prisma/client/runtime/library").JsonValue;
+            isActive: boolean;
+            maxWhatsAppAccounts: number;
+            maxMessagesPerMonth: number;
+            maxCampaignsPerMonth: number;
+            maxAutomations: number;
+            maxApiCalls: number;
+        } | {
+            id: string;
+            name: string;
+            type: "FREE";
+            slug: string;
+            monthlyPrice: number;
+            yearlyPrice: number;
+            maxContacts: number;
+            maxMessagesPerMonth: number;
+            maxCampaignsPerMonth: number;
+            maxTeamMembers: number;
+            maxWhatsAppAccounts: number;
+            maxTemplates: number;
+            maxChatbots: number;
+            maxAutomations: number;
+        };
+        status: string;
+        billingCycle: string;
+        currentPeriodStart: Date;
+        currentPeriodEnd: Date;
+        messagesUsed: number;
+        contactsUsed: number;
+    } | {
+        plan: {
+            name: string;
+            type: import(".prisma/client").$Enums.PlanType;
+            id: string;
+            createdAt: Date;
+            updatedAt: Date;
+            slug: string;
+            description: string | null;
+            monthlyPrice: import("@prisma/client/runtime/library").Decimal;
+            yearlyPrice: import("@prisma/client/runtime/library").Decimal;
+            maxContacts: number;
+            maxMessages: number;
+            maxTeamMembers: number;
+            maxCampaigns: number;
+            maxChatbots: number;
+            maxTemplates: number;
+            features: import("@prisma/client/runtime/library").JsonValue;
+            isActive: boolean;
+            maxWhatsAppAccounts: number;
+            maxMessagesPerMonth: number;
+            maxCampaignsPerMonth: number;
+            maxAutomations: number;
+            maxApiCalls: number;
+        };
+        organizationId: string;
+        id: string;
+        status: import(".prisma/client").$Enums.SubscriptionStatus;
+        createdAt: Date;
+        updatedAt: Date;
+        billingCycle: string;
+        currentPeriodStart: Date;
+        currentPeriodEnd: Date;
+        messagesUsed: number;
+        contactsUsed: number;
+        paymentMethod: string | null;
+        lastPaymentAt: Date | null;
+        nextPaymentAt: Date | null;
+        cancelledAt: Date | null;
+        planId: string;
+    }>;
+    getPlans(): Promise<({
+        id: string;
+        name: string;
+        type: "FREE";
+        slug: string;
+        monthlyPrice: number;
+        yearlyPrice: number;
+        maxContacts: number;
+        maxMessagesPerMonth: number;
+        maxCampaignsPerMonth: number;
+        maxTeamMembers: number;
+        maxWhatsAppAccounts: number;
+        maxTemplates: number;
+        maxChatbots: number;
+        maxAutomations: number;
+        features: string[];
+        isActive: boolean;
+        popular: boolean;
+    } | {
+        id: string;
+        name: string;
+        type: "STARTER";
+        slug: string;
+        monthlyPrice: number;
+        yearlyPrice: number;
+        maxContacts: number;
+        maxMessagesPerMonth: number;
+        maxCampaignsPerMonth: number;
+        maxTeamMembers: number;
+        maxWhatsAppAccounts: number;
+        maxTemplates: number;
+        maxChatbots: number;
+        maxAutomations: number;
+        features: string[];
+        isActive: boolean;
+        popular: boolean;
+    } | {
+        id: string;
+        name: string;
+        type: "PRO";
+        slug: string;
+        monthlyPrice: number;
+        yearlyPrice: number;
+        maxContacts: number;
+        maxMessagesPerMonth: number;
+        maxCampaignsPerMonth: number;
+        maxTeamMembers: number;
+        maxWhatsAppAccounts: number;
+        maxTemplates: number;
+        maxChatbots: number;
+        maxAutomations: number;
+        features: string[];
+        isActive: boolean;
+        popular: boolean;
+    } | {
+        id: string;
+        name: string;
+        type: "ENTERPRISE";
+        slug: string;
+        monthlyPrice: number;
+        yearlyPrice: number;
+        maxContacts: number;
+        maxMessagesPerMonth: number;
+        maxCampaignsPerMonth: number;
+        maxTeamMembers: number;
+        maxWhatsAppAccounts: number;
+        maxTemplates: number;
+        maxChatbots: number;
+        maxAutomations: number;
+        features: string[];
+        isActive: boolean;
+        popular: boolean;
+    })[] | {
+        popular: boolean;
+        monthlyPrice: number;
+        yearlyPrice: number;
+        features: import("@prisma/client/runtime/library").JsonArray;
+        name: string;
+        type: import(".prisma/client").$Enums.PlanType;
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        slug: string;
+        description: string | null;
+        maxContacts: number;
+        maxMessages: number;
+        maxTeamMembers: number;
+        maxCampaigns: number;
+        maxChatbots: number;
+        maxTemplates: number;
+        isActive: boolean;
+        maxWhatsAppAccounts: number;
+        maxMessagesPerMonth: number;
+        maxCampaignsPerMonth: number;
+        maxAutomations: number;
+        maxApiCalls: number;
+    }[]>;
+    private getDefaultPlans;
+    getUsage(organizationId: string): Promise<{
+        messages: {
+            used: number;
+            limit: number;
+            percentage: number;
+        };
+        contacts: {
+            used: number;
+            limit: number;
+            percentage: number;
+        };
+        campaigns: {
+            used: number;
+            limit: number;
+            percentage: number;
+        };
+        storage: {
+            used: number;
+            limit: number;
+            percentage: number;
+        };
+    }>;
+    createRazorpayOrder(params: {
+        organizationId: string;
+        userId: string;
+        planKey: string;
+        billingCycle: 'monthly' | 'yearly';
+    }): Promise<{
+        id: any;
+        amount: any;
+        currency: any;
+        planId: string;
+        planName: string;
+        receipt: any;
+    }>;
+    verifyRazorpayPayment(params: {
+        organizationId: string;
+        userId: string;
+        razorpay_order_id: string;
+        razorpay_payment_id: string;
+        razorpay_signature: string;
+    }): Promise<{
+        subscription: {
+            organizationId: string;
+            id: string;
+            status: import(".prisma/client").$Enums.SubscriptionStatus;
+            createdAt: Date;
+            updatedAt: Date;
+            billingCycle: string;
+            currentPeriodStart: Date;
+            currentPeriodEnd: Date;
+            messagesUsed: number;
+            contactsUsed: number;
+            paymentMethod: string | null;
+            lastPaymentAt: Date | null;
+            nextPaymentAt: Date | null;
+            cancelledAt: Date | null;
+            planId: string;
+        };
+        plan: {
+            name: string;
+            type: import(".prisma/client").$Enums.PlanType;
+            id: string;
+            createdAt: Date;
+            updatedAt: Date;
+            slug: string;
+            description: string | null;
+            monthlyPrice: import("@prisma/client/runtime/library").Decimal;
+            yearlyPrice: import("@prisma/client/runtime/library").Decimal;
+            maxContacts: number;
+            maxMessages: number;
+            maxTeamMembers: number;
+            maxCampaigns: number;
+            maxChatbots: number;
+            maxTemplates: number;
+            features: import("@prisma/client/runtime/library").JsonValue;
+            isActive: boolean;
+            maxWhatsAppAccounts: number;
+            maxMessagesPerMonth: number;
+            maxCampaignsPerMonth: number;
+            maxAutomations: number;
+            maxApiCalls: number;
+        };
         message: string;
-        subscription: any;
     }>;
-    cancelSubscription(organizationId: string, userId: string): Promise<{
+    upgradePlan(params: {
+        organizationId: string;
+        planType: string;
+        billingCycle?: string;
+    }): Promise<{
+        organizationId: string;
+        id: string;
+        status: import(".prisma/client").$Enums.SubscriptionStatus;
+        createdAt: Date;
+        updatedAt: Date;
+        billingCycle: string;
+        currentPeriodStart: Date;
+        currentPeriodEnd: Date;
+        messagesUsed: number;
+        contactsUsed: number;
+        paymentMethod: string | null;
+        lastPaymentAt: Date | null;
+        nextPaymentAt: Date | null;
+        cancelledAt: Date | null;
+        planId: string;
+    }>;
+    cancelSubscription(organizationId: string, reason?: string): Promise<{
         message: string;
+        subscription: {
+            organizationId: string;
+            id: string;
+            status: import(".prisma/client").$Enums.SubscriptionStatus;
+            createdAt: Date;
+            updatedAt: Date;
+            billingCycle: string;
+            currentPeriodStart: Date;
+            currentPeriodEnd: Date;
+            messagesUsed: number;
+            contactsUsed: number;
+            paymentMethod: string | null;
+            lastPaymentAt: Date | null;
+            nextPaymentAt: Date | null;
+            cancelledAt: Date | null;
+            planId: string;
+        };
     }>;
-    getInvoices(organizationId: string, page?: number, limit?: number): Promise<{
-        invoices: InvoiceResponse[];
-        total: number;
+    resumeSubscription(organizationId: string): Promise<{
+        organizationId: string;
+        id: string;
+        status: import(".prisma/client").$Enums.SubscriptionStatus;
+        createdAt: Date;
+        updatedAt: Date;
+        billingCycle: string;
+        currentPeriodStart: Date;
+        currentPeriodEnd: Date;
+        messagesUsed: number;
+        contactsUsed: number;
+        paymentMethod: string | null;
+        lastPaymentAt: Date | null;
+        nextPaymentAt: Date | null;
+        cancelledAt: Date | null;
+        planId: string;
     }>;
-    getPaymentMethods(_organizationId: string): Promise<PaymentMethodResponse[]>;
-    addPaymentMethod(_organizationId: string, input: any): Promise<PaymentMethodResponse>;
-    deletePaymentMethod(_organizationId: string, _paymentMethodId: string): Promise<{
+    getInvoices(organizationId: string, limit?: number, offset?: number): Promise<any[]>;
+    checkSubscriptionStatus(organizationId: string): Promise<{
+        isActive: boolean;
         message: string;
+        subscription?: undefined;
+        daysRemaining?: undefined;
+    } | {
+        isActive: boolean;
+        subscription: {
+            plan: {
+                name: string;
+                type: import(".prisma/client").$Enums.PlanType;
+                id: string;
+                createdAt: Date;
+                updatedAt: Date;
+                slug: string;
+                description: string | null;
+                monthlyPrice: import("@prisma/client/runtime/library").Decimal;
+                yearlyPrice: import("@prisma/client/runtime/library").Decimal;
+                maxContacts: number;
+                maxMessages: number;
+                maxTeamMembers: number;
+                maxCampaigns: number;
+                maxChatbots: number;
+                maxTemplates: number;
+                features: import("@prisma/client/runtime/library").JsonValue;
+                isActive: boolean;
+                maxWhatsAppAccounts: number;
+                maxMessagesPerMonth: number;
+                maxCampaignsPerMonth: number;
+                maxAutomations: number;
+                maxApiCalls: number;
+            };
+        } & {
+            organizationId: string;
+            id: string;
+            status: import(".prisma/client").$Enums.SubscriptionStatus;
+            createdAt: Date;
+            updatedAt: Date;
+            billingCycle: string;
+            currentPeriodStart: Date;
+            currentPeriodEnd: Date;
+            messagesUsed: number;
+            contactsUsed: number;
+            paymentMethod: string | null;
+            lastPaymentAt: Date | null;
+            nextPaymentAt: Date | null;
+            cancelledAt: Date | null;
+            planId: string;
+        };
+        daysRemaining: number;
+        message?: undefined;
     }>;
-    setDefaultPaymentMethod(_organizationId: string, _paymentMethodId: string): Promise<{
-        message: string;
-    }>;
+    getInvoice(invoiceId: string, organizationId: string): Promise<any>;
+    generateInvoicePDF(invoiceId: string, organizationId: string): Promise<Buffer>;
 }
 export declare const billingService: BillingService;
+export default billingService;
 //# sourceMappingURL=billing.service.d.ts.map

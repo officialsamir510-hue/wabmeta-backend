@@ -1,17 +1,35 @@
 "use strict";
 // src/modules/templates/templates.controller.ts
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.templatesController = exports.TemplatesController = void 0;
+exports.templatesController = void 0;
 const templates_service_1 = require("./templates.service");
 const response_1 = require("../../utils/response");
 const errorHandler_1 = require("../../middleware/errorHandler");
+const database_1 = __importDefault(require("../../config/database"));
 class TemplatesController {
+    // ==========================================
+    // HELPER: Get default WhatsApp account
+    // ==========================================
+    async getDefaultAccountId(organizationId) {
+        const defaultAccount = await database_1.default.whatsAppAccount.findFirst({
+            where: {
+                organizationId,
+                status: 'CONNECTED',
+                isDefault: true,
+            },
+            select: { id: true },
+        });
+        return defaultAccount?.id;
+    }
     // ==========================================
     // CREATE TEMPLATE
     // ==========================================
     async create(req, res, next) {
         try {
-            const organizationId = req.user.organizationId;
+            const organizationId = req.user?.organizationId;
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
@@ -21,8 +39,16 @@ class TemplatesController {
             if (!validation.valid) {
                 throw new errorHandler_1.AppError(validation.errors.join(', '), 400);
             }
+            // If no whatsappAccountId provided, use default
+            if (!input.whatsappAccountId) {
+                input.whatsappAccountId = await this.getDefaultAccountId(organizationId);
+            }
             const template = await templates_service_1.templatesService.create(organizationId, input);
-            return (0, response_1.sendSuccess)(res, template, 'Template created successfully', 201);
+            return (0, response_1.successResponse)(res, {
+                data: template,
+                message: 'Template created successfully',
+                statusCode: 201,
+            });
         }
         catch (error) {
             next(error);
@@ -33,21 +59,44 @@ class TemplatesController {
     // ==========================================
     async getList(req, res, next) {
         try {
-            const organizationId = req.user.organizationId;
+            const organizationId = req.user?.organizationId;
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const query = {
-                page: parseInt(req.query.page) || 1,
-                limit: parseInt(req.query.limit) || 20,
-                search: req.query.search,
-                status: req.query.status,
-                category: req.query.category,
-                language: req.query.language,
-                sortBy: req.query.sortBy || 'createdAt',
-                sortOrder: req.query.sortOrder || 'desc',
-            };
-            const result = await templates_service_1.templatesService.getList(organizationId, query);
+            // ✅ Parse query params safely
+            const page = req.query.page ? parseInt(req.query.page) : 1;
+            const limit = req.query.limit ? parseInt(req.query.limit) : 20;
+            const search = req.query.search?.trim() || undefined;
+            const status = req.query.status;
+            const category = req.query.category;
+            const language = req.query.language?.trim() || undefined;
+            const sortBy = req.query.sortBy || 'createdAt';
+            const sortOrder = req.query.sortOrder || 'desc';
+            let whatsappAccountId = req.query.whatsappAccountId?.trim() || undefined;
+            // ✅ If no whatsappAccountId, use default account
+            if (!whatsappAccountId) {
+                whatsappAccountId = await this.getDefaultAccountId(organizationId);
+            }
+            console.log('📋 Fetching templates:', {
+                organizationId,
+                page,
+                limit,
+                search,
+                status,
+                category,
+                whatsappAccountId,
+            });
+            const result = await templates_service_1.templatesService.getList(organizationId, {
+                page,
+                limit,
+                search,
+                status,
+                category,
+                language,
+                sortBy: sortBy,
+                sortOrder,
+                whatsappAccountId,
+            });
             return res.json({
                 success: true,
                 message: 'Templates fetched successfully',
@@ -64,13 +113,19 @@ class TemplatesController {
     // ==========================================
     async getById(req, res, next) {
         try {
-            const organizationId = req.user.organizationId;
+            const organizationId = req.user?.organizationId;
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const id = req.params.id; // ✅ Fixed
+            const id = req.params.id;
+            if (!id) {
+                throw new errorHandler_1.AppError('Template ID is required', 400);
+            }
             const template = await templates_service_1.templatesService.getById(organizationId, id);
-            return (0, response_1.sendSuccess)(res, template, 'Template fetched successfully');
+            return (0, response_1.successResponse)(res, {
+                data: template,
+                message: 'Template fetched successfully',
+            });
         }
         catch (error) {
             next(error);
@@ -81,14 +136,20 @@ class TemplatesController {
     // ==========================================
     async update(req, res, next) {
         try {
-            const organizationId = req.user.organizationId;
+            const organizationId = req.user?.organizationId;
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const id = req.params.id; // ✅ Fixed
+            const id = req.params.id;
+            if (!id) {
+                throw new errorHandler_1.AppError('Template ID is required', 400);
+            }
             const input = req.body;
             const template = await templates_service_1.templatesService.update(organizationId, id, input);
-            return (0, response_1.sendSuccess)(res, template, 'Template updated successfully');
+            return (0, response_1.successResponse)(res, {
+                data: template,
+                message: 'Template updated successfully',
+            });
         }
         catch (error) {
             next(error);
@@ -99,13 +160,19 @@ class TemplatesController {
     // ==========================================
     async delete(req, res, next) {
         try {
-            const organizationId = req.user.organizationId;
+            const organizationId = req.user?.organizationId;
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const id = req.params.id; // ✅ Fixed
+            const id = req.params.id;
+            if (!id) {
+                throw new errorHandler_1.AppError('Template ID is required', 400);
+            }
             const result = await templates_service_1.templatesService.delete(organizationId, id);
-            return (0, response_1.sendSuccess)(res, result, result.message);
+            return (0, response_1.successResponse)(res, {
+                data: result,
+                message: 'Template deleted successfully',
+            });
         }
         catch (error) {
             next(error);
@@ -116,14 +183,24 @@ class TemplatesController {
     // ==========================================
     async duplicate(req, res, next) {
         try {
-            const organizationId = req.user.organizationId;
+            const organizationId = req.user?.organizationId;
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const id = req.params.id; // ✅ Fixed
-            const { name } = req.body;
-            const template = await templates_service_1.templatesService.duplicate(organizationId, id, name);
-            return (0, response_1.sendSuccess)(res, template, 'Template duplicated successfully', 201);
+            const id = req.params.id;
+            if (!id) {
+                throw new errorHandler_1.AppError('Template ID is required', 400);
+            }
+            const { name, whatsappAccountId } = req.body;
+            if (!name) {
+                throw new errorHandler_1.AppError('New template name is required', 400);
+            }
+            const template = await templates_service_1.templatesService.duplicate(organizationId, id, name, whatsappAccountId);
+            return (0, response_1.successResponse)(res, {
+                data: template,
+                message: 'Template duplicated successfully',
+                statusCode: 201,
+            });
         }
         catch (error) {
             next(error);
@@ -134,12 +211,20 @@ class TemplatesController {
     // ==========================================
     async getStats(req, res, next) {
         try {
-            const organizationId = req.user.organizationId;
+            const organizationId = req.user?.organizationId;
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const stats = await templates_service_1.templatesService.getStats(organizationId);
-            return (0, response_1.sendSuccess)(res, stats, 'Stats fetched successfully');
+            let whatsappAccountId = req.query.whatsappAccountId?.trim() || undefined;
+            // ✅ If no whatsappAccountId, use default account
+            if (!whatsappAccountId) {
+                whatsappAccountId = await this.getDefaultAccountId(organizationId);
+            }
+            const stats = await templates_service_1.templatesService.getStats(organizationId, whatsappAccountId);
+            return (0, response_1.successResponse)(res, {
+                data: stats,
+                message: 'Stats fetched successfully',
+            });
         }
         catch (error) {
             next(error);
@@ -151,8 +236,14 @@ class TemplatesController {
     async preview(req, res, next) {
         try {
             const { bodyText, variables, headerType, headerContent, footerText, buttons } = req.body;
+            if (!bodyText) {
+                throw new errorHandler_1.AppError('Body text is required', 400);
+            }
             const preview = await templates_service_1.templatesService.preview(bodyText, variables || {}, headerType, headerContent, footerText, buttons);
-            return (0, response_1.sendSuccess)(res, preview, 'Preview generated successfully');
+            return (0, response_1.successResponse)(res, {
+                data: preview,
+                message: 'Preview generated successfully',
+            });
         }
         catch (error) {
             next(error);
@@ -163,12 +254,27 @@ class TemplatesController {
     // ==========================================
     async getApproved(req, res, next) {
         try {
-            const organizationId = req.user.organizationId;
+            const organizationId = req.user?.organizationId;
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const templates = await templates_service_1.templatesService.getApprovedTemplates(organizationId);
-            return (0, response_1.sendSuccess)(res, templates, 'Approved templates fetched successfully');
+            let whatsappAccountId = req.query.whatsappAccountId?.trim() || undefined;
+            // ✅ If no whatsappAccountId, use default account
+            if (!whatsappAccountId) {
+                whatsappAccountId = await this.getDefaultAccountId(organizationId);
+            }
+            // ✅ If still no account, return empty array (not error)
+            if (!whatsappAccountId) {
+                return (0, response_1.successResponse)(res, {
+                    data: [],
+                    message: 'No WhatsApp account connected',
+                });
+            }
+            const templates = await templates_service_1.templatesService.getApprovedTemplates(organizationId, whatsappAccountId);
+            return (0, response_1.successResponse)(res, {
+                data: templates,
+                message: 'Approved templates fetched successfully',
+            });
         }
         catch (error) {
             next(error);
@@ -179,12 +285,20 @@ class TemplatesController {
     // ==========================================
     async getLanguages(req, res, next) {
         try {
-            const organizationId = req.user.organizationId;
+            const organizationId = req.user?.organizationId;
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const languages = await templates_service_1.templatesService.getLanguages(organizationId);
-            return (0, response_1.sendSuccess)(res, languages, 'Languages fetched successfully');
+            let whatsappAccountId = req.query.whatsappAccountId?.trim() || undefined;
+            // ✅ If no whatsappAccountId, use default account
+            if (!whatsappAccountId) {
+                whatsappAccountId = await this.getDefaultAccountId(organizationId);
+            }
+            const languages = await templates_service_1.templatesService.getLanguages(organizationId, whatsappAccountId);
+            return (0, response_1.successResponse)(res, {
+                data: languages,
+                message: 'Languages fetched successfully',
+            });
         }
         catch (error) {
             next(error);
@@ -195,14 +309,19 @@ class TemplatesController {
     // ==========================================
     async submit(req, res, next) {
         try {
-            const organizationId = req.user.organizationId;
+            const organizationId = req.user?.organizationId;
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const id = req.params.id; // ✅ Fixed
-            const { whatsappAccountId } = req.body;
-            const result = await templates_service_1.templatesService.submitToMeta(organizationId, id, whatsappAccountId);
-            return (0, response_1.sendSuccess)(res, result, result.message);
+            const id = req.params.id;
+            if (!id) {
+                throw new errorHandler_1.AppError('Template ID is required', 400);
+            }
+            const result = await templates_service_1.templatesService.submitToMeta(organizationId, id);
+            return (0, response_1.successResponse)(res, {
+                data: result,
+                message: result.message,
+            });
         }
         catch (error) {
             next(error);
@@ -213,20 +332,32 @@ class TemplatesController {
     // ==========================================
     async sync(req, res, next) {
         try {
-            const organizationId = req.user.organizationId;
+            const organizationId = req.user?.organizationId;
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const { whatsappAccountId } = req.body;
+            let whatsappAccountId = req.body?.whatsappAccountId?.trim() || undefined;
+            // ✅ If no whatsappAccountId, use default account
+            if (!whatsappAccountId) {
+                whatsappAccountId = await this.getDefaultAccountId(organizationId);
+            }
+            // ✅ If still no account, return error
+            if (!whatsappAccountId) {
+                return (0, response_1.errorResponse)(res, 'No WhatsApp account connected. Please connect a WhatsApp account first.', 400);
+            }
+            console.log('🔄 Syncing templates for account:', whatsappAccountId);
             const result = await templates_service_1.templatesService.syncFromMeta(organizationId, whatsappAccountId);
-            return (0, response_1.sendSuccess)(res, result, result.message);
+            return (0, response_1.successResponse)(res, {
+                data: result,
+                message: result.message,
+            });
         }
         catch (error) {
             next(error);
         }
     }
 }
-exports.TemplatesController = TemplatesController;
 // Export singleton instance
 exports.templatesController = new TemplatesController();
+exports.default = exports.templatesController;
 //# sourceMappingURL=templates.controller.js.map

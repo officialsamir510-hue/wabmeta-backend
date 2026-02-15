@@ -1,4 +1,36 @@
 import { z } from 'zod';
+declare const simpleButtonSchema: z.ZodObject<{
+    type: z.ZodEnum<["QUICK_REPLY", "URL", "PHONE_NUMBER"]>;
+    text: z.ZodString;
+    url: z.ZodOptional<z.ZodString>;
+    phoneNumber: z.ZodOptional<z.ZodString>;
+}, "strip", z.ZodTypeAny, {
+    type: "URL" | "QUICK_REPLY" | "PHONE_NUMBER";
+    text: string;
+    phoneNumber?: string | undefined;
+    url?: string | undefined;
+}, {
+    type: "URL" | "QUICK_REPLY" | "PHONE_NUMBER";
+    text: string;
+    phoneNumber?: string | undefined;
+    url?: string | undefined;
+}>;
+declare const variableSchema: z.ZodObject<{
+    index: z.ZodNumber;
+    type: z.ZodDefault<z.ZodEnum<["text", "currency", "date_time", "image", "document", "video"]>>;
+    example: z.ZodOptional<z.ZodString>;
+    placeholder: z.ZodOptional<z.ZodString>;
+}, "strip", z.ZodTypeAny, {
+    type: "text" | "document" | "image" | "video" | "currency" | "date_time";
+    index: number;
+    example?: string | undefined;
+    placeholder?: string | undefined;
+}, {
+    index: number;
+    type?: "text" | "document" | "image" | "video" | "currency" | "date_time" | undefined;
+    example?: string | undefined;
+    placeholder?: string | undefined;
+}>;
 export declare const createTemplateSchema: z.ZodObject<{
     body: z.ZodObject<{
         name: z.ZodString;
@@ -9,106 +41,84 @@ export declare const createTemplateSchema: z.ZodObject<{
             AUTHENTICATION: "AUTHENTICATION";
         }>;
         headerType: z.ZodDefault<z.ZodOptional<z.ZodEnum<["NONE", "TEXT", "IMAGE", "VIDEO", "DOCUMENT"]>>>;
-        headerContent: z.ZodOptional<z.ZodString>;
+        headerContent: z.ZodNullable<z.ZodOptional<z.ZodString>>;
         bodyText: z.ZodString;
-        footerText: z.ZodOptional<z.ZodString>;
-        buttons: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodDiscriminatedUnion<"type", [z.ZodObject<{
-            type: z.ZodLiteral<"QUICK_REPLY">;
+        footerText: z.ZodNullable<z.ZodOptional<z.ZodString>>;
+        buttons: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodObject<{
+            type: z.ZodEnum<["QUICK_REPLY", "URL", "PHONE_NUMBER"]>;
             text: z.ZodString;
+            url: z.ZodOptional<z.ZodString>;
+            phoneNumber: z.ZodOptional<z.ZodString>;
         }, "strip", z.ZodTypeAny, {
-            type: "QUICK_REPLY";
+            type: "URL" | "QUICK_REPLY" | "PHONE_NUMBER";
             text: string;
+            phoneNumber?: string | undefined;
+            url?: string | undefined;
         }, {
-            type: "QUICK_REPLY";
+            type: "URL" | "QUICK_REPLY" | "PHONE_NUMBER";
             text: string;
-        }>, z.ZodObject<{
-            type: z.ZodLiteral<"URL">;
-            text: z.ZodString;
-            url: z.ZodString;
-        }, "strip", z.ZodTypeAny, {
-            type: "URL";
-            url: string;
-            text: string;
-        }, {
-            type: "URL";
-            url: string;
-            text: string;
-        }>, z.ZodObject<{
-            type: z.ZodLiteral<"PHONE_NUMBER">;
-            text: z.ZodString;
-            phoneNumber: z.ZodString;
-        }, "strip", z.ZodTypeAny, {
-            phoneNumber: string;
-            type: "PHONE_NUMBER";
-            text: string;
-        }, {
-            phoneNumber: string;
-            type: "PHONE_NUMBER";
-            text: string;
-        }>]>, "many">>>;
+            phoneNumber?: string | undefined;
+            url?: string | undefined;
+        }>, "many">>>;
         variables: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodObject<{
             index: z.ZodNumber;
-            type: z.ZodEnum<["text", "currency", "date_time", "image", "document", "video"]>;
+            type: z.ZodDefault<z.ZodEnum<["text", "currency", "date_time", "image", "document", "video"]>>;
             example: z.ZodOptional<z.ZodString>;
+            placeholder: z.ZodOptional<z.ZodString>;
         }, "strip", z.ZodTypeAny, {
-            type: "text" | "image" | "document" | "video" | "currency" | "date_time";
+            type: "text" | "document" | "image" | "video" | "currency" | "date_time";
             index: number;
             example?: string | undefined;
+            placeholder?: string | undefined;
         }, {
-            type: "text" | "image" | "document" | "video" | "currency" | "date_time";
             index: number;
+            type?: "text" | "document" | "image" | "video" | "currency" | "date_time" | undefined;
             example?: string | undefined;
+            placeholder?: string | undefined;
         }>, "many">>>;
+        whatsappAccountId: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
         name: string;
         language: string;
         category: "MARKETING" | "UTILITY" | "AUTHENTICATION";
         headerType: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | "NONE";
         bodyText: string;
-        buttons: ({
-            type: "QUICK_REPLY";
+        buttons: {
+            type: "URL" | "QUICK_REPLY" | "PHONE_NUMBER";
             text: string;
-        } | {
-            type: "URL";
-            url: string;
-            text: string;
-        } | {
-            phoneNumber: string;
-            type: "PHONE_NUMBER";
-            text: string;
-        })[];
+            phoneNumber?: string | undefined;
+            url?: string | undefined;
+        }[];
         variables: {
-            type: "text" | "image" | "document" | "video" | "currency" | "date_time";
+            type: "text" | "document" | "image" | "video" | "currency" | "date_time";
             index: number;
             example?: string | undefined;
+            placeholder?: string | undefined;
         }[];
-        headerContent?: string | undefined;
-        footerText?: string | undefined;
+        headerContent?: string | null | undefined;
+        footerText?: string | null | undefined;
+        whatsappAccountId?: string | undefined;
     }, {
         name: string;
         category: "MARKETING" | "UTILITY" | "AUTHENTICATION";
         bodyText: string;
         language?: string | undefined;
         headerType?: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | "NONE" | undefined;
-        headerContent?: string | undefined;
-        footerText?: string | undefined;
-        buttons?: ({
-            type: "QUICK_REPLY";
+        headerContent?: string | null | undefined;
+        footerText?: string | null | undefined;
+        buttons?: {
+            type: "URL" | "QUICK_REPLY" | "PHONE_NUMBER";
             text: string;
-        } | {
-            type: "URL";
-            url: string;
-            text: string;
-        } | {
-            phoneNumber: string;
-            type: "PHONE_NUMBER";
-            text: string;
-        })[] | undefined;
-        variables?: {
-            type: "text" | "image" | "document" | "video" | "currency" | "date_time";
-            index: number;
-            example?: string | undefined;
+            phoneNumber?: string | undefined;
+            url?: string | undefined;
         }[] | undefined;
+        variables?: {
+            index: number;
+            type?: "text" | "document" | "image" | "video" | "currency" | "date_time" | undefined;
+            example?: string | undefined;
+            placeholder?: string | undefined;
+        }[] | undefined;
+        whatsappAccountId?: string | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     body: {
@@ -117,25 +127,21 @@ export declare const createTemplateSchema: z.ZodObject<{
         category: "MARKETING" | "UTILITY" | "AUTHENTICATION";
         headerType: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | "NONE";
         bodyText: string;
-        buttons: ({
-            type: "QUICK_REPLY";
+        buttons: {
+            type: "URL" | "QUICK_REPLY" | "PHONE_NUMBER";
             text: string;
-        } | {
-            type: "URL";
-            url: string;
-            text: string;
-        } | {
-            phoneNumber: string;
-            type: "PHONE_NUMBER";
-            text: string;
-        })[];
+            phoneNumber?: string | undefined;
+            url?: string | undefined;
+        }[];
         variables: {
-            type: "text" | "image" | "document" | "video" | "currency" | "date_time";
+            type: "text" | "document" | "image" | "video" | "currency" | "date_time";
             index: number;
             example?: string | undefined;
+            placeholder?: string | undefined;
         }[];
-        headerContent?: string | undefined;
-        footerText?: string | undefined;
+        headerContent?: string | null | undefined;
+        footerText?: string | null | undefined;
+        whatsappAccountId?: string | undefined;
     };
 }, {
     body: {
@@ -144,25 +150,21 @@ export declare const createTemplateSchema: z.ZodObject<{
         bodyText: string;
         language?: string | undefined;
         headerType?: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | "NONE" | undefined;
-        headerContent?: string | undefined;
-        footerText?: string | undefined;
-        buttons?: ({
-            type: "QUICK_REPLY";
+        headerContent?: string | null | undefined;
+        footerText?: string | null | undefined;
+        buttons?: {
+            type: "URL" | "QUICK_REPLY" | "PHONE_NUMBER";
             text: string;
-        } | {
-            type: "URL";
-            url: string;
-            text: string;
-        } | {
-            phoneNumber: string;
-            type: "PHONE_NUMBER";
-            text: string;
-        })[] | undefined;
-        variables?: {
-            type: "text" | "image" | "document" | "video" | "currency" | "date_time";
-            index: number;
-            example?: string | undefined;
+            phoneNumber?: string | undefined;
+            url?: string | undefined;
         }[] | undefined;
+        variables?: {
+            index: number;
+            type?: "text" | "document" | "image" | "video" | "currency" | "date_time" | undefined;
+            example?: string | undefined;
+            placeholder?: string | undefined;
+        }[] | undefined;
+        whatsappAccountId?: string | undefined;
     };
 }>;
 export declare const updateTemplateSchema: z.ZodObject<{
@@ -181,106 +183,81 @@ export declare const updateTemplateSchema: z.ZodObject<{
             UTILITY: "UTILITY";
             AUTHENTICATION: "AUTHENTICATION";
         }>>;
-        headerType: z.ZodOptional<z.ZodEnum<["NONE", "TEXT", "IMAGE", "VIDEO", "DOCUMENT"]>>;
+        headerType: z.ZodNullable<z.ZodOptional<z.ZodEnum<["NONE", "TEXT", "IMAGE", "VIDEO", "DOCUMENT"]>>>;
         headerContent: z.ZodNullable<z.ZodOptional<z.ZodString>>;
         bodyText: z.ZodOptional<z.ZodString>;
         footerText: z.ZodNullable<z.ZodOptional<z.ZodString>>;
-        buttons: z.ZodOptional<z.ZodArray<z.ZodDiscriminatedUnion<"type", [z.ZodObject<{
-            type: z.ZodLiteral<"QUICK_REPLY">;
+        buttons: z.ZodOptional<z.ZodArray<z.ZodObject<{
+            type: z.ZodEnum<["QUICK_REPLY", "URL", "PHONE_NUMBER"]>;
             text: z.ZodString;
+            url: z.ZodOptional<z.ZodString>;
+            phoneNumber: z.ZodOptional<z.ZodString>;
         }, "strip", z.ZodTypeAny, {
-            type: "QUICK_REPLY";
+            type: "URL" | "QUICK_REPLY" | "PHONE_NUMBER";
             text: string;
+            phoneNumber?: string | undefined;
+            url?: string | undefined;
         }, {
-            type: "QUICK_REPLY";
+            type: "URL" | "QUICK_REPLY" | "PHONE_NUMBER";
             text: string;
-        }>, z.ZodObject<{
-            type: z.ZodLiteral<"URL">;
-            text: z.ZodString;
-            url: z.ZodString;
-        }, "strip", z.ZodTypeAny, {
-            type: "URL";
-            url: string;
-            text: string;
-        }, {
-            type: "URL";
-            url: string;
-            text: string;
-        }>, z.ZodObject<{
-            type: z.ZodLiteral<"PHONE_NUMBER">;
-            text: z.ZodString;
-            phoneNumber: z.ZodString;
-        }, "strip", z.ZodTypeAny, {
-            phoneNumber: string;
-            type: "PHONE_NUMBER";
-            text: string;
-        }, {
-            phoneNumber: string;
-            type: "PHONE_NUMBER";
-            text: string;
-        }>]>, "many">>;
+            phoneNumber?: string | undefined;
+            url?: string | undefined;
+        }>, "many">>;
         variables: z.ZodOptional<z.ZodArray<z.ZodObject<{
             index: z.ZodNumber;
-            type: z.ZodEnum<["text", "currency", "date_time", "image", "document", "video"]>;
+            type: z.ZodDefault<z.ZodEnum<["text", "currency", "date_time", "image", "document", "video"]>>;
             example: z.ZodOptional<z.ZodString>;
+            placeholder: z.ZodOptional<z.ZodString>;
         }, "strip", z.ZodTypeAny, {
-            type: "text" | "image" | "document" | "video" | "currency" | "date_time";
+            type: "text" | "document" | "image" | "video" | "currency" | "date_time";
             index: number;
             example?: string | undefined;
+            placeholder?: string | undefined;
         }, {
-            type: "text" | "image" | "document" | "video" | "currency" | "date_time";
             index: number;
+            type?: "text" | "document" | "image" | "video" | "currency" | "date_time" | undefined;
             example?: string | undefined;
+            placeholder?: string | undefined;
         }>, "many">>;
     }, "strip", z.ZodTypeAny, {
         name?: string | undefined;
         language?: string | undefined;
         category?: "MARKETING" | "UTILITY" | "AUTHENTICATION" | undefined;
-        headerType?: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | "NONE" | undefined;
+        headerType?: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | "NONE" | null | undefined;
         headerContent?: string | null | undefined;
         bodyText?: string | undefined;
         footerText?: string | null | undefined;
-        buttons?: ({
-            type: "QUICK_REPLY";
+        buttons?: {
+            type: "URL" | "QUICK_REPLY" | "PHONE_NUMBER";
             text: string;
-        } | {
-            type: "URL";
-            url: string;
-            text: string;
-        } | {
-            phoneNumber: string;
-            type: "PHONE_NUMBER";
-            text: string;
-        })[] | undefined;
+            phoneNumber?: string | undefined;
+            url?: string | undefined;
+        }[] | undefined;
         variables?: {
-            type: "text" | "image" | "document" | "video" | "currency" | "date_time";
+            type: "text" | "document" | "image" | "video" | "currency" | "date_time";
             index: number;
             example?: string | undefined;
+            placeholder?: string | undefined;
         }[] | undefined;
     }, {
         name?: string | undefined;
         language?: string | undefined;
         category?: "MARKETING" | "UTILITY" | "AUTHENTICATION" | undefined;
-        headerType?: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | "NONE" | undefined;
+        headerType?: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | "NONE" | null | undefined;
         headerContent?: string | null | undefined;
         bodyText?: string | undefined;
         footerText?: string | null | undefined;
-        buttons?: ({
-            type: "QUICK_REPLY";
+        buttons?: {
+            type: "URL" | "QUICK_REPLY" | "PHONE_NUMBER";
             text: string;
-        } | {
-            type: "URL";
-            url: string;
-            text: string;
-        } | {
-            phoneNumber: string;
-            type: "PHONE_NUMBER";
-            text: string;
-        })[] | undefined;
+            phoneNumber?: string | undefined;
+            url?: string | undefined;
+        }[] | undefined;
         variables?: {
-            type: "text" | "image" | "document" | "video" | "currency" | "date_time";
             index: number;
+            type?: "text" | "document" | "image" | "video" | "currency" | "date_time" | undefined;
             example?: string | undefined;
+            placeholder?: string | undefined;
         }[] | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
@@ -291,26 +268,21 @@ export declare const updateTemplateSchema: z.ZodObject<{
         name?: string | undefined;
         language?: string | undefined;
         category?: "MARKETING" | "UTILITY" | "AUTHENTICATION" | undefined;
-        headerType?: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | "NONE" | undefined;
+        headerType?: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | "NONE" | null | undefined;
         headerContent?: string | null | undefined;
         bodyText?: string | undefined;
         footerText?: string | null | undefined;
-        buttons?: ({
-            type: "QUICK_REPLY";
+        buttons?: {
+            type: "URL" | "QUICK_REPLY" | "PHONE_NUMBER";
             text: string;
-        } | {
-            type: "URL";
-            url: string;
-            text: string;
-        } | {
-            phoneNumber: string;
-            type: "PHONE_NUMBER";
-            text: string;
-        })[] | undefined;
+            phoneNumber?: string | undefined;
+            url?: string | undefined;
+        }[] | undefined;
         variables?: {
-            type: "text" | "image" | "document" | "video" | "currency" | "date_time";
+            type: "text" | "document" | "image" | "video" | "currency" | "date_time";
             index: number;
             example?: string | undefined;
+            placeholder?: string | undefined;
         }[] | undefined;
     };
 }, {
@@ -321,34 +293,29 @@ export declare const updateTemplateSchema: z.ZodObject<{
         name?: string | undefined;
         language?: string | undefined;
         category?: "MARKETING" | "UTILITY" | "AUTHENTICATION" | undefined;
-        headerType?: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | "NONE" | undefined;
+        headerType?: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | "NONE" | null | undefined;
         headerContent?: string | null | undefined;
         bodyText?: string | undefined;
         footerText?: string | null | undefined;
-        buttons?: ({
-            type: "QUICK_REPLY";
+        buttons?: {
+            type: "URL" | "QUICK_REPLY" | "PHONE_NUMBER";
             text: string;
-        } | {
-            type: "URL";
-            url: string;
-            text: string;
-        } | {
-            phoneNumber: string;
-            type: "PHONE_NUMBER";
-            text: string;
-        })[] | undefined;
+            phoneNumber?: string | undefined;
+            url?: string | undefined;
+        }[] | undefined;
         variables?: {
-            type: "text" | "image" | "document" | "video" | "currency" | "date_time";
             index: number;
+            type?: "text" | "document" | "image" | "video" | "currency" | "date_time" | undefined;
             example?: string | undefined;
+            placeholder?: string | undefined;
         }[] | undefined;
     };
 }>;
 export declare const getTemplatesSchema: z.ZodObject<{
     query: z.ZodObject<{
-        page: z.ZodDefault<z.ZodOptional<z.ZodEffects<z.ZodString, number, string>>>;
-        limit: z.ZodDefault<z.ZodOptional<z.ZodEffects<z.ZodString, number, string>>>;
-        search: z.ZodOptional<z.ZodString>;
+        page: z.ZodEffects<z.ZodDefault<z.ZodOptional<z.ZodString>>, number, string | undefined>;
+        limit: z.ZodEffects<z.ZodDefault<z.ZodOptional<z.ZodString>>, number, string | undefined>;
+        search: z.ZodEffects<z.ZodOptional<z.ZodString>, string | undefined, string | undefined>;
         status: z.ZodOptional<z.ZodNativeEnum<{
             PENDING: "PENDING";
             APPROVED: "APPROVED";
@@ -359,38 +326,60 @@ export declare const getTemplatesSchema: z.ZodObject<{
             UTILITY: "UTILITY";
             AUTHENTICATION: "AUTHENTICATION";
         }>>;
-        language: z.ZodOptional<z.ZodString>;
-        sortBy: z.ZodDefault<z.ZodOptional<z.ZodEnum<["createdAt", "name", "status"]>>>;
+        language: z.ZodEffects<z.ZodOptional<z.ZodString>, string | undefined, string | undefined>;
+        sortBy: z.ZodDefault<z.ZodOptional<z.ZodEnum<["createdAt", "updatedAt", "name", "status"]>>>;
         sortOrder: z.ZodDefault<z.ZodOptional<z.ZodEnum<["asc", "desc"]>>>;
-    }, "strip", z.ZodTypeAny, {
-        page: number;
-        limit: number;
-        sortBy: "name" | "status" | "createdAt";
-        sortOrder: "asc" | "desc";
-        search?: string | undefined;
-        status?: "PENDING" | "APPROVED" | "REJECTED" | undefined;
-        language?: string | undefined;
-        category?: "MARKETING" | "UTILITY" | "AUTHENTICATION" | undefined;
-    }, {
-        search?: string | undefined;
-        page?: string | undefined;
-        limit?: string | undefined;
-        status?: "PENDING" | "APPROVED" | "REJECTED" | undefined;
-        language?: string | undefined;
-        category?: "MARKETING" | "UTILITY" | "AUTHENTICATION" | undefined;
-        sortBy?: "name" | "status" | "createdAt" | undefined;
-        sortOrder?: "asc" | "desc" | undefined;
-    }>;
+        whatsappAccountId: z.ZodEffects<z.ZodOptional<z.ZodString>, string | undefined, string | undefined>;
+    }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
+        page: z.ZodEffects<z.ZodDefault<z.ZodOptional<z.ZodString>>, number, string | undefined>;
+        limit: z.ZodEffects<z.ZodDefault<z.ZodOptional<z.ZodString>>, number, string | undefined>;
+        search: z.ZodEffects<z.ZodOptional<z.ZodString>, string | undefined, string | undefined>;
+        status: z.ZodOptional<z.ZodNativeEnum<{
+            PENDING: "PENDING";
+            APPROVED: "APPROVED";
+            REJECTED: "REJECTED";
+        }>>;
+        category: z.ZodOptional<z.ZodNativeEnum<{
+            MARKETING: "MARKETING";
+            UTILITY: "UTILITY";
+            AUTHENTICATION: "AUTHENTICATION";
+        }>>;
+        language: z.ZodEffects<z.ZodOptional<z.ZodString>, string | undefined, string | undefined>;
+        sortBy: z.ZodDefault<z.ZodOptional<z.ZodEnum<["createdAt", "updatedAt", "name", "status"]>>>;
+        sortOrder: z.ZodDefault<z.ZodOptional<z.ZodEnum<["asc", "desc"]>>>;
+        whatsappAccountId: z.ZodEffects<z.ZodOptional<z.ZodString>, string | undefined, string | undefined>;
+    }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
+        page: z.ZodEffects<z.ZodDefault<z.ZodOptional<z.ZodString>>, number, string | undefined>;
+        limit: z.ZodEffects<z.ZodDefault<z.ZodOptional<z.ZodString>>, number, string | undefined>;
+        search: z.ZodEffects<z.ZodOptional<z.ZodString>, string | undefined, string | undefined>;
+        status: z.ZodOptional<z.ZodNativeEnum<{
+            PENDING: "PENDING";
+            APPROVED: "APPROVED";
+            REJECTED: "REJECTED";
+        }>>;
+        category: z.ZodOptional<z.ZodNativeEnum<{
+            MARKETING: "MARKETING";
+            UTILITY: "UTILITY";
+            AUTHENTICATION: "AUTHENTICATION";
+        }>>;
+        language: z.ZodEffects<z.ZodOptional<z.ZodString>, string | undefined, string | undefined>;
+        sortBy: z.ZodDefault<z.ZodOptional<z.ZodEnum<["createdAt", "updatedAt", "name", "status"]>>>;
+        sortOrder: z.ZodDefault<z.ZodOptional<z.ZodEnum<["asc", "desc"]>>>;
+        whatsappAccountId: z.ZodEffects<z.ZodOptional<z.ZodString>, string | undefined, string | undefined>;
+    }, z.ZodTypeAny, "passthrough">>;
 }, "strip", z.ZodTypeAny, {
     query: {
         page: number;
         limit: number;
-        sortBy: "name" | "status" | "createdAt";
-        sortOrder: "asc" | "desc";
+        sortBy: "name" | "status" | "createdAt" | "updatedAt";
+        sortOrder: "desc" | "asc";
         search?: string | undefined;
         status?: "PENDING" | "APPROVED" | "REJECTED" | undefined;
         language?: string | undefined;
         category?: "MARKETING" | "UTILITY" | "AUTHENTICATION" | undefined;
+        whatsappAccountId?: string | undefined;
+    } & {
+        [k: string]: unknown;
     };
 }, {
     query: {
@@ -400,8 +389,11 @@ export declare const getTemplatesSchema: z.ZodObject<{
         status?: "PENDING" | "APPROVED" | "REJECTED" | undefined;
         language?: string | undefined;
         category?: "MARKETING" | "UTILITY" | "AUTHENTICATION" | undefined;
-        sortBy?: "name" | "status" | "createdAt" | undefined;
-        sortOrder?: "asc" | "desc" | undefined;
+        whatsappAccountId?: string | undefined;
+        sortBy?: "name" | "status" | "createdAt" | "updatedAt" | undefined;
+        sortOrder?: "desc" | "asc" | undefined;
+    } & {
+        [k: string]: unknown;
     };
 }>;
 export declare const getTemplateByIdSchema: z.ZodObject<{
@@ -448,10 +440,13 @@ export declare const duplicateTemplateSchema: z.ZodObject<{
     }>;
     body: z.ZodObject<{
         name: z.ZodString;
+        whatsappAccountId: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
         name: string;
+        whatsappAccountId?: string | undefined;
     }, {
         name: string;
+        whatsappAccountId?: string | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     params: {
@@ -459,6 +454,7 @@ export declare const duplicateTemplateSchema: z.ZodObject<{
     };
     body: {
         name: string;
+        whatsappAccountId?: string | undefined;
     };
 }, {
     params: {
@@ -466,6 +462,7 @@ export declare const duplicateTemplateSchema: z.ZodObject<{
     };
     body: {
         name: string;
+        whatsappAccountId?: string | undefined;
     };
 }>;
 export declare const submitTemplateSchema: z.ZodObject<{
@@ -476,27 +473,27 @@ export declare const submitTemplateSchema: z.ZodObject<{
     }, {
         id: string;
     }>;
-    body: z.ZodObject<{
-        whatsappAccountId: z.ZodString;
+    body: z.ZodOptional<z.ZodObject<{
+        whatsappAccountId: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
-        whatsappAccountId: string;
+        whatsappAccountId?: string | undefined;
     }, {
-        whatsappAccountId: string;
-    }>;
+        whatsappAccountId?: string | undefined;
+    }>>;
 }, "strip", z.ZodTypeAny, {
     params: {
         id: string;
     };
-    body: {
-        whatsappAccountId: string;
-    };
+    body?: {
+        whatsappAccountId?: string | undefined;
+    } | undefined;
 }, {
     params: {
         id: string;
     };
-    body: {
-        whatsappAccountId: string;
-    };
+    body?: {
+        whatsappAccountId?: string | undefined;
+    } | undefined;
 }>;
 export declare const previewTemplateSchema: z.ZodObject<{
     body: z.ZodObject<{
@@ -504,97 +501,61 @@ export declare const previewTemplateSchema: z.ZodObject<{
         headerContent: z.ZodOptional<z.ZodString>;
         bodyText: z.ZodString;
         footerText: z.ZodOptional<z.ZodString>;
-        buttons: z.ZodOptional<z.ZodArray<z.ZodDiscriminatedUnion<"type", [z.ZodObject<{
-            type: z.ZodLiteral<"QUICK_REPLY">;
+        buttons: z.ZodOptional<z.ZodArray<z.ZodObject<{
+            type: z.ZodEnum<["QUICK_REPLY", "URL", "PHONE_NUMBER"]>;
             text: z.ZodString;
+            url: z.ZodOptional<z.ZodString>;
+            phoneNumber: z.ZodOptional<z.ZodString>;
         }, "strip", z.ZodTypeAny, {
-            type: "QUICK_REPLY";
+            type: "URL" | "QUICK_REPLY" | "PHONE_NUMBER";
             text: string;
+            phoneNumber?: string | undefined;
+            url?: string | undefined;
         }, {
-            type: "QUICK_REPLY";
+            type: "URL" | "QUICK_REPLY" | "PHONE_NUMBER";
             text: string;
-        }>, z.ZodObject<{
-            type: z.ZodLiteral<"URL">;
-            text: z.ZodString;
-            url: z.ZodString;
-        }, "strip", z.ZodTypeAny, {
-            type: "URL";
-            url: string;
-            text: string;
-        }, {
-            type: "URL";
-            url: string;
-            text: string;
-        }>, z.ZodObject<{
-            type: z.ZodLiteral<"PHONE_NUMBER">;
-            text: z.ZodString;
-            phoneNumber: z.ZodString;
-        }, "strip", z.ZodTypeAny, {
-            phoneNumber: string;
-            type: "PHONE_NUMBER";
-            text: string;
-        }, {
-            phoneNumber: string;
-            type: "PHONE_NUMBER";
-            text: string;
-        }>]>, "many">>;
-        variables: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
+            phoneNumber?: string | undefined;
+            url?: string | undefined;
+        }>, "many">>;
+        variables: z.ZodDefault<z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>>;
     }, "strip", z.ZodTypeAny, {
         bodyText: string;
+        variables: Record<string, string>;
         headerType?: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | "NONE" | undefined;
         headerContent?: string | undefined;
         footerText?: string | undefined;
-        buttons?: ({
-            type: "QUICK_REPLY";
+        buttons?: {
+            type: "URL" | "QUICK_REPLY" | "PHONE_NUMBER";
             text: string;
-        } | {
-            type: "URL";
-            url: string;
-            text: string;
-        } | {
-            phoneNumber: string;
-            type: "PHONE_NUMBER";
-            text: string;
-        })[] | undefined;
-        variables?: Record<string, string> | undefined;
+            phoneNumber?: string | undefined;
+            url?: string | undefined;
+        }[] | undefined;
     }, {
         bodyText: string;
         headerType?: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | "NONE" | undefined;
         headerContent?: string | undefined;
         footerText?: string | undefined;
-        buttons?: ({
-            type: "QUICK_REPLY";
+        buttons?: {
+            type: "URL" | "QUICK_REPLY" | "PHONE_NUMBER";
             text: string;
-        } | {
-            type: "URL";
-            url: string;
-            text: string;
-        } | {
-            phoneNumber: string;
-            type: "PHONE_NUMBER";
-            text: string;
-        })[] | undefined;
+            phoneNumber?: string | undefined;
+            url?: string | undefined;
+        }[] | undefined;
         variables?: Record<string, string> | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     body: {
         bodyText: string;
+        variables: Record<string, string>;
         headerType?: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | "NONE" | undefined;
         headerContent?: string | undefined;
         footerText?: string | undefined;
-        buttons?: ({
-            type: "QUICK_REPLY";
+        buttons?: {
+            type: "URL" | "QUICK_REPLY" | "PHONE_NUMBER";
             text: string;
-        } | {
-            type: "URL";
-            url: string;
-            text: string;
-        } | {
-            phoneNumber: string;
-            type: "PHONE_NUMBER";
-            text: string;
-        })[] | undefined;
-        variables?: Record<string, string> | undefined;
+            phoneNumber?: string | undefined;
+            url?: string | undefined;
+        }[] | undefined;
     };
 }, {
     body: {
@@ -602,25 +563,109 @@ export declare const previewTemplateSchema: z.ZodObject<{
         headerType?: "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" | "NONE" | undefined;
         headerContent?: string | undefined;
         footerText?: string | undefined;
-        buttons?: ({
-            type: "QUICK_REPLY";
+        buttons?: {
+            type: "URL" | "QUICK_REPLY" | "PHONE_NUMBER";
             text: string;
-        } | {
-            type: "URL";
-            url: string;
-            text: string;
-        } | {
-            phoneNumber: string;
-            type: "PHONE_NUMBER";
-            text: string;
-        })[] | undefined;
+            phoneNumber?: string | undefined;
+            url?: string | undefined;
+        }[] | undefined;
         variables?: Record<string, string> | undefined;
     };
 }>;
+export declare const syncTemplatesSchema: z.ZodObject<{
+    body: z.ZodDefault<z.ZodOptional<z.ZodObject<{
+        whatsappAccountId: z.ZodOptional<z.ZodString>;
+    }, "strip", z.ZodTypeAny, {
+        whatsappAccountId?: string | undefined;
+    }, {
+        whatsappAccountId?: string | undefined;
+    }>>>;
+}, "strip", z.ZodTypeAny, {
+    body: {
+        whatsappAccountId?: string | undefined;
+    };
+}, {
+    body?: {
+        whatsappAccountId?: string | undefined;
+    } | undefined;
+}>;
+export declare const getApprovedTemplatesSchema: z.ZodObject<{
+    query: z.ZodObject<{
+        whatsappAccountId: z.ZodEffects<z.ZodOptional<z.ZodString>, string | undefined, string | undefined>;
+    }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
+        whatsappAccountId: z.ZodEffects<z.ZodOptional<z.ZodString>, string | undefined, string | undefined>;
+    }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
+        whatsappAccountId: z.ZodEffects<z.ZodOptional<z.ZodString>, string | undefined, string | undefined>;
+    }, z.ZodTypeAny, "passthrough">>;
+}, "strip", z.ZodTypeAny, {
+    query: {
+        whatsappAccountId?: string | undefined;
+    } & {
+        [k: string]: unknown;
+    };
+}, {
+    query: {
+        whatsappAccountId?: string | undefined;
+    } & {
+        [k: string]: unknown;
+    };
+}>;
+export declare const getLanguagesSchema: z.ZodObject<{
+    query: z.ZodObject<{
+        whatsappAccountId: z.ZodEffects<z.ZodOptional<z.ZodString>, string | undefined, string | undefined>;
+    }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
+        whatsappAccountId: z.ZodEffects<z.ZodOptional<z.ZodString>, string | undefined, string | undefined>;
+    }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
+        whatsappAccountId: z.ZodEffects<z.ZodOptional<z.ZodString>, string | undefined, string | undefined>;
+    }, z.ZodTypeAny, "passthrough">>;
+}, "strip", z.ZodTypeAny, {
+    query: {
+        whatsappAccountId?: string | undefined;
+    } & {
+        [k: string]: unknown;
+    };
+}, {
+    query: {
+        whatsappAccountId?: string | undefined;
+    } & {
+        [k: string]: unknown;
+    };
+}>;
+export declare const getStatsSchema: z.ZodObject<{
+    query: z.ZodObject<{
+        whatsappAccountId: z.ZodEffects<z.ZodOptional<z.ZodString>, string | undefined, string | undefined>;
+    }, "passthrough", z.ZodTypeAny, z.objectOutputType<{
+        whatsappAccountId: z.ZodEffects<z.ZodOptional<z.ZodString>, string | undefined, string | undefined>;
+    }, z.ZodTypeAny, "passthrough">, z.objectInputType<{
+        whatsappAccountId: z.ZodEffects<z.ZodOptional<z.ZodString>, string | undefined, string | undefined>;
+    }, z.ZodTypeAny, "passthrough">>;
+}, "strip", z.ZodTypeAny, {
+    query: {
+        whatsappAccountId?: string | undefined;
+    } & {
+        [k: string]: unknown;
+    };
+}, {
+    query: {
+        whatsappAccountId?: string | undefined;
+    } & {
+        [k: string]: unknown;
+    };
+}>;
+export type CreateTemplateInput = z.infer<typeof createTemplateSchema>['body'];
+export type UpdateTemplateInput = z.infer<typeof updateTemplateSchema>['body'];
+export type GetTemplatesInput = z.infer<typeof getTemplatesSchema>['query'];
+export type DuplicateTemplateInput = z.infer<typeof duplicateTemplateSchema>['body'];
+export type SubmitTemplateInput = z.infer<typeof submitTemplateSchema>;
+export type PreviewTemplateInput = z.infer<typeof previewTemplateSchema>['body'];
+export type SyncTemplatesInput = z.infer<typeof syncTemplatesSchema>;
+export type TemplateButton = z.infer<typeof simpleButtonSchema>;
+export type TemplateVariable = z.infer<typeof variableSchema>;
 export type CreateTemplateSchema = z.infer<typeof createTemplateSchema>;
 export type UpdateTemplateSchema = z.infer<typeof updateTemplateSchema>;
 export type GetTemplatesSchema = z.infer<typeof getTemplatesSchema>;
 export type DuplicateTemplateSchema = z.infer<typeof duplicateTemplateSchema>;
 export type SubmitTemplateSchema = z.infer<typeof submitTemplateSchema>;
 export type PreviewTemplateSchema = z.infer<typeof previewTemplateSchema>;
+export {};
 //# sourceMappingURL=templates.schema.d.ts.map

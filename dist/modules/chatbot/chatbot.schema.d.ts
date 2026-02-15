@@ -242,7 +242,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -255,7 +255,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
@@ -293,7 +293,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -306,7 +306,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
@@ -404,7 +404,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -417,7 +417,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
@@ -475,7 +475,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -488,7 +488,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
@@ -552,7 +552,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -565,7 +565,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
@@ -630,7 +630,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -643,7 +643,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
@@ -712,7 +712,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -725,7 +725,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
@@ -792,7 +792,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -805,7 +805,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
@@ -1105,7 +1105,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1118,7 +1118,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
@@ -1156,7 +1156,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1169,7 +1169,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
@@ -1267,7 +1267,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1280,7 +1280,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
@@ -1338,7 +1338,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1351,7 +1351,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
@@ -1420,7 +1420,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1433,7 +1433,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
@@ -1500,7 +1500,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1513,7 +1513,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
@@ -1585,7 +1585,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1598,7 +1598,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
@@ -1670,7 +1670,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1683,7 +1683,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
@@ -1749,7 +1749,7 @@ export declare const getChatbotsSchema: z.ZodObject<{
         page: number;
         limit: number;
         sortBy: "name" | "status" | "createdAt";
-        sortOrder: "asc" | "desc";
+        sortOrder: "desc" | "asc";
         search?: string | undefined;
         status?: "ACTIVE" | "DRAFT" | "PAUSED" | undefined;
     }, {
@@ -1758,14 +1758,14 @@ export declare const getChatbotsSchema: z.ZodObject<{
         limit?: string | undefined;
         status?: "ACTIVE" | "DRAFT" | "PAUSED" | undefined;
         sortBy?: "name" | "status" | "createdAt" | undefined;
-        sortOrder?: "asc" | "desc" | undefined;
+        sortOrder?: "desc" | "asc" | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     query: {
         page: number;
         limit: number;
         sortBy: "name" | "status" | "createdAt";
-        sortOrder: "asc" | "desc";
+        sortOrder: "desc" | "asc";
         search?: string | undefined;
         status?: "ACTIVE" | "DRAFT" | "PAUSED" | undefined;
     };
@@ -1776,7 +1776,7 @@ export declare const getChatbotsSchema: z.ZodObject<{
         limit?: string | undefined;
         status?: "ACTIVE" | "DRAFT" | "PAUSED" | undefined;
         sortBy?: "name" | "status" | "createdAt" | undefined;
-        sortOrder?: "asc" | "desc" | undefined;
+        sortOrder?: "desc" | "asc" | undefined;
     };
 }>;
 export declare const getChatbotByIdSchema: z.ZodObject<{
@@ -2144,7 +2144,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2157,7 +2157,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
@@ -2195,7 +2195,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2208,7 +2208,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
@@ -2306,7 +2306,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2319,7 +2319,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
@@ -2377,7 +2377,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2390,7 +2390,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
@@ -2450,7 +2450,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2463,7 +2463,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
@@ -2523,7 +2523,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2536,7 +2536,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
@@ -2601,7 +2601,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2614,7 +2614,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
@@ -2679,7 +2679,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "buttons" | "image" | "document" | "video" | undefined;
+                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2692,7 +2692,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     questionText?: string | undefined;
                     variableName?: string | undefined;
                     validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
-                    conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
+                    conditionType?: "tag" | "time" | "variable" | "contact_field" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
                     conditionValue?: string | undefined;
