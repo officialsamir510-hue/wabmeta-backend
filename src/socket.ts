@@ -95,12 +95,12 @@ export const initializeSocket = (server: HttpServer) => {
   });
 
   // Listen to webhook events and broadcast
-  webhookEvents.on('newMessage', (data) => {
+  webhookEvents.on('newMessage', (data: any) => {
     io.to(`org:${data.organizationId}`).emit('message:new', data);
     io.to(`conversation:${data.conversationId}`).emit('message:new', data);
   });
 
-  webhookEvents.on('messageStatus', (data) => {
+  webhookEvents.on('messageStatus', (data: any) => {
     io.to(`org:${data.organizationId}`).emit('message:status', data);
   });
 

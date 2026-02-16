@@ -4,6 +4,10 @@ import { PrismaClient, MessageStatus, MessageDirection, WebhookStatus } from '@p
 import { config } from '../../config';
 import { verifyWebhookSignature, safeDecryptStrict } from '../../utils/encryption';
 import { metaApi } from '../meta/meta.api';
+import { EventEmitter } from 'events';
+
+export const webhookEvents = new EventEmitter();
+webhookEvents.setMaxListeners(20);
 
 const prisma = new PrismaClient();
 
@@ -344,6 +348,12 @@ class WebhookService {
 
       console.log(`✅ Message saved: ${messageData.id}`);
 
+      // Emit event for real-time updates
+      webhookEvents.emit('newMessage', {
+        ...messageData,
+        organizationId: account.organizationId,
+      });
+
       // Update contact stats
       await prisma.contact.update({
         where: { id: contact.id },
@@ -439,6 +449,15 @@ class WebhookService {
           },
         });
       }
+
+      // Emit status update for real-time broadcasting
+      webhookEvents.emit('messageStatus', {
+        messageId: message.id,
+        waMessageId: status.id,
+        status: this.mapStatus(status.status),
+        organizationId: account.organizationId,
+        conversationId: message.conversationId,
+      });
     } catch (error: any) {
       console.error('❌ Error processing status update:', error);
     }
