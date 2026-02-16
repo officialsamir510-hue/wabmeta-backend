@@ -2,7 +2,7 @@ import { MessageStatus } from '@prisma/client';
 import { CreateCampaignInput, UpdateCampaignInput, CampaignsQueryInput, CampaignContactsQueryInput, CampaignResponse, CampaignDetailResponse, CampaignContactResponse, CampaignsListResponse, CampaignStats, CampaignAnalytics } from './campaigns.types';
 export declare class CampaignsService {
     private findWhatsAppAccount;
-    create(organizationId: string, input: CreateCampaignInput): Promise<CampaignResponse>;
+    create(organizationId: string, userId: string, input: CreateCampaignInput): Promise<CampaignResponse>;
     getList(organizationId: string, query: CampaignsQueryInput): Promise<CampaignsListResponse>;
     getById(organizationId: string, campaignId: string): Promise<CampaignDetailResponse>;
     update(organizationId: string, campaignId: string, input: UpdateCampaignInput): Promise<CampaignResponse>;

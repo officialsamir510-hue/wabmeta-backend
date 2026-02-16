@@ -14,28 +14,20 @@ const getOrgId = (req: Request): string => {
   return Array.isArray(header) ? header[0] : header;
 };
 
-// Extended Request interface
-interface AuthRequest extends Request {
-  user?: {
-    id: string;
-    email: string;
-    organizationId?: string;
-  };
-}
-
 export class MetaController {
   // ============================================
   // GET OAUTH URL
   // ============================================
-  async getOAuthUrl(req: AuthRequest, res: Response, next: NextFunction) {
+  async getOAuthUrl(req: Request, res: Response, next: NextFunction) {
     try {
-      const { organizationId } = req.query;
+      const organizationId = req.query.organizationId as string;
 
       if (!organizationId || typeof organizationId !== 'string') {
         throw new AppError('Organization ID is required', 400);
       }
 
-      const userId = req.user?.id;
+      // Verify user has access to this organization
+      const userId = (req as any).user?.id;
       if (!userId) {
         throw new AppError('Authentication required', 401);
       }
@@ -52,17 +44,21 @@ export class MetaController {
         throw new AppError('You do not have permission to connect WhatsApp', 403);
       }
 
+      // Generate secure state token
       const stateToken = generateToken();
       const state = `${organizationId}:${stateToken}`;
 
+      // Store state in database (expires in 10 minutes)
+      // Cast prisma to any to support new model until client regenerates
       await (prisma as any).oAuthState.create({
         data: {
           state,
           organizationId,
-          expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
         },
       });
 
+      // Clean up expired states
       await (prisma as any).oAuthState.deleteMany({
         where: {
           expiresAt: { lt: new Date() },
@@ -79,14 +75,17 @@ export class MetaController {
     }
   }
 
-  async getAuthUrl(req: AuthRequest, res: Response, next: NextFunction) {
+  // ============================================
+  // GET AUTH URL (Alias for frontend compatibility)
+  // ============================================
+  async getAuthUrl(req: Request, res: Response, next: NextFunction) {
     return this.getOAuthUrl(req, res, next);
   }
 
   // ============================================
-  // HANDLE CALLBACK
+  // HANDLE CALLBACK (Code Exchange)
   // ============================================
-  async handleCallback(req: AuthRequest, res: Response, next: NextFunction) {
+  async handleCallback(req: Request, res: Response, next: NextFunction) {
     try {
       const { code, state } = req.body;
 
@@ -98,9 +97,11 @@ export class MetaController {
         throw new AppError('Authorization code is required', 400);
       }
 
+      // Get organization ID from state or request
       let organizationId: string;
 
       if (state) {
+        // Verify state token
         const storedState = await (prisma as any).oAuthState.findUnique({
           where: { state },
         });
@@ -116,6 +117,7 @@ export class MetaController {
 
         organizationId = storedState.organizationId;
 
+        // Delete used state
         await (prisma as any).oAuthState.delete({ where: { state } });
       } else if (req.body.organizationId) {
         organizationId = req.body.organizationId;
@@ -125,7 +127,8 @@ export class MetaController {
 
       console.log('   Organization ID:', organizationId);
 
-      const userId = req.user?.id;
+      // Verify user has access
+      const userId = (req as any).user?.id;
       if (!userId) {
         throw new AppError('Authentication required', 401);
       }
@@ -142,6 +145,7 @@ export class MetaController {
         throw new AppError('You do not have permission to connect WhatsApp', 403);
       }
 
+      // Complete the connection
       const result = await metaService.completeConnection(
         code,
         organizationId,
@@ -170,9 +174,9 @@ export class MetaController {
   }
 
   // ============================================
-  // CONNECT
+  // CONNECT (Direct token/code submission)
   // ============================================
-  async connect(req: AuthRequest, res: Response, next: NextFunction) {
+  async connect(req: Request, res: Response, next: NextFunction) {
     try {
       const { code, accessToken, organizationId } = req.body;
 
@@ -186,7 +190,8 @@ export class MetaController {
         throw new AppError('Organization ID is required', 400);
       }
 
-      const userId = req.user?.id;
+      // Verify user has access
+      const userId = (req as any).user?.id;
       if (!userId) {
         throw new AppError('Authentication required', 401);
       }
@@ -203,6 +208,7 @@ export class MetaController {
         throw new AppError('You do not have permission to connect WhatsApp', 403);
       }
 
+      // Complete the connection
       const result = await metaService.completeConnection(
         codeOrToken,
         organizationId,
@@ -229,7 +235,7 @@ export class MetaController {
   // ============================================
   // GET ACCOUNTS
   // ============================================
-  async getAccounts(req: AuthRequest, res: Response, next: NextFunction) {
+  async getAccounts(req: Request, res: Response, next: NextFunction) {
     try {
       const organizationId = getOrgId(req);
 
@@ -246,11 +252,11 @@ export class MetaController {
   }
 
   // ============================================
-  // GET ACCOUNT
+  // GET SINGLE ACCOUNT
   // ============================================
-  async getAccount(req: AuthRequest, res: Response, next: NextFunction) {
+  async getAccount(req: Request, res: Response, next: NextFunction) {
     try {
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const id = req.params.id as string;
       const organizationId = getOrgId(req);
 
       if (!organizationId) {
@@ -268,16 +274,17 @@ export class MetaController {
   // ============================================
   // DISCONNECT ACCOUNT
   // ============================================
-  async disconnectAccount(req: AuthRequest, res: Response, next: NextFunction) {
+  async disconnectAccount(req: Request, res: Response, next: NextFunction) {
     try {
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const id = req.params.id as string;
       const organizationId = getOrgId(req);
 
       if (!organizationId) {
         throw new AppError('Organization ID is required', 400);
       }
 
-      const userId = req.user?.id;
+      // Verify user has access
+      const userId = (req as any).user?.id;
       if (!userId) {
         throw new AppError('Authentication required', 401);
       }
@@ -305,9 +312,9 @@ export class MetaController {
   // ============================================
   // SET DEFAULT ACCOUNT
   // ============================================
-  async setDefaultAccount(req: AuthRequest, res: Response, next: NextFunction) {
+  async setDefaultAccount(req: Request, res: Response, next: NextFunction) {
     try {
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const id = req.params.id as string;
       const organizationId = getOrgId(req);
 
       if (!organizationId) {
@@ -323,11 +330,31 @@ export class MetaController {
   }
 
   // ============================================
+  // REFRESH ACCOUNT HEALTH
+  // ============================================
+  async refreshHealth(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = req.params.id as string;
+      const organizationId = getOrgId(req);
+
+      if (!organizationId) {
+        throw new AppError('Organization ID is required', 400);
+      }
+
+      const result = await metaService.refreshAccountHealth(id, organizationId);
+
+      return sendSuccess(res, result, 'Health check completed');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ============================================
   // SYNC TEMPLATES
   // ============================================
-  async syncTemplates(req: AuthRequest, res: Response, next: NextFunction) {
+  async syncTemplates(req: Request, res: Response, next: NextFunction) {
     try {
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const id = req.params.id as string;
       const organizationId = getOrgId(req);
 
       if (!organizationId) {
@@ -345,9 +372,9 @@ export class MetaController {
   // ============================================
   // GET ORGANIZATION STATUS
   // ============================================
-  async getOrganizationStatus(req: AuthRequest, res: Response, next: NextFunction) {
+  async getOrganizationStatus(req: Request, res: Response, next: NextFunction) {
     try {
-      const organizationId = Array.isArray(req.params.organizationId) ? req.params.organizationId[0] : req.params.organizationId;
+      const organizationId = req.params.organizationId as string;
 
       if (!organizationId) {
         throw new AppError('Organization ID is required', 400);
@@ -371,14 +398,14 @@ export class MetaController {
           displayName: a.displayName,
           isDefault: a.isDefault,
         })),
-      });
+      }, 'Data fetched');
     } catch (error) {
       next(error);
     }
   }
 
   // ============================================
-  // GET CONFIG
+  // GET EMBEDDED SIGNUP CONFIG
   // ============================================
   async getEmbeddedSignupConfig(req: Request, res: Response, next: NextFunction) {
     try {
@@ -390,6 +417,9 @@ export class MetaController {
     }
   }
 
+  // ============================================
+  // GET INTEGRATION STATUS
+  // ============================================
   async getIntegrationStatus(req: Request, res: Response, next: NextFunction) {
     try {
       const status = metaService.getIntegrationStatus();

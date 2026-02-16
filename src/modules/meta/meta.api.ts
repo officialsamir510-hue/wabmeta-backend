@@ -1,4 +1,4 @@
-// src/modules/meta/meta.api.ts
+// 📁 src/modules/meta/meta.api.ts - COMPLETE META API CLIENT
 
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { config } from '../../config';
@@ -26,7 +26,7 @@ class MetaApiClient {
       },
     });
 
-    // Request interceptor for logging
+    // Request interceptor
     this.client.interceptors.request.use(
       (reqConfig) => {
         const url = reqConfig.url || '';
@@ -40,7 +40,7 @@ class MetaApiClient {
       }
     );
 
-    // Response interceptor for error handling
+    // Response interceptor
     this.client.interceptors.response.use(
       (response) => {
         console.log(`[Meta API] ✅ Response: ${response.status}`);
@@ -70,9 +70,6 @@ class MetaApiClient {
   // TOKEN MANAGEMENT
   // ============================================
 
-  /**
-   * Exchange authorization code for access token - ✅ UPDATED with redirect_uri
-   */
   async exchangeCodeForToken(code: string): Promise<TokenExchangeResponse> {
     try {
       console.log('[Meta API] Exchanging code for token...');
@@ -82,7 +79,7 @@ class MetaApiClient {
         params: {
           client_id: config.meta.appId,
           client_secret: config.meta.appSecret,
-          redirect_uri: config.meta.redirectUri, // ✅ IMPORTANT: Must match exactly
+          redirect_uri: config.meta.redirectUri,
           code: code,
         },
       });
@@ -96,23 +93,10 @@ class MetaApiClient {
       };
     } catch (error: any) {
       console.error('[Meta API] ❌ Token exchange failed');
-
-      if (error.response?.data?.error) {
-        const err = error.response.data.error;
-        console.error('[Meta API] Error details:', {
-          message: err.message,
-          code: err.code,
-          type: err.type,
-        });
-      }
-
       throw this.handleError(error, 'Failed to exchange code for token');
     }
   }
 
-  /**
-   * Exchange short-lived token for long-lived token
-   */
   async getLongLivedToken(shortLivedToken: string): Promise<TokenExchangeResponse> {
     try {
       console.log('[Meta API] Getting long-lived token...');
@@ -139,9 +123,6 @@ class MetaApiClient {
     }
   }
 
-  /**
-   * Debug/validate access token
-   */
   async debugToken(accessToken: string): Promise<DebugTokenResponse> {
     try {
       console.log('[Meta API] Debugging token...');
@@ -169,9 +150,6 @@ class MetaApiClient {
     }
   }
 
-  /**
-   * Validate if a token is valid and active
-   */
   async validateToken(accessToken: string): Promise<boolean> {
     try {
       const debugResult = await this.debugToken(accessToken);
@@ -183,17 +161,13 @@ class MetaApiClient {
   }
 
   // ============================================
-  // WABA (WhatsApp Business Account) METHODS
+  // WABA METHODS
   // ============================================
 
-  /**
-   * Get shared WABA list
-   */
   async getSharedWABAs(accessToken: string): Promise<SharedWABAInfo[]> {
     try {
       console.log('[Meta API] Fetching shared WABAs...');
 
-      // Get user ID
       const meResponse = await this.client.get('/me', {
         params: {
           access_token: accessToken,
@@ -203,7 +177,6 @@ class MetaApiClient {
 
       console.log('[Meta API] User:', meResponse.data.name || meResponse.data.id);
 
-      // Get businesses
       const businessResponse = await this.client.get(`/${meResponse.data.id}/businesses`, {
         params: {
           access_token: accessToken,
@@ -216,7 +189,6 @@ class MetaApiClient {
 
       const wabas: SharedWABAInfo[] = [];
 
-      // Get WABAs from each business
       for (const business of businesses) {
         try {
           const clientWabaResponse = await this.client.get(
@@ -230,7 +202,6 @@ class MetaApiClient {
           );
 
           if (clientWabaResponse.data.data?.length) {
-            console.log(`[Meta API] Found ${clientWabaResponse.data.data.length} client WABAs`);
             wabas.push(...clientWabaResponse.data.data);
           }
         } catch (e) {
@@ -246,16 +217,14 @@ class MetaApiClient {
             );
 
             if (ownedWabaResponse.data.data?.length) {
-              console.log(`[Meta API] Found ${ownedWabaResponse.data.data.length} owned WABAs`);
               wabas.push(...ownedWabaResponse.data.data);
             }
           } catch (e2) {
-            console.log(`[Meta API] No WABAs found for business ${business.id}`);
+            console.log(`[Meta API] No WABAs for business ${business.id}`);
           }
         }
       }
 
-      // Get WABAs from token scopes
       try {
         const debugToken = await this.debugToken(accessToken);
         const granularScopes = debugToken.data.granular_scopes || [];
@@ -268,7 +237,6 @@ class MetaApiClient {
                   const wabaDetails = await this.getWABADetails(wabaId, accessToken);
                   if (wabaDetails) {
                     wabas.push(wabaDetails);
-                    console.log(`[Meta API] Added WABA from token scope: ${wabaId}`);
                   }
                 } catch (e) {
                   console.log(`[Meta API] Could not fetch WABA ${wabaId}`);
@@ -288,9 +256,6 @@ class MetaApiClient {
     }
   }
 
-  /**
-   * Get WABA details
-   */
   async getWABADetails(wabaId: string, accessToken: string): Promise<SharedWABAInfo> {
     try {
       console.log(`[Meta API] Fetching WABA details for ${wabaId}...`);
@@ -314,7 +279,7 @@ class MetaApiClient {
   // ============================================
 
   /**
-   * Get phone numbers for a WABA
+   * ✅ FIXED: Get phone numbers with proper snake_case mapping
    */
   async getPhoneNumbers(wabaId: string, accessToken: string): Promise<PhoneNumberInfo[]> {
     try {
@@ -327,17 +292,18 @@ class MetaApiClient {
         },
       });
 
-      const phoneNumbers = (response.data.data || []).map((phone: any) => ({
+      // ✅ Map snake_case API response to camelCase TypeScript
+      const phoneNumbers = (response.data.data || []).map((phone: any): PhoneNumberInfo => ({
         id: phone.id,
         verifiedName: phone.verified_name,
         displayPhoneNumber: phone.display_phone_number,
         qualityRating: phone.quality_rating,
         codeVerificationStatus: phone.code_verification_status,
+        nameStatus: phone.name_status,
+        messagingLimitTier: phone.messaging_limit_tier,
         platformType: phone.platform_type,
         throughput: phone.throughput,
         status: phone.status,
-        nameStatus: phone.name_status,
-        messagingLimitTier: phone.messaging_limit_tier,
       }));
 
       console.log(`[Meta API] ✅ Found ${phoneNumbers.length} phone numbers`);
@@ -347,9 +313,6 @@ class MetaApiClient {
     }
   }
 
-  /**
-   * Register phone number for messaging
-   */
   async registerPhoneNumber(phoneNumberId: string, accessToken: string): Promise<boolean> {
     try {
       console.log(`[Meta API] Registering phone number ${phoneNumberId}...`);
@@ -382,9 +345,6 @@ class MetaApiClient {
   // WEBHOOK METHODS
   // ============================================
 
-  /**
-   * Subscribe app to WABA webhooks
-   */
   async subscribeToWebhooks(wabaId: string, accessToken: string): Promise<boolean> {
     try {
       console.log(`[Meta API] Subscribing to webhooks for WABA ${wabaId}...`);
@@ -407,9 +367,6 @@ class MetaApiClient {
     }
   }
 
-  /**
-   * Unsubscribe app from WABA webhooks
-   */
   async unsubscribeFromWebhooks(wabaId: string, accessToken: string): Promise<boolean> {
     try {
       console.log(`[Meta API] Unsubscribing from webhooks for WABA ${wabaId}...`);
@@ -427,12 +384,9 @@ class MetaApiClient {
   }
 
   // ============================================
-  // BUSINESS PROFILE METHODS
+  // BUSINESS PROFILE
   // ============================================
 
-  /**
-   * Get business profile
-   */
   async getBusinessProfile(phoneNumberId: string, accessToken: string): Promise<any> {
     try {
       console.log(`[Meta API] Fetching business profile for ${phoneNumberId}...`);
@@ -453,9 +407,6 @@ class MetaApiClient {
     }
   }
 
-  /**
-   * Update business profile
-   */
   async updateBusinessProfile(
     phoneNumberId: string,
     accessToken: string,
@@ -491,12 +442,9 @@ class MetaApiClient {
   }
 
   // ============================================
-  // MESSAGING METHODS
+  // MESSAGING
   // ============================================
 
-  /**
-   * Send message via WhatsApp Cloud API
-   */
   async sendMessage(
     phoneNumberId: string,
     accessToken: string,
@@ -533,9 +481,6 @@ class MetaApiClient {
     }
   }
 
-  /**
-   * Mark message as read
-   */
   async markMessageAsRead(
     phoneNumberId: string,
     accessToken: string,
@@ -564,12 +509,9 @@ class MetaApiClient {
   }
 
   // ============================================
-  // TEMPLATE METHODS
+  // TEMPLATES
   // ============================================
 
-  /**
-   * Get message templates
-   */
   async getTemplates(wabaId: string, accessToken: string): Promise<any[]> {
     try {
       console.log(`[Meta API] Fetching templates for WABA ${wabaId}...`);
@@ -604,9 +546,6 @@ class MetaApiClient {
     }
   }
 
-  /**
-   * Get single template by ID
-   */
   async getTemplate(templateId: string, accessToken: string): Promise<any> {
     try {
       const response = await this.client.get(`/${templateId}`, {
@@ -622,9 +561,6 @@ class MetaApiClient {
     }
   }
 
-  /**
-   * Create message template
-   */
   async createTemplate(
     wabaId: string,
     accessToken: string,
@@ -663,9 +599,6 @@ class MetaApiClient {
     }
   }
 
-  /**
-   * Delete message template
-   */
   async deleteTemplate(
     wabaId: string,
     accessToken: string,
@@ -689,12 +622,9 @@ class MetaApiClient {
   }
 
   // ============================================
-  // MEDIA METHODS
+  // MEDIA
   // ============================================
 
-  /**
-   * Upload media file
-   */
   async uploadMedia(
     phoneNumberId: string,
     accessToken: string,
@@ -727,9 +657,6 @@ class MetaApiClient {
     }
   }
 
-  /**
-   * Get media URL
-   */
   async getMediaUrl(mediaId: string, accessToken: string): Promise<string> {
     try {
       const response = await this.client.get(`/${mediaId}`, {
@@ -744,9 +671,6 @@ class MetaApiClient {
     }
   }
 
-  /**
-   * Download media
-   */
   async downloadMedia(mediaUrl: string, accessToken: string): Promise<Buffer> {
     try {
       const response = await axios.get(mediaUrl, {
@@ -763,12 +687,9 @@ class MetaApiClient {
   }
 
   // ============================================
-  // ANALYTICS METHODS
+  // ANALYTICS
   // ============================================
 
-  /**
-   * Get analytics/insights
-   */
   async getAnalytics(
     wabaId: string,
     accessToken: string,
@@ -802,9 +723,6 @@ class MetaApiClient {
   // ERROR HANDLING
   // ============================================
 
-  /**
-   * Handle and format errors
-   */
   private handleError(error: any, defaultMessage: string): Error {
     if (error.response?.data?.error) {
       const metaError = error.response.data.error;
@@ -853,12 +771,9 @@ class MetaApiClient {
   }
 
   // ============================================
-  // UTILITY METHODS
+  // UTILITY
   // ============================================
 
-  /**
-   * Check if token is valid
-   */
   async isTokenValid(accessToken: string): Promise<boolean> {
     try {
       const debugInfo = await this.debugToken(accessToken);
@@ -868,9 +783,6 @@ class MetaApiClient {
     }
   }
 
-  /**
-   * Get token expiry date
-   */
   async getTokenExpiry(accessToken: string): Promise<Date | null> {
     try {
       const debugInfo = await this.debugToken(accessToken);
@@ -883,14 +795,10 @@ class MetaApiClient {
     }
   }
 
-  /**
-   * Get Graph API version
-   */
   getGraphVersion(): string {
     return this.graphVersion;
   }
 }
 
-// Export singleton instance
 export const metaApi = new MetaApiClient();
 export default metaApi;

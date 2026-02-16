@@ -39,24 +39,14 @@ const getEncryptionKey = (): Buffer => {
   return crypto.pbkdf2Sync(key, salt, ITERATIONS, KEY_LENGTH, 'sha512');
 };
 
-/**
- * Validate encryption key
- */
-export function validateEncryptionKey(): boolean {
-  try {
-    getEncryptionKey();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 // ============================================
 // ENCRYPTION FUNCTIONS
 // ============================================
 
 /**
  * Encrypt a string value
+ * @param text Plain text to encrypt
+ * @returns Encrypted string (base64)
  */
 export function encrypt(text: string): string {
   if (!text) {
@@ -86,6 +76,8 @@ export function encrypt(text: string): string {
 
 /**
  * Decrypt an encrypted string
+ * @param encryptedText Encrypted string
+ * @returns Decrypted plain text or null if failed
  */
 export function decrypt(encryptedText: string): string | null {
   if (!encryptedText) {
@@ -150,6 +142,7 @@ export function safeDecrypt(encryptedText: string): string | null {
 
 /**
  * Strict decrypt - only returns valid Meta tokens
+ * ✅ Use this for Meta access tokens
  */
 export function safeDecryptStrict(encryptedText: string): string | null {
   const decrypted = safeDecrypt(encryptedText);
@@ -158,7 +151,7 @@ export function safeDecryptStrict(encryptedText: string): string | null {
     return null;
   }
 
-  // Verify it's a valid Meta token
+  // ✅ Verify it's a valid Meta token
   if (!isMetaToken(decrypted)) {
     console.error('Decrypted value is not a valid Meta token');
     return null;
@@ -173,6 +166,7 @@ export function safeDecryptStrict(encryptedText: string): string | null {
 
 /**
  * Check if a string is a Meta access token
+ * Meta tokens start with "EAA" and are typically 150-300 characters
  */
 export function isMetaToken(value: string): boolean {
   if (!value || typeof value !== 'string') {
@@ -190,7 +184,7 @@ export function isMetaToken(value: string): boolean {
 }
 
 /**
- * Mask a token for logging
+ * Mask a token for logging (show first and last 8 chars)
  */
 export function maskToken(token: string): string {
   if (!token) return '[null]';
@@ -210,6 +204,7 @@ export function isEncrypted(value: string): boolean {
     return false;
   }
 
+  // Our format: iv:authTag:encrypted (hex values separated by colons)
   const parts = value.split(':');
 
   if (parts.length !== 3) {
@@ -218,6 +213,7 @@ export function isEncrypted(value: string): boolean {
 
   const [ivHex, authTagHex, encrypted] = parts;
 
+  // Check if all parts are valid hex
   const isHex = (str: string) => /^[0-9a-fA-F]+$/.test(str);
 
   return (
@@ -230,32 +226,34 @@ export function isEncrypted(value: string): boolean {
   );
 }
 
-/**
- * Encrypt if not already encrypted
- */
-export function encryptIfNeeded(text: string): string {
-  if (isEncrypted(text)) {
-    return text;
-  }
-  return encrypt(text);
-}
-
 // ============================================
 // HASHING FUNCTIONS
 // ============================================
 
+/**
+ * Create SHA256 hash
+ */
 export function hashSHA256(value: string): string {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
 
+/**
+ * Create HMAC SHA256
+ */
 export function hmacSHA256(value: string, secret: string): string {
   return crypto.createHmac('sha256', secret).update(value).digest('hex');
 }
 
+/**
+ * Generate random token
+ */
 export function generateSecureToken(length: number = 32): string {
   return crypto.randomBytes(length).toString('hex');
 }
 
+/**
+ * Compare two strings in constant time (prevent timing attacks)
+ */
 export function secureCompare(a: string, b: string): boolean {
   if (a.length !== b.length) {
     return false;
@@ -268,6 +266,9 @@ export function secureCompare(a: string, b: string): boolean {
 // WEBHOOK SIGNATURE VERIFICATION
 // ============================================
 
+/**
+ * Verify Meta webhook signature
+ */
 export function verifyWebhookSignature(
   payload: string,
   signature: string,
@@ -289,6 +290,9 @@ export function verifyWebhookSignature(
 // API KEY GENERATION
 // ============================================
 
+/**
+ * Generate API key pair
+ */
 export function generateApiKeyPair(): { key: string; secret: string } {
   const key = `wm_${generateSecureToken(16)}`;
   const secret = generateSecureToken(32);
@@ -296,10 +300,16 @@ export function generateApiKeyPair(): { key: string; secret: string } {
   return { key, secret };
 }
 
+/**
+ * Hash API secret for storage
+ */
 export function hashApiSecret(secret: string): string {
   return hashSHA256(secret);
 }
 
+/**
+ * Verify API secret
+ */
 export function verifyApiSecret(secret: string, hash: string): boolean {
   const computedHash = hashSHA256(secret);
   return secureCompare(computedHash, hash);
@@ -317,8 +327,6 @@ export default {
   isMetaToken,
   maskToken,
   isEncrypted,
-  encryptIfNeeded,
-  validateEncryptionKey,
   hashSHA256,
   hmacSHA256,
   generateSecureToken,

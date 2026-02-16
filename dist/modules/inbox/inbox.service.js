@@ -486,7 +486,7 @@ class InboxService {
             // Get default phone number
             const phoneNumber = await prisma.phoneNumber.findFirst({
                 where: {
-                    MetaConnection: {
+                    metaConnection: {
                         organizationId,
                         status: 'CONNECTED',
                     },

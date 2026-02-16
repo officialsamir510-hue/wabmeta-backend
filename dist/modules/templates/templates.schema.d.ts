@@ -437,7 +437,7 @@ export declare const getTemplatesQuerySchema: z.ZodObject<{
         page: number;
         limit: number;
         search?: string | undefined;
-        status?: "PENDING" | "APPROVED" | "REJECTED" | undefined;
+        status?: "APPROVED" | "PENDING" | "REJECTED" | undefined;
         whatsappAccountId?: string | undefined;
         language?: string | undefined;
         category?: "MARKETING" | "UTILITY" | "AUTHENTICATION" | undefined;
@@ -445,7 +445,7 @@ export declare const getTemplatesQuerySchema: z.ZodObject<{
         sortOrder?: "asc" | "desc" | undefined;
     }, {
         search?: string | undefined;
-        status?: "PENDING" | "APPROVED" | "REJECTED" | undefined;
+        status?: "APPROVED" | "PENDING" | "REJECTED" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
         whatsappAccountId?: string | undefined;
@@ -459,7 +459,7 @@ export declare const getTemplatesQuerySchema: z.ZodObject<{
         page: number;
         limit: number;
         search?: string | undefined;
-        status?: "PENDING" | "APPROVED" | "REJECTED" | undefined;
+        status?: "APPROVED" | "PENDING" | "REJECTED" | undefined;
         whatsappAccountId?: string | undefined;
         language?: string | undefined;
         category?: "MARKETING" | "UTILITY" | "AUTHENTICATION" | undefined;
@@ -469,7 +469,7 @@ export declare const getTemplatesQuerySchema: z.ZodObject<{
 }, {
     query?: {
         search?: string | undefined;
-        status?: "PENDING" | "APPROVED" | "REJECTED" | undefined;
+        status?: "APPROVED" | "PENDING" | "REJECTED" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
         whatsappAccountId?: string | undefined;

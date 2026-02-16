@@ -16,7 +16,7 @@ class CampaignsController {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
             const input = req.body;
-            const campaign = await campaigns_service_1.campaignsService.create(organizationId, input);
+            const campaign = await campaigns_service_1.campaignsService.create(organizationId, req.user.id, input);
             return (0, response_1.sendSuccess)(res, campaign, 'Campaign created successfully', 201);
         }
         catch (error) {

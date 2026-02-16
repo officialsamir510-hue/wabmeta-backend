@@ -73,7 +73,7 @@ export class ChatbotController {
         throw new AppError('Organization context required', 400);
       }
 
-      const chatbot = await chatbotService.create(organizationId, req.body);
+      const chatbot = await chatbotService.create(organizationId, req.user!.id, req.body);
 
       return sendSuccess(res, chatbot, 'Chatbot created successfully', 201);
     } catch (error) {
@@ -158,7 +158,7 @@ export class ChatbotController {
       }
 
       const id = req.params.id as string;
-      const chatbot = await chatbotService.duplicate(organizationId, id);
+      const chatbot = await chatbotService.duplicate(organizationId, req.user!.id, id);
 
       return sendSuccess(res, chatbot, 'Chatbot duplicated successfully', 201);
     } catch (error) {

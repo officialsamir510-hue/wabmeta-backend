@@ -64,8 +64,8 @@ const formatCampaign = (campaign) => {
         templateName: campaign.template?.name || '',
         whatsappAccountId: campaign.whatsappAccountId,
         whatsappAccountPhone: campaign.whatsappAccount?.phoneNumber || '',
-        contactGroupId: campaign.ContactGroupId,
-        contactGroupName: campaign.ContactGroup?.name || null,
+        contactGroupId: campaign.contactGroupId,
+        contactGroupName: campaign.contactGroup?.name || null,
         audienceFilter: campaign.audienceFilter,
         variableMapping: null,
         status: campaign.status,
@@ -87,8 +87,8 @@ const formatCampaign = (campaign) => {
 const formatCampaignContact = (cc) => ({
     id: cc.id,
     contactId: cc.contactId,
-    phone: cc.Contact?.phone || '',
-    fullName: [cc.Contact?.firstName, cc.Contact?.lastName].filter(Boolean).join(' ') || cc.Contact?.phone || '',
+    phone: cc.contact?.phone || '',
+    fullName: [cc.contact?.firstName, cc.contact?.lastName].filter(Boolean).join(' ') || cc.contact?.phone || '',
     status: cc.status,
     waMessageId: cc.waMessageId,
     sentAt: cc.sentAt,
@@ -197,7 +197,7 @@ class CampaignsService {
     // ==========================================
     // CREATE CAMPAIGN
     // ==========================================
-    async create(organizationId, input) {
+    async create(organizationId, userId, input) {
         const { name, description, templateId, whatsappAccountId, phoneNumberId, contactGroupId, contactIds, audienceFilter, scheduledAt, } = input;
         console.log('📦 Campaign create request:', {
             organizationId,
@@ -295,11 +295,12 @@ class CampaignsService {
                     status: scheduledAt ? 'SCHEDULED' : 'DRAFT',
                     scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
                     totalContacts: targetContacts.length,
+                    createdById: userId,
                 },
                 include: {
                     template: { select: { name: true } },
                     whatsappAccount: { select: { phoneNumber: true } },
-                    ContactGroup: { select: { name: true } },
+                    contactGroup: { select: { name: true } },
                 },
             });
             const campaignContactsData = targetContacts.map((contact) => ({
@@ -862,7 +863,7 @@ class CampaignsService {
                 take: 25, // Process 25 at a time
                 orderBy: { createdAt: 'asc' },
                 include: {
-                    Contact: {
+                    contact: {
                         select: {
                             id: true,
                             phone: true,
@@ -880,7 +881,7 @@ class CampaignsService {
             console.log(`📤 Processing batch ${batchCount}: ${pending.length} contacts`);
             // Process each contact
             for (const cc of pending) {
-                const to = cc.Contact?.phone;
+                const to = cc.contact?.phone;
                 if (!to) {
                     await this.updateContactStatus(campaignId, cc.contactId, 'FAILED', undefined, 'Contact phone missing');
                     totalFailed++;
@@ -888,7 +889,7 @@ class CampaignsService {
                 }
                 try {
                     // Build template parameters
-                    const params = buildParamsFromContact(cc.Contact, varCount);
+                    const params = buildParamsFromContact(cc.contact, varCount);
                     // Build message payload
                     const payload = buildTemplateSendPayload({
                         to,

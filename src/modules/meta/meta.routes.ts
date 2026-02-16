@@ -1,17 +1,13 @@
-// 📁 src/modules/meta/meta.routes.ts
+// 📁 src/modules/meta/meta.routes.ts - COMPLETE FIXED VERSION
 
 import { Router } from 'express';
-import { MetaController } from './meta.controller'; // Changed import
-const metaController = new MetaController(); // Instantiate
-
+import { metaController } from './meta.controller';
 import { authenticate } from '../../middleware/auth';
-import { validate } from '../../middleware/validate';
-import { tokenExchangeSchema } from './meta.schema';
 
 const router = Router();
 
 // ============================================
-// PUBLIC ROUTES
+// PUBLIC ROUTES (Webhook verification)
 // ============================================
 
 // Webhook verification (GET) - No auth needed
@@ -31,82 +27,36 @@ router.get('/webhook', (req, res) => {
   }
 });
 
-// Get embedded signup configuration
-router.get('/config', metaController.getEmbeddedSignupConfig.bind(metaController));
-
-// Get integration status
-router.get('/status', metaController.getIntegrationStatus.bind(metaController));
-
 // ============================================
-// PROTECTED ROUTES (Requires Authentication)
+// PROTECTED ROUTES
 // ============================================
 
+// Apply auth middleware to all routes below
 router.use(authenticate);
 
-// OAuth URL generation (primary route)
+// OAuth URLs
 router.get('/oauth-url', metaController.getOAuthUrl.bind(metaController));
+router.get('/auth/url', metaController.getAuthUrl.bind(metaController));
 
-// Backward-compatible alias for frontend that uses /meta/auth/url
-router.get('/auth/url', metaController.getOAuthUrl.bind(metaController));
+// Callback & Connect
+router.post('/callback', metaController.handleCallback.bind(metaController));
+router.post('/connect', metaController.connect.bind(metaController));
 
-// OAuth callback handler (primary route)
-router.post(
-  '/callback',
-  validate(tokenExchangeSchema),
-  metaController.handleCallback.bind(metaController)
-);
+// Configuration
+router.get('/config', metaController.getEmbeddedSignupConfig.bind(metaController));
+router.get('/integration-status', metaController.getIntegrationStatus.bind(metaController));
 
-// Connect via token/code directly
-router.post(
-  '/connect',
-  validate(tokenExchangeSchema),
-  metaController.connect.bind(metaController)
-);
-
-// ============================================
-// ORGANIZATION ROUTES
-// ============================================
-
-// Get organization connection status
+// Organization status
 router.get(
   '/organizations/:organizationId/status',
   metaController.getOrganizationStatus.bind(metaController)
 );
 
-// Get all accounts for organization
-router.get(
-  '/organizations/:organizationId/accounts',
-  metaController.getAccounts.bind(metaController)
-);
-
-// Get single account
-router.get(
-  '/organizations/:organizationId/accounts/:accountId',
-  metaController.getAccount.bind(metaController)
-);
-
-// Disconnect account
-router.delete(
-  '/organizations/:organizationId/accounts/:accountId',
-  metaController.disconnectAccount.bind(metaController)
-);
-
-// Set default account
-router.post(
-  '/organizations/:organizationId/accounts/:accountId/default',
-  metaController.setDefaultAccount.bind(metaController)
-);
-
-// Refresh account health
-router.post(
-  '/organizations/:organizationId/accounts/:accountId/health',
-  metaController.refreshHealth.bind(metaController)
-);
-
-// Sync templates
-router.post(
-  '/organizations/:organizationId/accounts/:accountId/sync-templates',
-  metaController.syncTemplates.bind(metaController)
-);
+// Account management
+router.get('/accounts', metaController.getAccounts.bind(metaController));
+router.get('/accounts/:id', metaController.getAccount.bind(metaController));
+router.delete('/accounts/:id', metaController.disconnectAccount.bind(metaController));
+router.post('/accounts/:id/default', metaController.setDefaultAccount.bind(metaController));
+router.post('/accounts/:id/sync-templates', metaController.syncTemplates.bind(metaController));
 
 export default router;

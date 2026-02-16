@@ -244,7 +244,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -295,7 +295,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -406,7 +406,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -477,7 +477,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -554,7 +554,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -632,7 +632,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -714,7 +714,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -794,7 +794,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1107,7 +1107,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1158,7 +1158,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1269,7 +1269,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1340,7 +1340,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1422,7 +1422,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1502,7 +1502,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1584,7 +1584,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1669,7 +1669,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2146,7 +2146,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2197,7 +2197,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2308,7 +2308,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2379,7 +2379,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2452,7 +2452,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2525,7 +2525,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2600,7 +2600,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2678,7 +2678,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "document" | "buttons" | "image" | "video" | undefined;
+                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
                     listSections?: {
                         rows: {
                             id: string;

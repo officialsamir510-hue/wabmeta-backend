@@ -32,7 +32,7 @@ export class CampaignsController {
       }
 
       const input: CreateCampaignInput = req.body;
-      const campaign = await campaignsService.create(organizationId, input);
+      const campaign = await campaignsService.create(organizationId, req.user!.id, input);
       return sendSuccess(res, campaign, 'Campaign created successfully', 201);
     } catch (error) {
       next(error);

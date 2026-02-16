@@ -44,7 +44,7 @@ export const config = {
       process.env.FRONTEND_URL || 'http://localhost:5173',
       'https://wabmeta.com',
       'http://localhost:3000',
-    ],
+    ] as string[],
   },
 
   // JWT

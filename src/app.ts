@@ -1,4 +1,4 @@
-// 📁 src/app.ts - ADD THESE ROUTES
+// 📁 src/app.ts - MAIN APPLICATION FILE
 
 import express from 'express';
 import cors from 'cors';
@@ -8,7 +8,9 @@ import { config } from './config';
 import { errorHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
 
-// Import routes
+// ============================================
+// IMPORT ROUTES
+// ============================================
 import authRoutes from './modules/auth/auth.routes';
 import userRoutes from './modules/users/users.routes';
 import organizationRoutes from './modules/organizations/organizations.routes';
@@ -27,34 +29,46 @@ import adminRoutes from './modules/admin/admin.routes';
 const app = express();
 
 // ============================================
+// TRUST PROXY (for production behind reverse proxy)
+// ============================================
+app.set('trust proxy', 1);
+
+// ============================================
 // MIDDLEWARE
 // ============================================
 
-// CORS
-app.use(cors({
-  origin: config.frontend.corsOrigins as any,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Organization-Id'],
-}));
+// CORS Configuration
+app.use(
+  cors({
+    origin: config.frontend.corsOrigins,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Organization-Id'],
+    exposedHeaders: ['X-Total-Count', 'X-Page', 'X-Per-Page'],
+    maxAge: 86400, // 24 hours
+  })
+);
 
-// Security
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: 'cross-origin' },
-}));
+// Security Headers
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    contentSecurityPolicy: false, // Disable if using CDN
+  })
+);
 
 // Compression
 app.use(compression());
 
-// Body parsing
+// Body Parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Request logging
+// Request Logging
 app.use(requestLogger);
 
 // ============================================
-// HEALTH CHECK
+// HEALTH CHECK ENDPOINTS
 // ============================================
 
 app.get('/health', (req, res) => {
@@ -63,6 +77,7 @@ app.get('/health', (req, res) => {
     message: 'WabMeta API is running',
     timestamp: new Date().toISOString(),
     environment: config.app.env,
+    version: '1.0.0',
   });
 });
 
@@ -71,8 +86,16 @@ app.get('/api/v1/health', (req, res) => {
     success: true,
     message: 'WabMeta API v1 is running',
     timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
   });
 });
+
+// ============================================
+// WEBHOOK ROUTES (MUST BE BEFORE API ROUTES)
+// ============================================
+// Meta webhooks need to be at /webhook for easy configuration
+app.use('/webhook', webhookRoutes);
 
 // ============================================
 // API ROUTES
@@ -80,62 +103,107 @@ app.get('/api/v1/health', (req, res) => {
 
 const API_PREFIX = '/api/v1';
 
-// Auth
+// Core Authentication & Users
 app.use(`${API_PREFIX}/auth`, authRoutes);
-
-// Users
 app.use(`${API_PREFIX}/users`, userRoutes);
 
 // Organizations
 app.use(`${API_PREFIX}/organizations`, organizationRoutes);
 
-// Meta (WhatsApp Business API connection)
+// Meta WhatsApp Business API Integration
 app.use(`${API_PREFIX}/meta`, metaRoutes);
 
-// WhatsApp (messaging)
+// WhatsApp Messaging
 app.use(`${API_PREFIX}/whatsapp`, whatsappRoutes);
 
-// Webhooks (Meta callbacks)
+// Webhooks (also available under /api/v1)
 app.use(`${API_PREFIX}/webhooks`, webhookRoutes);
-app.use('/webhook', webhookRoutes); // Direct webhook URL for Meta
 
-// Contacts
+// Contact Management
 app.use(`${API_PREFIX}/contacts`, contactRoutes);
 
-// Templates
+// Message Templates
 app.use(`${API_PREFIX}/templates`, templateRoutes);
 
-// Campaigns
+// Campaign Management
 app.use(`${API_PREFIX}/campaigns`, campaignRoutes);
 
-// Inbox
+// Inbox & Conversations
 app.use(`${API_PREFIX}/inbox`, inboxRoutes);
 
-// Chatbot
+// Chatbot & Automation
 app.use(`${API_PREFIX}/chatbot`, chatbotRoutes);
 
-// Billing
+// Billing & Subscriptions
 app.use(`${API_PREFIX}/billing`, billingRoutes);
 
-// Dashboard
+// Dashboard & Analytics
 app.use(`${API_PREFIX}/dashboard`, dashboardRoutes);
 
-// Admin
+// Admin Panel
 app.use(`${API_PREFIX}/admin`, adminRoutes);
+
+// ============================================
+// ROOT ENDPOINT
+// ============================================
+
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Welcome to WabMeta API',
+    version: '1.0.0',
+    documentation: '/api/v1/docs',
+    endpoints: {
+      health: '/health',
+      api: '/api/v1',
+      webhooks: '/webhook',
+    },
+  });
+});
 
 // ============================================
 // ERROR HANDLING
 // ============================================
 
-// 404 handler
+// 404 Handler
 app.use((req, res) => {
   res.status(404).json({
     success: false,
+    error: 'Not Found',
     message: `Route ${req.method} ${req.url} not found`,
+    timestamp: new Date().toISOString(),
   });
 });
 
-// Global error handler
+// Global Error Handler
 app.use(errorHandler);
+
+// ============================================
+// GRACEFUL SHUTDOWN
+// ============================================
+
+const gracefulShutdown = (signal: string) => {
+  console.log(`\n${signal} received. Shutting down gracefully...`);
+
+  process.exit(0);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Unhandled Promise Rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit in production, just log
+  if (config.app.env === 'development') {
+    process.exit(1);
+  }
+});
+
+// Uncaught Exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  process.exit(1);
+});
 
 export default app;

@@ -1,11 +1,13 @@
 "use strict";
 // 📁 src/modules/webhooks/webhook.service.ts - COMPLETE FIXED VERSION
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.webhookService = void 0;
+exports.webhookService = exports.webhookEvents = void 0;
 const client_1 = require("@prisma/client");
 const config_1 = require("../../config");
 const encryption_1 = require("../../utils/encryption");
 const meta_api_1 = require("../meta/meta.api");
+const events_1 = require("events");
+exports.webhookEvents = new events_1.EventEmitter();
 const prisma = new client_1.PrismaClient();
 // ============================================
 // WEBHOOK SERVICE CLASS
@@ -228,6 +230,12 @@ class WebhookService {
                 },
             });
             console.log(`✅ Message saved: ${messageData.id}`);
+            // Emit new message event
+            exports.webhookEvents.emit('newMessage', {
+                organizationId: account.organizationId,
+                conversationId: conversation.id,
+                messages: [messageData]
+            });
             // Update contact stats
             await prisma.contact.update({
                 where: { id: contact.id },
@@ -303,6 +311,14 @@ class WebhookService {
                     });
                 }
             }
+            // Emit message status event
+            exports.webhookEvents.emit('messageStatus', {
+                organizationId: account.organizationId,
+                conversationId: message.conversationId,
+                messageId: message.id,
+                status: status.status,
+                timestamp: timestamp
+            });
             // Update campaign contact if applicable
             if (message.templateId) {
                 await prisma.campaignContact.updateMany({

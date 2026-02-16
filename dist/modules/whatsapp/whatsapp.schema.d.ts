@@ -125,46 +125,46 @@ export declare const sendTemplateMessageSchema: z.ZodObject<{
                     filename?: string | undefined;
                 }>>;
             }, "strip", z.ZodTypeAny, {
-                type: "text" | "document" | "image" | "video" | "currency" | "date_time";
+                type: "text" | "image" | "video" | "document" | "currency" | "date_time";
                 text?: string | undefined;
-                document?: {
-                    link: string;
-                    filename?: string | undefined;
-                } | undefined;
                 image?: {
                     link: string;
                 } | undefined;
                 video?: {
                     link: string;
+                } | undefined;
+                document?: {
+                    link: string;
+                    filename?: string | undefined;
                 } | undefined;
             }, {
-                type: "text" | "document" | "image" | "video" | "currency" | "date_time";
+                type: "text" | "image" | "video" | "document" | "currency" | "date_time";
                 text?: string | undefined;
-                document?: {
-                    link: string;
-                    filename?: string | undefined;
-                } | undefined;
                 image?: {
                     link: string;
                 } | undefined;
                 video?: {
                     link: string;
+                } | undefined;
+                document?: {
+                    link: string;
+                    filename?: string | undefined;
                 } | undefined;
             }>, "many">;
         }, "strip", z.ZodTypeAny, {
             type: "body" | "header" | "button";
             parameters: {
-                type: "text" | "document" | "image" | "video" | "currency" | "date_time";
+                type: "text" | "image" | "video" | "document" | "currency" | "date_time";
                 text?: string | undefined;
-                document?: {
-                    link: string;
-                    filename?: string | undefined;
-                } | undefined;
                 image?: {
                     link: string;
                 } | undefined;
                 video?: {
                     link: string;
+                } | undefined;
+                document?: {
+                    link: string;
+                    filename?: string | undefined;
                 } | undefined;
             }[];
             index?: number | undefined;
@@ -172,17 +172,17 @@ export declare const sendTemplateMessageSchema: z.ZodObject<{
         }, {
             type: "body" | "header" | "button";
             parameters: {
-                type: "text" | "document" | "image" | "video" | "currency" | "date_time";
+                type: "text" | "image" | "video" | "document" | "currency" | "date_time";
                 text?: string | undefined;
-                document?: {
-                    link: string;
-                    filename?: string | undefined;
-                } | undefined;
                 image?: {
                     link: string;
                 } | undefined;
                 video?: {
                     link: string;
+                } | undefined;
+                document?: {
+                    link: string;
+                    filename?: string | undefined;
                 } | undefined;
             }[];
             index?: number | undefined;
@@ -196,17 +196,17 @@ export declare const sendTemplateMessageSchema: z.ZodObject<{
         components?: {
             type: "body" | "header" | "button";
             parameters: {
-                type: "text" | "document" | "image" | "video" | "currency" | "date_time";
+                type: "text" | "image" | "video" | "document" | "currency" | "date_time";
                 text?: string | undefined;
-                document?: {
-                    link: string;
-                    filename?: string | undefined;
-                } | undefined;
                 image?: {
                     link: string;
                 } | undefined;
                 video?: {
                     link: string;
+                } | undefined;
+                document?: {
+                    link: string;
+                    filename?: string | undefined;
                 } | undefined;
             }[];
             index?: number | undefined;
@@ -219,17 +219,17 @@ export declare const sendTemplateMessageSchema: z.ZodObject<{
         components?: {
             type: "body" | "header" | "button";
             parameters: {
-                type: "text" | "document" | "image" | "video" | "currency" | "date_time";
+                type: "text" | "image" | "video" | "document" | "currency" | "date_time";
                 text?: string | undefined;
-                document?: {
-                    link: string;
-                    filename?: string | undefined;
-                } | undefined;
                 image?: {
                     link: string;
                 } | undefined;
                 video?: {
                     link: string;
+                } | undefined;
+                document?: {
+                    link: string;
+                    filename?: string | undefined;
                 } | undefined;
             }[];
             index?: number | undefined;
@@ -246,17 +246,17 @@ export declare const sendTemplateMessageSchema: z.ZodObject<{
         components?: {
             type: "body" | "header" | "button";
             parameters: {
-                type: "text" | "document" | "image" | "video" | "currency" | "date_time";
+                type: "text" | "image" | "video" | "document" | "currency" | "date_time";
                 text?: string | undefined;
-                document?: {
-                    link: string;
-                    filename?: string | undefined;
-                } | undefined;
                 image?: {
                     link: string;
                 } | undefined;
                 video?: {
                     link: string;
+                } | undefined;
+                document?: {
+                    link: string;
+                    filename?: string | undefined;
                 } | undefined;
             }[];
             index?: number | undefined;
@@ -271,17 +271,17 @@ export declare const sendTemplateMessageSchema: z.ZodObject<{
         components?: {
             type: "body" | "header" | "button";
             parameters: {
-                type: "text" | "document" | "image" | "video" | "currency" | "date_time";
+                type: "text" | "image" | "video" | "document" | "currency" | "date_time";
                 text?: string | undefined;
-                document?: {
-                    link: string;
-                    filename?: string | undefined;
-                } | undefined;
                 image?: {
                     link: string;
                 } | undefined;
                 video?: {
                     link: string;
+                } | undefined;
+                document?: {
+                    link: string;
+                    filename?: string | undefined;
                 } | undefined;
             }[];
             index?: number | undefined;
@@ -299,14 +299,14 @@ export declare const sendMediaMessageSchema: z.ZodObject<{
         caption: z.ZodOptional<z.ZodString>;
         filename: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
-        type: "document" | "image" | "video" | "audio";
+        type: "image" | "video" | "document" | "audio";
         to: string;
         whatsappAccountId: string;
         mediaUrl: string;
         caption?: string | undefined;
         filename?: string | undefined;
     }, {
-        type: "document" | "image" | "video" | "audio";
+        type: "image" | "video" | "document" | "audio";
         to: string;
         whatsappAccountId: string;
         mediaUrl: string;
@@ -315,7 +315,7 @@ export declare const sendMediaMessageSchema: z.ZodObject<{
     }>;
 }, "strip", z.ZodTypeAny, {
     body: {
-        type: "document" | "image" | "video" | "audio";
+        type: "image" | "video" | "document" | "audio";
         to: string;
         whatsappAccountId: string;
         mediaUrl: string;
@@ -324,7 +324,7 @@ export declare const sendMediaMessageSchema: z.ZodObject<{
     };
 }, {
     body: {
-        type: "document" | "image" | "video" | "audio";
+        type: "image" | "video" | "document" | "audio";
         to: string;
         whatsappAccountId: string;
         mediaUrl: string;

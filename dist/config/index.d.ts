@@ -18,7 +18,7 @@ export declare const config: {
     readonly frontendUrl: string;
     readonly frontend: {
         readonly url: string;
-        readonly corsOrigins: readonly [string, "https://wabmeta.com", "http://localhost:3000"];
+        readonly corsOrigins: string[];
     };
     readonly jwt: {
         readonly secret: string;

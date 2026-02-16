@@ -75,7 +75,7 @@ export class ChatbotService {
   // ==========================================
   // CREATE CHATBOT
   // ==========================================
-  async create(organizationId: string, input: ChatbotInput): Promise<ChatbotResponse> {
+  async create(organizationId: string, userId: string, input: ChatbotInput): Promise<ChatbotResponse> {
     const { name, description, flowData, triggerKeywords, isDefault, welcomeMessage, fallbackMessage } = input;
 
     // If setting as default, unset other defaults
@@ -97,7 +97,8 @@ export class ChatbotService {
         welcomeMessage,
         fallbackMessage,
         status: 'DRAFT',
-      },
+        createdById: userId,
+      } as any,
     });
 
     return this.formatChatbot(chatbot);
@@ -222,7 +223,7 @@ export class ChatbotService {
   // ==========================================
   // DUPLICATE CHATBOT
   // ==========================================
-  async duplicate(organizationId: string, chatbotId: string): Promise<ChatbotResponse> {
+  async duplicate(organizationId: string, userId: string, chatbotId: string): Promise<ChatbotResponse> {
     const original = await prisma.chatbot.findFirst({
       where: {
         id: chatbotId,
@@ -245,7 +246,8 @@ export class ChatbotService {
         welcomeMessage: original.welcomeMessage,
         fallbackMessage: original.fallbackMessage,
         status: 'DRAFT',
-      },
+        createdById: userId,
+      } as any,
     });
 
     return this.formatChatbot(duplicate);

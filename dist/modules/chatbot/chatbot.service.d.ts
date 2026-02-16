@@ -13,12 +13,12 @@ export declare class ChatbotService {
         limit: number;
     }>;
     getById(organizationId: string, chatbotId: string): Promise<ChatbotResponse>;
-    create(organizationId: string, input: ChatbotInput): Promise<ChatbotResponse>;
+    create(organizationId: string, userId: string, input: ChatbotInput): Promise<ChatbotResponse>;
     update(organizationId: string, chatbotId: string, input: Partial<ChatbotInput>): Promise<ChatbotResponse>;
     delete(organizationId: string, chatbotId: string): Promise<void>;
     activate(organizationId: string, chatbotId: string): Promise<ChatbotResponse>;
     deactivate(organizationId: string, chatbotId: string): Promise<ChatbotResponse>;
-    duplicate(organizationId: string, chatbotId: string): Promise<ChatbotResponse>;
+    duplicate(organizationId: string, userId: string, chatbotId: string): Promise<ChatbotResponse>;
     getStats(organizationId: string, chatbotId: string): Promise<ChatbotStats>;
     getActiveChatbots(organizationId: string): Promise<ChatbotResponse[]>;
     findMatchingChatbot(organizationId: string, messageText: string, isNewConversation: boolean): Promise<ChatbotResponse | null>;

@@ -24,14 +24,10 @@ declare class MetaService {
     }>;
     getAccounts(organizationId: string): Promise<any[]>;
     getAccount(accountId: string, organizationId: string): Promise<any>;
-    /**
-     * ✅ FIXED: Get account with decrypted token
-     */
     getAccountWithToken(accountId: string): Promise<{
         account: WhatsAppAccount;
         accessToken: string;
     } | null>;
-    updateAccountToken(accountId: string, newToken: string): Promise<void>;
     disconnectAccount(accountId: string, organizationId: string): Promise<{
         success: boolean;
         message: string;
@@ -39,29 +35,6 @@ declare class MetaService {
     setDefaultAccount(accountId: string, organizationId: string): Promise<{
         success: boolean;
         message: string;
-    }>;
-    refreshAccountHealth(accountId: string, organizationId: string): Promise<{
-        healthy: boolean;
-        qualityRating: string;
-        verifiedName: string;
-        displayPhoneNumber: string;
-        status: any;
-        codeVerificationStatus: string | undefined;
-        nameStatus: string | undefined;
-        messagingLimit: string | undefined;
-        reason?: undefined;
-        action?: undefined;
-    } | {
-        healthy: boolean;
-        reason: any;
-        action: string;
-        qualityRating?: undefined;
-        verifiedName?: undefined;
-        displayPhoneNumber?: undefined;
-        status?: undefined;
-        codeVerificationStatus?: undefined;
-        nameStatus?: undefined;
-        messagingLimit?: undefined;
     }>;
     syncTemplates(accountId: string, organizationId: string): Promise<{
         created: number;

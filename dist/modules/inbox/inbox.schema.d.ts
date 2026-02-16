@@ -208,7 +208,7 @@ export declare const sendMessageSchema: z.ZodObject<{
             buttonText?: string | undefined;
         }>>;
     }, "strip", z.ZodTypeAny, {
-        type: "text" | "document" | "image" | "video" | "audio" | "interactive" | "location";
+        type: "text" | "image" | "video" | "document" | "audio" | "location" | "interactive";
         interactive?: {
             type: "list" | "button";
             buttons?: {
@@ -231,7 +231,7 @@ export declare const sendMessageSchema: z.ZodObject<{
         replyToMessageId?: string | undefined;
         filename?: string | undefined;
     }, {
-        type: "text" | "document" | "image" | "video" | "audio" | "interactive" | "location";
+        type: "text" | "image" | "video" | "document" | "audio" | "location" | "interactive";
         interactive?: {
             type: "list" | "button";
             buttons?: {
@@ -254,7 +254,7 @@ export declare const sendMessageSchema: z.ZodObject<{
         replyToMessageId?: string | undefined;
         filename?: string | undefined;
     }>, {
-        type: "text" | "document" | "image" | "video" | "audio" | "interactive" | "location";
+        type: "text" | "image" | "video" | "document" | "audio" | "location" | "interactive";
         interactive?: {
             type: "list" | "button";
             buttons?: {
@@ -277,7 +277,7 @@ export declare const sendMessageSchema: z.ZodObject<{
         replyToMessageId?: string | undefined;
         filename?: string | undefined;
     }, {
-        type: "text" | "document" | "image" | "video" | "audio" | "interactive" | "location";
+        type: "text" | "image" | "video" | "document" | "audio" | "location" | "interactive";
         interactive?: {
             type: "list" | "button";
             buttons?: {
@@ -302,7 +302,7 @@ export declare const sendMessageSchema: z.ZodObject<{
     }>;
 }, "strip", z.ZodTypeAny, {
     body: {
-        type: "text" | "document" | "image" | "video" | "audio" | "interactive" | "location";
+        type: "text" | "image" | "video" | "document" | "audio" | "location" | "interactive";
         interactive?: {
             type: "list" | "button";
             buttons?: {
@@ -330,7 +330,7 @@ export declare const sendMessageSchema: z.ZodObject<{
     };
 }, {
     body: {
-        type: "text" | "document" | "image" | "video" | "audio" | "interactive" | "location";
+        type: "text" | "image" | "video" | "document" | "audio" | "location" | "interactive";
         interactive?: {
             type: "list" | "button";
             buttons?: {

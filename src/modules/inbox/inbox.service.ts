@@ -596,13 +596,13 @@ class InboxService {
       // Get default phone number
       const phoneNumber = await prisma.phoneNumber.findFirst({
         where: {
-          MetaConnection: {
+          metaConnection: {
             organizationId,
             status: 'CONNECTED',
           },
           isActive: true,
           isPrimary: true,
-        },
+        } as any,
       });
 
       conversation = await prisma.conversation.create({

@@ -4,6 +4,9 @@ import { PrismaClient, MessageStatus, MessageDirection, WebhookStatus } from '@p
 import { config } from '../../config';
 import { verifyWebhookSignature, safeDecryptStrict, isMetaToken } from '../../utils/encryption';
 import { metaApi } from '../meta/meta.api';
+import { EventEmitter } from 'events';
+
+export const webhookEvents = new EventEmitter();
 
 const prisma = new PrismaClient();
 
@@ -351,6 +354,13 @@ class WebhookService {
 
       console.log(`✅ Message saved: ${messageData.id}`);
 
+      // Emit new message event
+      webhookEvents.emit('newMessage', {
+        organizationId: account.organizationId,
+        conversationId: conversation.id,
+        messages: [messageData]
+      });
+
       // Update contact stats
       await prisma.contact.update({
         where: { id: contact.id },
@@ -439,6 +449,15 @@ class WebhookService {
           });
         }
       }
+
+      // Emit message status event
+      webhookEvents.emit('messageStatus', {
+        organizationId: account.organizationId,
+        conversationId: message.conversationId,
+        messageId: message.id,
+        status: status.status,
+        timestamp: timestamp
+      });
 
       // Update campaign contact if applicable
       if (message.templateId) {

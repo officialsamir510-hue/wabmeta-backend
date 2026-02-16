@@ -60,7 +60,7 @@ class ChatbotService {
     // ==========================================
     // CREATE CHATBOT
     // ==========================================
-    async create(organizationId, input) {
+    async create(organizationId, userId, input) {
         const { name, description, flowData, triggerKeywords, isDefault, welcomeMessage, fallbackMessage } = input;
         // If setting as default, unset other defaults
         if (isDefault) {
@@ -80,6 +80,7 @@ class ChatbotService {
                 welcomeMessage,
                 fallbackMessage,
                 status: 'DRAFT',
+                createdById: userId,
             },
         });
         return this.formatChatbot(chatbot);
@@ -182,7 +183,7 @@ class ChatbotService {
     // ==========================================
     // DUPLICATE CHATBOT
     // ==========================================
-    async duplicate(organizationId, chatbotId) {
+    async duplicate(organizationId, userId, chatbotId) {
         const original = await database_1.default.chatbot.findFirst({
             where: {
                 id: chatbotId,
@@ -203,6 +204,7 @@ class ChatbotService {
                 welcomeMessage: original.welcomeMessage,
                 fallbackMessage: original.fallbackMessage,
                 status: 'DRAFT',
+                createdById: userId,
             },
         });
         return this.formatChatbot(duplicate);

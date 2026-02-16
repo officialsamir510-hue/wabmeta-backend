@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.validateEncryptionKey = validateEncryptionKey;
 exports.encrypt = encrypt;
 exports.decrypt = decrypt;
 exports.safeDecrypt = safeDecrypt;
@@ -11,6 +12,7 @@ exports.safeDecryptStrict = safeDecryptStrict;
 exports.isMetaToken = isMetaToken;
 exports.maskToken = maskToken;
 exports.isEncrypted = isEncrypted;
+exports.encryptIfNeeded = encryptIfNeeded;
 exports.hashSHA256 = hashSHA256;
 exports.hmacSHA256 = hmacSHA256;
 exports.generateSecureToken = generateSecureToken;
@@ -50,13 +52,23 @@ const getEncryptionKey = () => {
     const salt = crypto_1.default.createHash('sha256').update('wabmeta-salt').digest();
     return crypto_1.default.pbkdf2Sync(key, salt, ITERATIONS, KEY_LENGTH, 'sha512');
 };
+/**
+ * Validate encryption key
+ */
+function validateEncryptionKey() {
+    try {
+        getEncryptionKey();
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
 // ============================================
 // ENCRYPTION FUNCTIONS
 // ============================================
 /**
  * Encrypt a string value
- * @param text Plain text to encrypt
- * @returns Encrypted string (base64)
  */
 function encrypt(text) {
     if (!text) {
@@ -80,8 +92,6 @@ function encrypt(text) {
 }
 /**
  * Decrypt an encrypted string
- * @param encryptedText Encrypted string
- * @returns Decrypted plain text or null if failed
  */
 function decrypt(encryptedText) {
     if (!encryptedText) {
@@ -135,14 +145,13 @@ function safeDecrypt(encryptedText) {
 }
 /**
  * Strict decrypt - only returns valid Meta tokens
- * ✅ Use this for Meta access tokens
  */
 function safeDecryptStrict(encryptedText) {
     const decrypted = safeDecrypt(encryptedText);
     if (!decrypted) {
         return null;
     }
-    // ✅ Verify it's a valid Meta token
+    // Verify it's a valid Meta token
     if (!isMetaToken(decrypted)) {
         console.error('Decrypted value is not a valid Meta token');
         return null;
@@ -154,7 +163,6 @@ function safeDecryptStrict(encryptedText) {
 // ============================================
 /**
  * Check if a string is a Meta access token
- * Meta tokens start with "EAA" and are typically 150-300 characters
  */
 function isMetaToken(value) {
     if (!value || typeof value !== 'string') {
@@ -168,7 +176,7 @@ function isMetaToken(value) {
     return isValidFormat && isValidLength && hasValidChars;
 }
 /**
- * Mask a token for logging (show first and last 8 chars)
+ * Mask a token for logging
  */
 function maskToken(token) {
     if (!token)
@@ -185,13 +193,11 @@ function isEncrypted(value) {
     if (!value || typeof value !== 'string') {
         return false;
     }
-    // Our format: iv:authTag:encrypted (hex values separated by colons)
     const parts = value.split(':');
     if (parts.length !== 3) {
         return false;
     }
     const [ivHex, authTagHex, encrypted] = parts;
-    // Check if all parts are valid hex
     const isHex = (str) => /^[0-9a-fA-F]+$/.test(str);
     return (ivHex.length === IV_LENGTH * 2 &&
         authTagHex.length === AUTH_TAG_LENGTH * 2 &&
@@ -200,30 +206,27 @@ function isEncrypted(value) {
         isHex(encrypted) &&
         encrypted.length > 0);
 }
+/**
+ * Encrypt if not already encrypted
+ */
+function encryptIfNeeded(text) {
+    if (isEncrypted(text)) {
+        return text;
+    }
+    return encrypt(text);
+}
 // ============================================
 // HASHING FUNCTIONS
 // ============================================
-/**
- * Create SHA256 hash
- */
 function hashSHA256(value) {
     return crypto_1.default.createHash('sha256').update(value).digest('hex');
 }
-/**
- * Create HMAC SHA256
- */
 function hmacSHA256(value, secret) {
     return crypto_1.default.createHmac('sha256', secret).update(value).digest('hex');
 }
-/**
- * Generate random token
- */
 function generateSecureToken(length = 32) {
     return crypto_1.default.randomBytes(length).toString('hex');
 }
-/**
- * Compare two strings in constant time (prevent timing attacks)
- */
 function secureCompare(a, b) {
     if (a.length !== b.length) {
         return false;
@@ -233,9 +236,6 @@ function secureCompare(a, b) {
 // ============================================
 // WEBHOOK SIGNATURE VERIFICATION
 // ============================================
-/**
- * Verify Meta webhook signature
- */
 function verifyWebhookSignature(payload, signature, appSecret) {
     if (!payload || !signature || !appSecret) {
         return false;
@@ -251,23 +251,14 @@ function verifyWebhookSignature(payload, signature, appSecret) {
 // ============================================
 // API KEY GENERATION
 // ============================================
-/**
- * Generate API key pair
- */
 function generateApiKeyPair() {
     const key = `wm_${generateSecureToken(16)}`;
     const secret = generateSecureToken(32);
     return { key, secret };
 }
-/**
- * Hash API secret for storage
- */
 function hashApiSecret(secret) {
     return hashSHA256(secret);
 }
-/**
- * Verify API secret
- */
 function verifyApiSecret(secret, hash) {
     const computedHash = hashSHA256(secret);
     return secureCompare(computedHash, hash);
@@ -283,6 +274,8 @@ exports.default = {
     isMetaToken,
     maskToken,
     isEncrypted,
+    encryptIfNeeded,
+    validateEncryptionKey,
     hashSHA256,
     hmacSHA256,
     generateSecureToken,

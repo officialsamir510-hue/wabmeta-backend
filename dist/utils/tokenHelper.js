@@ -37,6 +37,10 @@ function getDecryptedToken(account) {
         }
         // Decrypt the token
         const decrypted = (0, encryption_1.decrypt)(account.accessToken);
+        if (!decrypted) {
+            console.error('Failed to decrypt token');
+            return null;
+        }
         // Validate it's a proper Meta token
         if (!(0, encryption_1.isMetaToken)(decrypted)) {
             console.error('Decrypted token is not a valid Meta token');

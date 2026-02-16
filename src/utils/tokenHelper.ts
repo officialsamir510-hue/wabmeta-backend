@@ -41,6 +41,11 @@ export function getDecryptedToken(account: WhatsAppAccount): string | null {
         // Decrypt the token
         const decrypted = decrypt(account.accessToken);
 
+        if (!decrypted) {
+            console.error('Failed to decrypt token');
+            return null;
+        }
+
         // Validate it's a proper Meta token
         if (!isMetaToken(decrypted)) {
             console.error('Decrypted token is not a valid Meta token');
