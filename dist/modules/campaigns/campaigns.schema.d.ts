@@ -39,8 +39,8 @@ export declare const createCampaignSchema: z.ZodObject<{
         }>>>;
     }, "strip", z.ZodTypeAny, {
         name: string;
-        templateId: string;
         whatsappAccountId: string;
+        templateId: string;
         description?: string | undefined;
         contactGroupId?: string | undefined;
         audienceFilter?: {
@@ -58,8 +58,8 @@ export declare const createCampaignSchema: z.ZodObject<{
         }> | undefined;
     }, {
         name: string;
-        templateId: string;
         whatsappAccountId: string;
+        templateId: string;
         description?: string | undefined;
         contactGroupId?: string | undefined;
         audienceFilter?: {
@@ -77,8 +77,8 @@ export declare const createCampaignSchema: z.ZodObject<{
         }> | undefined;
     }>, {
         name: string;
-        templateId: string;
         whatsappAccountId: string;
+        templateId: string;
         description?: string | undefined;
         contactGroupId?: string | undefined;
         audienceFilter?: {
@@ -96,8 +96,8 @@ export declare const createCampaignSchema: z.ZodObject<{
         }> | undefined;
     }, {
         name: string;
-        templateId: string;
         whatsappAccountId: string;
+        templateId: string;
         description?: string | undefined;
         contactGroupId?: string | undefined;
         audienceFilter?: {
@@ -117,8 +117,8 @@ export declare const createCampaignSchema: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     body: {
         name: string;
-        templateId: string;
         whatsappAccountId: string;
+        templateId: string;
         description?: string | undefined;
         contactGroupId?: string | undefined;
         audienceFilter?: {
@@ -138,8 +138,8 @@ export declare const createCampaignSchema: z.ZodObject<{
 }, {
     body: {
         name: string;
-        templateId: string;
         whatsappAccountId: string;
+        templateId: string;
         description?: string | undefined;
         contactGroupId?: string | undefined;
         audienceFilter?: {
@@ -239,9 +239,6 @@ export declare const updateCampaignSchema: z.ZodObject<{
         }> | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
-    params: {
-        id: string;
-    };
     body: {
         name?: string | undefined;
         description?: string | null | undefined;
@@ -260,11 +257,11 @@ export declare const updateCampaignSchema: z.ZodObject<{
             type: "field" | "static";
             value: string;
         }> | undefined;
+    };
+    params: {
+        id: string;
     };
 }, {
-    params: {
-        id: string;
-    };
     body: {
         name?: string | undefined;
         description?: string | null | undefined;
@@ -283,6 +280,9 @@ export declare const updateCampaignSchema: z.ZodObject<{
             type: "field" | "static";
             value: string;
         }> | undefined;
+    };
+    params: {
+        id: string;
     };
 }>;
 export declare const getCampaignsSchema: z.ZodObject<{
@@ -297,6 +297,7 @@ export declare const getCampaignsSchema: z.ZodObject<{
             PAUSED: "PAUSED";
             COMPLETED: "COMPLETED";
             FAILED: "FAILED";
+            CANCELLED: "CANCELLED";
         }>>;
         sortBy: z.ZodDefault<z.ZodOptional<z.ZodEnum<["createdAt", "name", "scheduledAt", "sentCount"]>>>;
         sortOrder: z.ZodDefault<z.ZodOptional<z.ZodEnum<["asc", "desc"]>>>;
@@ -304,34 +305,34 @@ export declare const getCampaignsSchema: z.ZodObject<{
         page: number;
         limit: number;
         sortBy: "name" | "createdAt" | "scheduledAt" | "sentCount";
-        sortOrder: "desc" | "asc";
+        sortOrder: "asc" | "desc";
         search?: string | undefined;
-        status?: "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
+        status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
     }, {
         search?: string | undefined;
+        status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        status?: "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
         sortBy?: "name" | "createdAt" | "scheduledAt" | "sentCount" | undefined;
-        sortOrder?: "desc" | "asc" | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     query: {
         page: number;
         limit: number;
         sortBy: "name" | "createdAt" | "scheduledAt" | "sentCount";
-        sortOrder: "desc" | "asc";
+        sortOrder: "asc" | "desc";
         search?: string | undefined;
-        status?: "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
+        status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
     };
 }, {
     query: {
         search?: string | undefined;
+        status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        status?: "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
         sortBy?: "name" | "createdAt" | "scheduledAt" | "sentCount" | undefined;
-        sortOrder?: "desc" | "asc" | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
     };
 }>;
 export declare const getCampaignByIdSchema: z.ZodObject<{
@@ -391,9 +392,9 @@ export declare const getCampaignContactsSchema: z.ZodObject<{
         limit: number;
         status?: "PENDING" | "SENT" | "DELIVERED" | "READ" | "FAILED" | undefined;
     }, {
+        status?: "PENDING" | "SENT" | "DELIVERED" | "READ" | "FAILED" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        status?: "PENDING" | "SENT" | "DELIVERED" | "READ" | "FAILED" | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     query: {
@@ -406,9 +407,9 @@ export declare const getCampaignContactsSchema: z.ZodObject<{
     };
 }, {
     query: {
+        status?: "PENDING" | "SENT" | "DELIVERED" | "READ" | "FAILED" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        status?: "PENDING" | "SENT" | "DELIVERED" | "READ" | "FAILED" | undefined;
     };
     params: {
         id: string;
@@ -501,20 +502,20 @@ export declare const retryCampaignSchema: z.ZodObject<{
         retryPending?: boolean | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
-    params: {
-        id: string;
-    };
     body: {
         retryFailed: boolean;
         retryPending: boolean;
     };
-}, {
     params: {
         id: string;
     };
+}, {
     body: {
         retryFailed?: boolean | undefined;
         retryPending?: boolean | undefined;
+    };
+    params: {
+        id: string;
     };
 }>;
 export declare const duplicateCampaignSchema: z.ZodObject<{
@@ -533,18 +534,18 @@ export declare const duplicateCampaignSchema: z.ZodObject<{
         name: string;
     }>;
 }, "strip", z.ZodTypeAny, {
-    params: {
-        id: string;
-    };
     body: {
         name: string;
+    };
+    params: {
+        id: string;
     };
 }, {
-    params: {
-        id: string;
-    };
     body: {
         name: string;
+    };
+    params: {
+        id: string;
     };
 }>;
 export type CreateCampaignSchema = z.infer<typeof createCampaignSchema>;

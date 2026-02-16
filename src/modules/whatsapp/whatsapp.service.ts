@@ -469,13 +469,13 @@ class WhatsAppService {
       include: {
         template: true,
         whatsappAccount: true,
-        CampaignContact: {
+        campaignContacts: {
           where: { status: MessageStatus.PENDING },
-          include: { Contact: true },
+          include: { contact: true },
           take: batchSize,
         },
-      },
-    });
+      } as any,
+    }) as any;
 
     if (!campaign) {
       throw new Error('Campaign not found');
@@ -486,7 +486,7 @@ class WhatsAppService {
     }
 
     console.log(`   Template: ${campaign.template.name}`);
-    console.log(`   Recipients: ${campaign.CampaignContact.length}`);
+    console.log(`   Recipients: ${campaign.campaignContacts.length}`);
 
     // ✅ Get decrypted access token
     let accessToken: string;
@@ -517,13 +517,13 @@ class WhatsAppService {
       errors: [],
     };
 
-    for (const recipient of campaign.CampaignContact) {
+    for (const recipient of campaign.campaignContacts) {
       try {
         // Build template components
         const components = this.buildTemplateComponents(campaign.template, {});
 
         // Format phone number
-        const formattedPhone = this.formatPhoneNumber(recipient.Contact.phone);
+        const formattedPhone = this.formatPhoneNumber(recipient.contact.phone);
 
         // Send message
         const messagePayload = {
@@ -555,7 +555,7 @@ class WhatsAppService {
 
         results.sent++;
         console.log(
-          `✅ Sent to ${recipient.Contact.phone} (${messageResult.messageId})`
+          `✅ Sent to ${recipient.contact.phone} (${messageResult.messageId})`
         );
 
         // Delay between messages
@@ -564,7 +564,7 @@ class WhatsAppService {
         }
       } catch (error: any) {
         console.error(
-          `❌ Failed to send to ${recipient.Contact.phone}:`,
+          `❌ Failed to send to ${recipient.contact.phone}:`,
           error.message
         );
 
@@ -583,7 +583,7 @@ class WhatsAppService {
         );
 
         results.failed++;
-        results.errors.push(`${recipient.Contact.phone}: ${errorMessage}`);
+        results.errors.push(`${recipient.contact.phone}: ${errorMessage}`);
       }
     }
 

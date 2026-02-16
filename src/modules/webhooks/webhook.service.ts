@@ -1,16 +1,15 @@
-// src/modules/webhooks/webhook.service.ts
+// 📁 src/modules/webhooks/webhook.service.ts - COMPLETE FIXED VERSION
 
-import { MessageStatus, MessageDirection, MessageType } from '@prisma/client';
-import { decrypt } from '../../utils/encryption';
-import { EventEmitter } from 'events';
-import prisma from '../../config/database';
+import { PrismaClient, MessageStatus, MessageDirection, WebhookStatus } from '@prisma/client';
+import { config } from '../../config';
+import { verifyWebhookSignature, safeDecryptStrict, isMetaToken } from '../../utils/encryption';
+import { metaApi } from '../meta/meta.api';
 
-export const webhookEvents = new EventEmitter();
+const prisma = new PrismaClient();
 
-interface WebhookPayload {
-  object: string;
-  entry: WebhookEntry[];
-}
+// ============================================
+// TYPES
+// ============================================
 
 interface WebhookEntry {
   id: string;
@@ -24,14 +23,17 @@ interface WebhookChange {
       display_phone_number: string;
       phone_number_id: string;
     };
-    contacts?: Array<{
-      profile: { name: string };
-      wa_id: string;
-    }>;
+    contacts?: WebhookContact[];
     messages?: WebhookMessage[];
     statuses?: WebhookStatus[];
+    errors?: WebhookError[];
   };
   field: string;
+}
+
+interface WebhookContact {
+  profile: { name: string };
+  wa_id: string;
 }
 
 interface WebhookMessage {
@@ -40,226 +42,376 @@ interface WebhookMessage {
   timestamp: string;
   type: string;
   text?: { body: string };
-  image?: { id: string; mime_type: string; sha256: string; caption?: string };
-  video?: { id: string; mime_type: string; sha256: string; caption?: string };
-  audio?: { id: string; mime_type: string; sha256: string };
-  document?: { id: string; filename: string; mime_type: string; sha256: string; caption?: string };
-  sticker?: { id: string; mime_type: string; sha256: string };
+  image?: { id: string; mime_type: string; caption?: string };
+  video?: { id: string; mime_type: string; caption?: string };
+  audio?: { id: string; mime_type: string };
+  document?: { id: string; mime_type: string; filename?: string; caption?: string };
   location?: { latitude: number; longitude: number; name?: string; address?: string };
   contacts?: any[];
-  interactive?: { type: string; button_reply?: any; list_reply?: any };
+  interactive?: {
+    type: string;
+    button_reply?: { id: string; title: string };
+    list_reply?: { id: string; title: string; description?: string };
+  };
   button?: { text: string; payload: string };
+  context?: { from: string; id: string };
 }
 
-interface WebhookStatus {
+interface WebhookMessageStatus {
   id: string;
   status: 'sent' | 'delivered' | 'read' | 'failed';
   timestamp: string;
   recipient_id: string;
+  errors?: WebhookError[];
   conversation?: {
     id: string;
     origin: { type: string };
     expiration_timestamp?: string;
   };
-  errors?: Array<{ code: number; title: string }>;
+  pricing?: {
+    billable: boolean;
+    pricing_model: string;
+    category: string;
+  };
 }
 
+interface WebhookError {
+  code: number;
+  title: string;
+  message?: string;
+  error_data?: { details: string };
+}
+
+// ============================================
+// WEBHOOK SERVICE CLASS
+// ============================================
+
 class WebhookService {
+  // ============================================
+  // VERIFY WEBHOOK (GET request from Meta)
+  // ============================================
   verifyWebhook(mode: string, token: string, challenge: string): string | null {
-    const verifyToken = process.env.WEBHOOK_VERIFY_TOKEN;
+    const verifyToken = config.meta.webhookVerifyToken;
+
+    console.log('🔐 Webhook Verification Request:');
+    console.log('   Mode:', mode);
+    console.log('   Token matches:', token === verifyToken);
+
     if (mode === 'subscribe' && token === verifyToken) {
-      console.log('[Webhook] Verification successful');
+      console.log('✅ Webhook verified successfully');
       return challenge;
     }
-    console.log('[Webhook] Verification failed');
+
+    console.error('❌ Webhook verification failed');
     return null;
   }
 
-  async processWebhook(payload: WebhookPayload): Promise<void> {
-    if (payload.object !== 'whatsapp_business_account') {
-      console.log('[Webhook] Ignoring non-WhatsApp payload');
-      return;
-    }
-    for (const entry of payload.entry) {
-      for (const change of entry.changes) {
-        if (change.field === 'messages') {
-          await this.processMessagesChange(change.value);
-        }
-      }
-    }
-  }
+  // ============================================
+  // PROCESS WEBHOOK (POST request from Meta)
+  // ============================================
+  async processWebhook(
+    payload: any,
+    signature: string | undefined
+  ): Promise<{ success: boolean; processed: number }> {
+    const startTime = Date.now();
 
-  private async processMessagesChange(value: WebhookChange['value']): Promise<void> {
-    const { metadata, contacts, messages, statuses } = value;
-    const phoneNumberId = metadata.phone_number_id;
+    console.log('\n📨 ========== WEBHOOK RECEIVED ==========');
+    console.log('   Object:', payload?.object);
+    console.log('   Entries:', payload?.entry?.length || 0);
 
-    const account = await prisma.whatsAppAccount.findUnique({
-      where: { phoneNumberId },
-      include: { organization: true },
+    // Log webhook
+    const webhookLog = await prisma.webhookLog.create({
+      data: {
+        source: 'META',
+        eventType: payload?.object || 'unknown',
+        payload: payload,
+        status: WebhookStatus.PROCESSING,
+      },
     });
 
-    if (!account) {
-      console.log(`[Webhook] No account found for phone number ID: ${phoneNumberId}`);
-      return;
-    }
+    try {
+      // Verify signature in production
+      if (config.app.isProduction && signature) {
+        const isValid = verifyWebhookSignature(
+          JSON.stringify(payload),
+          signature,
+          config.meta.appSecret
+        );
 
-    if (messages && messages.length > 0) {
-      for (const message of messages) {
-        await this.processIncomingMessage(account, message, contacts?.[0]);
+        if (!isValid) {
+          console.error('❌ Invalid webhook signature');
+          await this.updateWebhookLog(webhookLog.id, WebhookStatus.FAILED, 'Invalid signature');
+          return { success: false, processed: 0 };
+        }
       }
-    }
 
-    if (statuses && statuses.length > 0) {
-      for (const status of statuses) {
-        await this.processStatusUpdate(account, status);
+      // Only process WhatsApp Business Account webhooks
+      if (payload?.object !== 'whatsapp_business_account') {
+        console.log('⚠️ Ignoring non-WhatsApp webhook');
+        await this.updateWebhookLog(webhookLog.id, WebhookStatus.SUCCESS);
+        return { success: true, processed: 0 };
       }
+
+      let processedCount = 0;
+
+      // Process each entry
+      for (const entry of payload.entry || []) {
+        for (const change of entry.changes || []) {
+          if (change.field === 'messages') {
+            const value = change.value;
+            const phoneNumberId = value.metadata?.phone_number_id;
+
+            // Find WhatsApp account
+            const account = await prisma.whatsAppAccount.findFirst({
+              where: { phoneNumberId },
+            });
+
+            if (!account) {
+              console.warn(`⚠️ No account found for phone: ${phoneNumberId}`);
+              continue;
+            }
+
+            // Update webhook log with organization
+            await prisma.webhookLog.update({
+              where: { id: webhookLog.id },
+              data: { organizationId: account.organizationId },
+            });
+
+            // Process incoming messages
+            if (value.messages) {
+              for (const message of value.messages) {
+                await this.processIncomingMessage(account, message, value.contacts);
+                processedCount++;
+              }
+            }
+
+            // Process message statuses
+            if (value.statuses) {
+              for (const status of value.statuses) {
+                await this.processMessageStatus(account, status);
+                processedCount++;
+              }
+            }
+
+            // Process errors
+            if (value.errors) {
+              for (const error of value.errors) {
+                console.error('📛 Webhook Error:', error);
+              }
+            }
+          }
+        }
+      }
+
+      const duration = Date.now() - startTime;
+
+      await prisma.webhookLog.update({
+        where: { id: webhookLog.id },
+        data: {
+          status: WebhookStatus.SUCCESS,
+          processedAt: new Date(),
+          responseTime: duration,
+        },
+      });
+
+      console.log(`✅ Webhook processed: ${processedCount} items in ${duration}ms`);
+      console.log('📨 ========== WEBHOOK END ==========\n');
+
+      return { success: true, processed: processedCount };
+    } catch (error: any) {
+      console.error('❌ Webhook processing error:', error);
+
+      await this.updateWebhookLog(
+        webhookLog.id,
+        WebhookStatus.FAILED,
+        error.message
+      );
+
+      return { success: false, processed: 0 };
     }
   }
 
+  // ============================================
+  // PROCESS INCOMING MESSAGE
+  // ============================================
   private async processIncomingMessage(
     account: any,
     message: WebhookMessage,
-    contactInfo?: { profile: { name: string }; wa_id: string }
-  ): Promise<void> {
+    contacts?: WebhookContact[]
+  ) {
     try {
-      const waId = message.from;
-      const phone = '+' + waId;
+      console.log(`📥 Processing message from: ${message.from}`);
+
+      const phoneNumber = message.from;
+      const contactInfo = contacts?.find((c) => c.wa_id === phoneNumber);
+      const contactName = contactInfo?.profile?.name;
 
       // Find or create contact
-      let contact = await prisma.contact.findUnique({
+      let contact = await prisma.contact.findFirst({
         where: {
-          organizationId_phone: {
-            organizationId: account.organizationId,
-            phone,
-          },
+          organizationId: account.organizationId,
+          phone: phoneNumber,
         },
       });
 
       if (!contact) {
+        // Create new contact
         contact = await prisma.contact.create({
           data: {
             organizationId: account.organizationId,
-            phone,
-            firstName: contactInfo?.profile?.name || null,  // ✅ Fixed
+            phone: phoneNumber,
+            firstName: contactName || phoneNumber,
             source: 'WHATSAPP',
+            status: 'ACTIVE',
           },
         });
-      } else if (contactInfo?.profile?.name && !contact.firstName) {  // ✅ Fixed
-        contact = await prisma.contact.update({
+        console.log(`✅ New contact created: ${contact.id}`);
+      } else if (contactName && !contact.firstName) {
+        // Update contact name if available
+        await prisma.contact.update({
           where: { id: contact.id },
-          data: { firstName: contactInfo.profile.name },  // ✅ Fixed
+          data: { firstName: contactName },
         });
       }
 
       // Find or create conversation
-      let conversation = await prisma.conversation.findUnique({
+      let conversation = await prisma.conversation.findFirst({
         where: {
-          organizationId_contactId: {  // ✅ Fixed
-            organizationId: account.organizationId,
-            contactId: contact.id,
-          },
+          organizationId: account.organizationId,
+          contactId: contact.id,
         },
       });
+
+      const now = new Date();
+      const windowExpiry = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours
 
       if (!conversation) {
         conversation = await prisma.conversation.create({
           data: {
             organizationId: account.organizationId,
-            phoneNumberId: account.phoneNumberId,  // ✅ Fixed
             contactId: contact.id,
-            windowExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+            lastMessageAt: now,
+            lastMessagePreview: this.getMessagePreview(message),
+            lastCustomerMessageAt: now,
+            windowExpiresAt: windowExpiry,
             isWindowOpen: true,
             unreadCount: 1,
-            lastMessageAt: new Date(parseInt(message.timestamp) * 1000),
-            lastMessagePreview: this.getMessagePreview(message),  // ✅ Fixed
+            isRead: false,
           },
         });
+        console.log(`✅ New conversation created: ${conversation.id}`);
       } else {
+        // Update conversation
         await prisma.conversation.update({
           where: { id: conversation.id },
           data: {
-            windowExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+            lastMessageAt: now,
+            lastMessagePreview: this.getMessagePreview(message),
+            lastCustomerMessageAt: now,
+            windowExpiresAt: windowExpiry,
             isWindowOpen: true,
             unreadCount: { increment: 1 },
-            lastMessageAt: new Date(parseInt(message.timestamp) * 1000),
-            lastMessagePreview: this.getMessagePreview(message),  // ✅ Fixed
+            isRead: false,
+            isArchived: false,
           },
         });
       }
 
-      const existingMessage = await prisma.message.findUnique({
-        where: { wamId: message.id },
+      // Check for duplicate message
+      const existingMessage = await prisma.message.findFirst({
+        where: { waMessageId: message.id },
       });
 
       if (existingMessage) {
-        console.log(`[Webhook] Duplicate message ignored: ${message.id}`);
+        console.log(`⚠️ Duplicate message ignored: ${message.id}`);
         return;
       }
 
-      const newMessage = await prisma.message.create({
+      // Create message
+      const messageData = await prisma.message.create({
         data: {
           conversationId: conversation.id,
           whatsappAccountId: account.id,
+          waMessageId: message.id,
           wamId: message.id,
-          direction: 'INBOUND',
+          direction: MessageDirection.INBOUND,
           type: this.mapMessageType(message.type),
-          content: JSON.stringify(this.extractMessageContent(message)),
-          status: 'DELIVERED',
+          content: this.extractMessageContent(message),
+          mediaUrl: await this.getMediaUrl(account, message),
+          mediaType: message.type !== 'text' ? message.type : null,
+          status: MessageStatus.DELIVERED,
           sentAt: new Date(parseInt(message.timestamp) * 1000),
-        },
-        include: {
-          conversation: {
-            include: {
-              contact: true,
-            },
+          replyToMessageId: message.context?.id || null,
+          metadata: {
+            originalType: message.type,
+            context: message.context || null,
           },
         },
       });
 
-      webhookEvents.emit('newMessage', {
-        organizationId: account.organizationId,
-        accountId: account.id,
-        conversationId: conversation.id,
-        message: newMessage,
+      console.log(`✅ Message saved: ${messageData.id}`);
+
+      // Update contact stats
+      await prisma.contact.update({
+        where: { id: contact.id },
+        data: {
+          lastMessageAt: now,
+          messageCount: { increment: 1 },
+        },
       });
 
-      console.log(`[Webhook] New message saved: ${message.id}`);
-    } catch (error) {
-      console.error('[Webhook] Error processing message:', error);
+      // TODO: Trigger chatbot/automation if needed
+      // await this.triggerAutomations(account, contact, conversation, messageData);
+
+    } catch (error: any) {
+      console.error('❌ Error processing incoming message:', error);
     }
   }
 
-  private async processStatusUpdate(account: any, status: WebhookStatus): Promise<void> {
+  // ============================================
+  // PROCESS MESSAGE STATUS UPDATE
+  // ============================================
+  private async processMessageStatus(account: any, status: WebhookMessageStatus) {
     try {
-      const message = await prisma.message.findUnique({
-        where: { wamId: status.id },
+      console.log(`📊 Status update: ${status.id} -> ${status.status}`);
+
+      const message = await prisma.message.findFirst({
+        where: {
+          OR: [
+            { waMessageId: status.id },
+            { wamId: status.id },
+          ],
+        },
       });
 
       if (!message) {
-        console.log(`[Webhook] Message not found for status update: ${status.id}`);
+        console.warn(`⚠️ Message not found for status: ${status.id}`);
         return;
       }
 
-      const statusMap: Record<string, MessageStatus> = {
-        sent: 'SENT',
-        delivered: 'DELIVERED',
-        read: 'READ',
-        failed: 'FAILED',
-      };
+      const timestamp = new Date(parseInt(status.timestamp) * 1000);
 
       const updateData: any = {
-        status: statusMap[status.status] || message.status,
-        statusUpdatedAt: new Date(),
+        status: this.mapStatus(status.status),
+        statusUpdatedAt: timestamp,
       };
 
-      if (status.status === 'sent') {
-        updateData.sentAt = new Date(parseInt(status.timestamp) * 1000);
-      } else if (status.status === 'delivered') {
-        updateData.deliveredAt = new Date(parseInt(status.timestamp) * 1000);
-      } else if (status.status === 'read') {
-        updateData.readAt = new Date(parseInt(status.timestamp) * 1000);
-      } else if (status.status === 'failed' && status.errors?.[0]) {
-        updateData.failureReason = status.errors[0].title;
+      switch (status.status) {
+        case 'sent':
+          updateData.sentAt = timestamp;
+          break;
+        case 'delivered':
+          updateData.deliveredAt = timestamp;
+          break;
+        case 'read':
+          updateData.readAt = timestamp;
+          break;
+        case 'failed':
+          updateData.failedAt = timestamp;
+          updateData.failureReason = status.errors?.[0]?.message ||
+            status.errors?.[0]?.title ||
+            'Unknown error';
+          break;
       }
 
       await prisma.message.update({
@@ -267,39 +419,75 @@ class WebhookService {
         data: updateData,
       });
 
-      // ✅ Fixed: campaignRecipient → campaignContact
-      await prisma.campaignContact.updateMany({
-        where: { waMessageId: status.id },
-        data: {
-          status: status.status === 'read' ? 'READ' :
-                 status.status === 'delivered' ? 'DELIVERED' :
-                 status.status === 'sent' ? 'SENT' :
-                 status.status === 'failed' ? 'FAILED' : 'PENDING',
-          ...(status.status === 'delivered' && { deliveredAt: new Date() }),
-          ...(status.status === 'read' && { readAt: new Date() }),
-          ...(status.status === 'failed' && {
-            failedAt: new Date(),
-            failureReason: status.errors?.[0]?.title,
-          }),
-        },
-      });
+      console.log(`✅ Status updated: ${message.id} -> ${status.status}`);
 
-      webhookEvents.emit('messageStatus', {
-        organizationId: account.organizationId,
-        messageId: message.id,
-        wamId: status.id,
-        status: status.status,
-      });
+      // Update conversation window if needed
+      if (status.conversation?.expiration_timestamp) {
+        const conversation = await prisma.conversation.findUnique({
+          where: { id: message.conversationId },
+        });
 
-      console.log(`[Webhook] Status updated: ${status.id} -> ${status.status}`);
-    } catch (error) {
-      console.error('[Webhook] Error processing status:', error);
+        if (conversation) {
+          await prisma.conversation.update({
+            where: { id: conversation.id },
+            data: {
+              windowExpiresAt: new Date(
+                parseInt(status.conversation.expiration_timestamp) * 1000
+              ),
+              isWindowOpen: true,
+            },
+          });
+        }
+      }
+
+      // Update campaign contact if applicable
+      if (message.templateId) {
+        await prisma.campaignContact.updateMany({
+          where: { waMessageId: status.id },
+          data: {
+            status: this.mapStatus(status.status),
+            ...(status.status === 'sent' && { sentAt: timestamp }),
+            ...(status.status === 'delivered' && { deliveredAt: timestamp }),
+            ...(status.status === 'read' && { readAt: timestamp }),
+            ...(status.status === 'failed' && {
+              failedAt: timestamp,
+              failureReason: status.errors?.[0]?.message || 'Failed',
+            }),
+          },
+        });
+
+        // Update campaign stats
+        if (message.templateName) {
+          await this.updateCampaignStats(message.conversationId, status.status);
+        }
+      }
+
+    } catch (error: any) {
+      console.error('❌ Error processing status update:', error);
     }
   }
 
-  // ✅ Fixed: MessageType enum values
-  private mapMessageType(type: string): MessageType {
-    const typeMap: Record<string, MessageType> = {
+  // ============================================
+  // HELPER METHODS
+  // ============================================
+
+  private async updateWebhookLog(
+    id: string,
+    status: WebhookStatus,
+    errorMessage?: string
+  ) {
+    await prisma.webhookLog.update({
+      where: { id },
+      data: {
+        status,
+        processedAt: new Date(),
+        errorMessage,
+      },
+    });
+  }
+
+  private mapMessageType(type: string): any {
+    const typeMap: Record<string, any> = {
       text: 'TEXT',
       image: 'IMAGE',
       video: 'VIDEO',
@@ -307,65 +495,228 @@ class WebhookService {
       document: 'DOCUMENT',
       sticker: 'STICKER',
       location: 'LOCATION',
-      contacts: 'CONTACT',  // ✅ Fixed: CONTACTS → CONTACT
+      contacts: 'CONTACT',
       interactive: 'INTERACTIVE',
       button: 'INTERACTIVE',
-      reaction: 'TEXT',  // ✅ Fixed: REACTION → TEXT
     };
-    return typeMap[type] || 'TEXT';
+
+    return typeMap[type?.toLowerCase()] || 'TEXT';
   }
 
-  private extractMessageContent(message: WebhookMessage): any {
-    switch (message.type) {
-      case 'text':
-        return { text: message.text?.body };
-      case 'image':
-        return { mediaId: message.image?.id, caption: message.image?.caption };
-      case 'video':
-        return { mediaId: message.video?.id, caption: message.video?.caption };
-      case 'audio':
-        return { mediaId: message.audio?.id };
-      case 'document':
-        return {
-          mediaId: message.document?.id,
-          filename: message.document?.filename,
-          caption: message.document?.caption,
-        };
-      case 'sticker':
-        return { mediaId: message.sticker?.id };
-      case 'location':
-        return message.location;
-      case 'contacts':
-        return { contacts: message.contacts };
-      case 'interactive':
-        return message.interactive;
-      case 'button':
-        return { button: message.button };
-      default:
-        return {};
-    }
+  private mapStatus(status: string): MessageStatus {
+    const statusMap: Record<string, MessageStatus> = {
+      sent: MessageStatus.SENT,
+      delivered: MessageStatus.DELIVERED,
+      read: MessageStatus.READ,
+      failed: MessageStatus.FAILED,
+    };
+
+    return statusMap[status] || MessageStatus.PENDING;
   }
 
   private getMessagePreview(message: WebhookMessage): string {
+    if (message.text?.body) {
+      return message.text.body.substring(0, 100);
+    }
+
+    const typeLabels: Record<string, string> = {
+      image: '📷 Image',
+      video: '🎥 Video',
+      audio: '🎵 Audio',
+      document: '📄 Document',
+      sticker: '🏷️ Sticker',
+      location: '📍 Location',
+      contacts: '👤 Contact',
+      interactive: '🔘 Interactive',
+    };
+
+    return typeLabels[message.type] || `📨 ${message.type}`;
+  }
+
+  private extractMessageContent(message: WebhookMessage): string {
     switch (message.type) {
       case 'text':
-        return message.text?.body?.substring(0, 100) || '';
+        return message.text?.body || '';
+
       case 'image':
-        return '📷 Image';
+        return message.image?.caption || '';
+
       case 'video':
-        return '🎥 Video';
-      case 'audio':
-        return '🎵 Audio';
+        return message.video?.caption || '';
+
       case 'document':
-        return `📄 ${message.document?.filename || 'Document'}`;
-      case 'sticker':
-        return '🏷️ Sticker';
+        return message.document?.caption || message.document?.filename || '';
+
       case 'location':
-        return '📍 Location';
+        return JSON.stringify({
+          latitude: message.location?.latitude,
+          longitude: message.location?.longitude,
+          name: message.location?.name,
+          address: message.location?.address,
+        });
+
       case 'contacts':
-        return '👤 Contact';
+        return JSON.stringify(message.contacts);
+
+      case 'interactive':
+        if (message.interactive?.button_reply) {
+          return message.interactive.button_reply.title;
+        }
+        if (message.interactive?.list_reply) {
+          return message.interactive.list_reply.title;
+        }
+        return '';
+
+      case 'button':
+        return message.button?.text || message.button?.payload || '';
+
       default:
-        return 'New message';
+        return '';
+    }
+  }
+
+  private async getMediaUrl(account: any, message: WebhookMessage): Promise<string | null> {
+    let mediaId: string | null = null;
+
+    switch (message.type) {
+      case 'image':
+        mediaId = message.image?.id || null;
+        break;
+      case 'video':
+        mediaId = message.video?.id || null;
+        break;
+      case 'audio':
+        mediaId = message.audio?.id || null;
+        break;
+      case 'document':
+        mediaId = message.document?.id || null;
+        break;
+      case 'sticker':
+        mediaId = (message as any).sticker?.id || null;
+        break;
+    }
+
+    if (!mediaId) return null;
+
+    try {
+      // Get access token
+      const decryptedToken = safeDecryptStrict(account.accessToken);
+
+      if (!decryptedToken) {
+        console.error('❌ Failed to decrypt token for media retrieval');
+        return null;
+      }
+
+      // Get media URL from Meta
+      const mediaUrl = await metaApi.getMediaUrl(mediaId, decryptedToken);
+      return mediaUrl;
+    } catch (error) {
+      console.error('❌ Error fetching media URL:', error);
+      return null;
+    }
+  }
+
+  private async updateCampaignStats(conversationId: string, status: string) {
+    try {
+      const conversation = await prisma.conversation.findUnique({
+        where: { id: conversationId },
+        include: {
+          messages: {
+            where: {
+              direction: MessageDirection.OUTBOUND,
+              templateId: { not: null },
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
+        },
+      });
+
+      if (!conversation?.messages[0]) return;
+
+      // Find campaign from message
+      const campaignContact = await (prisma.campaignContact as any).findFirst({
+        where: {
+          waMessageId: conversation.messages[0].waMessageId,
+        },
+        include: { campaign: true },
+      });
+
+      if (!campaignContact) return;
+
+      const updateField: Record<string, string> = {
+        sent: 'sentCount',
+        delivered: 'deliveredCount',
+        read: 'readCount',
+        failed: 'failedCount',
+      };
+
+      const field = updateField[status];
+      if (field) {
+        await prisma.campaign.update({
+          where: { id: campaignContact.campaignId },
+          data: {
+            [field]: { increment: 1 },
+          },
+        });
+      }
+    } catch (error) {
+      console.error('❌ Error updating campaign stats:', error);
+    }
+  }
+
+  // ============================================
+  // EXPIRE CONVERSATION WINDOWS
+  // ============================================
+  async expireConversationWindows() {
+    try {
+      const result = await prisma.conversation.updateMany({
+        where: {
+          isWindowOpen: true,
+          windowExpiresAt: { lt: new Date() },
+        },
+        data: {
+          isWindowOpen: false,
+        },
+      });
+
+      if (result.count > 0) {
+        console.log(`⏰ Expired ${result.count} conversation windows`);
+      }
+
+      return result.count;
+    } catch (error) {
+      console.error('❌ Error expiring windows:', error);
+      return 0;
+    }
+  }
+
+  // ============================================
+  // RESET DAILY MESSAGE LIMITS
+  // ============================================
+  async resetDailyMessageLimits() {
+    try {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+
+      const result = await (prisma.whatsAppAccount as any).updateMany({
+        where: {
+          lastLimitReset: { lt: yesterday },
+        },
+        data: {
+          dailyMessagesUsed: 0,
+          lastLimitReset: new Date(),
+        },
+      });
+
+      if (result.count > 0) {
+        console.log(`🔄 Reset daily limits for ${result.count} accounts`);
+      }
+
+      return result.count;
+    } catch (error) {
+      console.error('❌ Error resetting limits:', error);
+      return 0;
     }
   }
 }

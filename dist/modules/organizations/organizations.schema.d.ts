@@ -116,18 +116,18 @@ export declare const updateMemberRoleSchema: z.ZodObject<{
         role: "OWNER" | "ADMIN" | "MEMBER" | "VIEWER";
     }>;
 }, "strip", z.ZodTypeAny, {
-    params: {
-        memberId: string;
-    };
     body: {
         role: "OWNER" | "ADMIN" | "MEMBER" | "VIEWER";
+    };
+    params: {
+        memberId: string;
     };
 }, {
-    params: {
-        memberId: string;
-    };
     body: {
         role: "OWNER" | "ADMIN" | "MEMBER" | "VIEWER";
+    };
+    params: {
+        memberId: string;
     };
 }>;
 export declare const removeMemberSchema: z.ZodObject<{

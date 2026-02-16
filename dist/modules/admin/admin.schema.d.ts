@@ -81,26 +81,26 @@ export declare const updateAdminSchema: z.ZodObject<{
         isActive?: boolean | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
-    params: {
-        id: string;
-    };
     body: {
         name?: string | undefined;
         email?: string | undefined;
         password?: string | undefined;
         role?: "admin" | "super_admin" | undefined;
         isActive?: boolean | undefined;
+    };
+    params: {
+        id: string;
     };
 }, {
-    params: {
-        id: string;
-    };
     body: {
         name?: string | undefined;
         email?: string | undefined;
         password?: string | undefined;
         role?: "admin" | "super_admin" | undefined;
         isActive?: boolean | undefined;
+    };
+    params: {
+        id: string;
     };
 }>;
 export declare const getUsersSchema: z.ZodObject<{
@@ -120,34 +120,34 @@ export declare const getUsersSchema: z.ZodObject<{
         page: number;
         limit: number;
         sortBy: "email" | "firstName" | "lastLoginAt" | "createdAt";
-        sortOrder: "desc" | "asc";
+        sortOrder: "asc" | "desc";
         search?: string | undefined;
         status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
     }, {
         search?: string | undefined;
+        status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
         sortBy?: "email" | "firstName" | "lastLoginAt" | "createdAt" | undefined;
-        sortOrder?: "desc" | "asc" | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     query: {
         page: number;
         limit: number;
         sortBy: "email" | "firstName" | "lastLoginAt" | "createdAt";
-        sortOrder: "desc" | "asc";
+        sortOrder: "asc" | "desc";
         search?: string | undefined;
         status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
     };
 }, {
     query: {
         search?: string | undefined;
+        status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
         sortBy?: "email" | "firstName" | "lastLoginAt" | "createdAt" | undefined;
-        sortOrder?: "desc" | "asc" | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
     };
 }>;
 export declare const getUserByIdSchema: z.ZodObject<{
@@ -197,24 +197,24 @@ export declare const updateUserSchema: z.ZodObject<{
         emailVerified?: boolean | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
-    params: {
-        id: string;
-    };
     body: {
         firstName?: string | undefined;
         lastName?: string | null | undefined;
         status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
         emailVerified?: boolean | undefined;
+    };
+    params: {
+        id: string;
     };
 }, {
-    params: {
-        id: string;
-    };
     body: {
         firstName?: string | undefined;
         lastName?: string | null | undefined;
         status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
         emailVerified?: boolean | undefined;
+    };
+    params: {
+        id: string;
     };
 }>;
 export declare const deleteUserSchema: z.ZodObject<{
@@ -251,34 +251,34 @@ export declare const getOrganizationsSchema: z.ZodObject<{
         page: number;
         limit: number;
         sortBy: "name" | "createdAt" | "planType";
-        sortOrder: "desc" | "asc";
+        sortOrder: "asc" | "desc";
         search?: string | undefined;
         planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
     }, {
         search?: string | undefined;
+        planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
         sortBy?: "name" | "createdAt" | "planType" | undefined;
-        sortOrder?: "desc" | "asc" | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     query: {
         page: number;
         limit: number;
         sortBy: "name" | "createdAt" | "planType";
-        sortOrder: "desc" | "asc";
+        sortOrder: "asc" | "desc";
         search?: string | undefined;
         planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
     };
 }, {
     query: {
         search?: string | undefined;
+        planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
         sortBy?: "name" | "createdAt" | "planType" | undefined;
-        sortOrder?: "desc" | "asc" | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
     };
 }>;
 export declare const getOrganizationByIdSchema: z.ZodObject<{
@@ -322,20 +322,20 @@ export declare const updateOrganizationSchema: z.ZodObject<{
         planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
-    params: {
-        id: string;
-    };
     body: {
         name?: string | undefined;
         planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
+    };
+    params: {
+        id: string;
     };
 }, {
-    params: {
-        id: string;
-    };
     body: {
         name?: string | undefined;
         planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
+    };
+    params: {
+        id: string;
     };
 }>;
 export declare const deleteOrganizationSchema: z.ZodObject<{
@@ -388,26 +388,26 @@ export declare const updateSubscriptionSchema: z.ZodObject<{
         planId?: string | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
-    params: {
-        id: string;
-    };
     body: {
         status?: "ACTIVE" | "CANCELLED" | "EXPIRED" | "PAST_DUE" | undefined;
         currentPeriodEnd?: string | undefined;
         messagesUsed?: number | undefined;
         contactsUsed?: number | undefined;
         planId?: string | undefined;
+    };
+    params: {
+        id: string;
     };
 }, {
-    params: {
-        id: string;
-    };
     body: {
         status?: "ACTIVE" | "CANCELLED" | "EXPIRED" | "PAST_DUE" | undefined;
         currentPeriodEnd?: string | undefined;
         messagesUsed?: number | undefined;
         contactsUsed?: number | undefined;
         planId?: string | undefined;
+    };
+    params: {
+        id: string;
     };
 }>;
 export declare const createPlanSchema: z.ZodObject<{
@@ -536,9 +536,6 @@ export declare const updatePlanSchema: z.ZodObject<{
         isActive?: boolean | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
-    params: {
-        id: string;
-    };
     body: {
         name?: string | undefined;
         description?: string | null | undefined;
@@ -552,11 +549,11 @@ export declare const updatePlanSchema: z.ZodObject<{
         maxTemplates?: number | undefined;
         features?: string[] | undefined;
         isActive?: boolean | undefined;
+    };
+    params: {
+        id: string;
     };
 }, {
-    params: {
-        id: string;
-    };
     body: {
         name?: string | undefined;
         description?: string | null | undefined;
@@ -570,6 +567,9 @@ export declare const updatePlanSchema: z.ZodObject<{
         maxTemplates?: number | undefined;
         features?: string[] | undefined;
         isActive?: boolean | undefined;
+    };
+    params: {
+        id: string;
     };
 }>;
 export declare const updateSystemSettingsSchema: z.ZodObject<{
@@ -637,10 +637,10 @@ export declare const getActivityLogsSchema: z.ZodObject<{
         startDate?: string | undefined;
         endDate?: string | undefined;
     }, {
-        page?: string | undefined;
-        limit?: string | undefined;
         userId?: string | undefined;
         organizationId?: string | undefined;
+        page?: string | undefined;
+        limit?: string | undefined;
         action?: string | undefined;
         startDate?: string | undefined;
         endDate?: string | undefined;
@@ -657,10 +657,10 @@ export declare const getActivityLogsSchema: z.ZodObject<{
     };
 }, {
     query: {
-        page?: string | undefined;
-        limit?: string | undefined;
         userId?: string | undefined;
         organizationId?: string | undefined;
+        page?: string | undefined;
+        limit?: string | undefined;
         action?: string | undefined;
         startDate?: string | undefined;
         endDate?: string | undefined;

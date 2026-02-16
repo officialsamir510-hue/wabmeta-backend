@@ -1,21 +1,8 @@
 import { WhatsAppAccount } from '@prisma/client';
 import { ConnectionProgress } from './meta.types';
 declare class MetaService {
-    /**
-     * Check if a string looks like a Meta access token
-     */
-    private looksLikeAccessToken;
-    /**
-     * Remove sensitive data from account object
-     */
     private sanitizeAccount;
-    /**
-     * Generate OAuth URL for Meta Embedded Signup
-     */
     getOAuthUrl(state: string): string;
-    /**
-     * Get Embedded Signup configuration for frontend
-     */
     getEmbeddedSignupConfig(): {
         appId: string;
         configId: string;
@@ -23,9 +10,6 @@ declare class MetaService {
         redirectUri: string;
         features: string[];
     };
-    /**
-     * Get Integration Status
-     */
     getIntegrationStatus(): {
         configured: boolean;
         appId: string | null;
@@ -33,56 +17,38 @@ declare class MetaService {
         hasRedirectUri: boolean;
         apiVersion: string;
     };
-    /**
-     * Complete Meta connection flow
-     */
     completeConnection(codeOrToken: string, organizationId: string, userId: string, onProgress?: (progress: ConnectionProgress) => void): Promise<{
         success: boolean;
         account?: any;
         error?: string;
     }>;
-    /**
-     * Get all accounts for organization
-     */
     getAccounts(organizationId: string): Promise<any[]>;
-    /**
-     * Get single account by ID
-     */
     getAccount(accountId: string, organizationId: string): Promise<any>;
     /**
-     * Get account with decrypted token (internal use only) - ✅ FIXED
+     * ✅ FIXED: Get account with decrypted token
      */
     getAccountWithToken(accountId: string): Promise<{
         account: WhatsAppAccount;
         accessToken: string;
     } | null>;
-    /**
-     * Update account access token
-     */
     updateAccountToken(accountId: string, newToken: string): Promise<void>;
-    /**
-     * Disconnect WhatsApp account
-     */
     disconnectAccount(accountId: string, organizationId: string): Promise<{
         success: boolean;
         message: string;
     }>;
-    /**
-     * Set account as default
-     */
     setDefaultAccount(accountId: string, organizationId: string): Promise<{
         success: boolean;
         message: string;
     }>;
-    /**
-     * Refresh account health/status from Meta
-     */
     refreshAccountHealth(accountId: string, organizationId: string): Promise<{
         healthy: boolean;
         qualityRating: string;
         verifiedName: string;
         displayPhoneNumber: string;
         status: any;
+        codeVerificationStatus: string | undefined;
+        nameStatus: string | undefined;
+        messagingLimit: string | undefined;
         reason?: undefined;
         action?: undefined;
     } | {
@@ -93,16 +59,17 @@ declare class MetaService {
         verifiedName?: undefined;
         displayPhoneNumber?: undefined;
         status?: undefined;
+        codeVerificationStatus?: undefined;
+        nameStatus?: undefined;
+        messagingLimit?: undefined;
     }>;
     syncTemplates(accountId: string, organizationId: string): Promise<{
-        synced: number;
         created: number;
         updated: number;
-        skipped: number;
         removed: number;
+        skipped: number;
         total: number;
     }>;
-    private extractVariables;
     private syncTemplatesBackground;
     private mapCategory;
     private mapTemplateStatus;
@@ -111,6 +78,7 @@ declare class MetaService {
     private extractHeaderContent;
     private extractFooterText;
     private extractButtons;
+    private extractVariables;
 }
 export declare const metaService: MetaService;
 export default metaService;

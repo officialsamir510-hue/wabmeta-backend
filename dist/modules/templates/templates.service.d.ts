@@ -34,11 +34,10 @@ export declare class TemplatesService {
     }[]>;
     updateStatus(metaTemplateId: string, status: TemplateStatus, rejectionReason?: string): Promise<void>;
     syncTemplatesForAccount(organizationId: string, whatsappAccountId: string): Promise<{
-        synced: number;
         created: number;
         updated: number;
-        skipped: number;
         removed: number;
+        skipped: number;
         total: number;
     }>;
 }

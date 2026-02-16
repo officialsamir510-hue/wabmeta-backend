@@ -92,9 +92,6 @@ export declare const updateContactSchema: z.ZodObject<{
         tags?: string[] | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
-    params: {
-        id: string;
-    };
     body: {
         tags: string[];
         email?: string | null | undefined;
@@ -105,10 +102,10 @@ export declare const updateContactSchema: z.ZodObject<{
         countryCode?: string | undefined;
         customFields?: Record<string, any> | undefined;
     };
-}, {
     params: {
         id: string;
     };
+}, {
     body: {
         email?: string | null | undefined;
         firstName?: string | null | undefined;
@@ -118,6 +115,9 @@ export declare const updateContactSchema: z.ZodObject<{
         countryCode?: string | undefined;
         customFields?: Record<string, any> | undefined;
         tags?: string[] | undefined;
+    };
+    params: {
+        id: string;
     };
 }>;
 export declare const getContactsSchema: z.ZodObject<{
@@ -138,27 +138,27 @@ export declare const getContactsSchema: z.ZodObject<{
         page: number;
         limit: number;
         sortBy: "firstName" | "lastName" | "createdAt" | "lastMessageAt";
-        sortOrder: "desc" | "asc";
+        sortOrder: "asc" | "desc";
         search?: string | undefined;
         status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         tags?: string | undefined;
         groupId?: string | undefined;
     }, {
         search?: string | undefined;
+        status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         tags?: string | undefined;
         groupId?: string | undefined;
         sortBy?: "firstName" | "lastName" | "createdAt" | "lastMessageAt" | undefined;
-        sortOrder?: "desc" | "asc" | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     query: {
         page: number;
         limit: number;
         sortBy: "firstName" | "lastName" | "createdAt" | "lastMessageAt";
-        sortOrder: "desc" | "asc";
+        sortOrder: "asc" | "desc";
         search?: string | undefined;
         status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         tags?: string | undefined;
@@ -167,13 +167,13 @@ export declare const getContactsSchema: z.ZodObject<{
 }, {
     query: {
         search?: string | undefined;
+        status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         tags?: string | undefined;
         groupId?: string | undefined;
         sortBy?: "firstName" | "lastName" | "createdAt" | "lastMessageAt" | undefined;
-        sortOrder?: "desc" | "asc" | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
     };
 }>;
 export declare const getContactByIdSchema: z.ZodObject<{
@@ -400,22 +400,22 @@ export declare const updateContactGroupSchema: z.ZodObject<{
         color?: string | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
-    params: {
-        groupId: string;
-    };
     body: {
         name?: string | undefined;
         description?: string | null | undefined;
         color?: string | undefined;
+    };
+    params: {
+        groupId: string;
     };
 }, {
-    params: {
-        groupId: string;
-    };
     body: {
         name?: string | undefined;
         description?: string | null | undefined;
         color?: string | undefined;
+    };
+    params: {
+        groupId: string;
     };
 }>;
 export declare const addContactsToGroupSchema: z.ZodObject<{
@@ -434,18 +434,18 @@ export declare const addContactsToGroupSchema: z.ZodObject<{
         contactIds: string[];
     }>;
 }, "strip", z.ZodTypeAny, {
-    params: {
-        groupId: string;
-    };
     body: {
         contactIds: string[];
+    };
+    params: {
+        groupId: string;
     };
 }, {
-    params: {
-        groupId: string;
-    };
     body: {
         contactIds: string[];
+    };
+    params: {
+        groupId: string;
     };
 }>;
 export declare const removeContactsFromGroupSchema: z.ZodObject<{
@@ -464,18 +464,18 @@ export declare const removeContactsFromGroupSchema: z.ZodObject<{
         contactIds: string[];
     }>;
 }, "strip", z.ZodTypeAny, {
-    params: {
-        groupId: string;
-    };
     body: {
         contactIds: string[];
+    };
+    params: {
+        groupId: string;
     };
 }, {
-    params: {
-        groupId: string;
-    };
     body: {
         contactIds: string[];
+    };
+    params: {
+        groupId: string;
     };
 }>;
 export declare const deleteContactGroupSchema: z.ZodObject<{

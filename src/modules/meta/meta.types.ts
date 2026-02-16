@@ -39,6 +39,8 @@ export interface PhoneNumberInfo {
   throughput?: {
     level: string;
   };
+  nameStatus?: string;
+  messagingLimitTier?: string;
 }
 
 export interface EmbeddedSignupResponse {

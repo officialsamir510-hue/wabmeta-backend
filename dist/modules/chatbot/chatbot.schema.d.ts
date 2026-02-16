@@ -230,6 +230,8 @@ export declare const createChatbotSchema: z.ZodObject<{
                     tagNames: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
                 }, z.ZodTypeAny, "passthrough">>;
             }, "strip", z.ZodTypeAny, {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -263,7 +265,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -274,13 +276,13 @@ export declare const createChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
                 };
             }, {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -314,7 +316,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -325,8 +327,6 @@ export declare const createChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -392,6 +392,8 @@ export declare const createChatbotSchema: z.ZodObject<{
             }>>;
         }, "strip", z.ZodTypeAny, {
             nodes: {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -425,7 +427,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -436,8 +438,6 @@ export declare const createChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -463,6 +463,8 @@ export declare const createChatbotSchema: z.ZodObject<{
             } | undefined;
         }, {
             nodes: {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -496,7 +498,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -507,8 +509,6 @@ export declare const createChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -540,6 +540,8 @@ export declare const createChatbotSchema: z.ZodObject<{
         description?: string | undefined;
         flowData?: {
             nodes: {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -573,7 +575,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -584,8 +586,6 @@ export declare const createChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -618,6 +618,8 @@ export declare const createChatbotSchema: z.ZodObject<{
         isDefault?: boolean | undefined;
         flowData?: {
             nodes: {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -651,7 +653,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -662,8 +664,6 @@ export declare const createChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -700,6 +700,8 @@ export declare const createChatbotSchema: z.ZodObject<{
         description?: string | undefined;
         flowData?: {
             nodes: {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -733,7 +735,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -744,8 +746,6 @@ export declare const createChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -780,6 +780,8 @@ export declare const createChatbotSchema: z.ZodObject<{
         isDefault?: boolean | undefined;
         flowData?: {
             nodes: {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -813,7 +815,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -824,8 +826,6 @@ export declare const createChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -1093,6 +1093,8 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     tagNames: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
                 }, z.ZodTypeAny, "passthrough">>;
             }, "strip", z.ZodTypeAny, {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -1126,7 +1128,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -1137,13 +1139,13 @@ export declare const updateChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
                 };
             }, {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -1177,7 +1179,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -1188,8 +1190,6 @@ export declare const updateChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -1255,6 +1255,8 @@ export declare const updateChatbotSchema: z.ZodObject<{
             }>>;
         }, "strip", z.ZodTypeAny, {
             nodes: {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -1288,7 +1290,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -1299,8 +1301,6 @@ export declare const updateChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -1326,6 +1326,8 @@ export declare const updateChatbotSchema: z.ZodObject<{
             } | undefined;
         }, {
             nodes: {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -1359,7 +1361,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -1370,8 +1372,6 @@ export declare const updateChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -1408,6 +1408,8 @@ export declare const updateChatbotSchema: z.ZodObject<{
         isDefault?: boolean | undefined;
         flowData?: {
             nodes: {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -1441,7 +1443,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -1452,8 +1454,6 @@ export declare const updateChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -1488,6 +1488,8 @@ export declare const updateChatbotSchema: z.ZodObject<{
         isDefault?: boolean | undefined;
         flowData?: {
             nodes: {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -1521,7 +1523,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -1532,8 +1534,6 @@ export declare const updateChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -1563,9 +1563,6 @@ export declare const updateChatbotSchema: z.ZodObject<{
         fallbackMessage?: string | null | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
-    params: {
-        id: string;
-    };
     body: {
         name?: string | undefined;
         status?: "ACTIVE" | "DRAFT" | "PAUSED" | undefined;
@@ -1573,6 +1570,8 @@ export declare const updateChatbotSchema: z.ZodObject<{
         isDefault?: boolean | undefined;
         flowData?: {
             nodes: {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -1606,7 +1605,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -1617,8 +1616,6 @@ export declare const updateChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -1646,11 +1643,11 @@ export declare const updateChatbotSchema: z.ZodObject<{
         triggerKeywords?: string[] | undefined;
         welcomeMessage?: string | null | undefined;
         fallbackMessage?: string | null | undefined;
+    };
+    params: {
+        id: string;
     };
 }, {
-    params: {
-        id: string;
-    };
     body: {
         name?: string | undefined;
         status?: "ACTIVE" | "DRAFT" | "PAUSED" | undefined;
@@ -1658,6 +1655,8 @@ export declare const updateChatbotSchema: z.ZodObject<{
         isDefault?: boolean | undefined;
         flowData?: {
             nodes: {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -1691,7 +1690,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -1702,8 +1701,6 @@ export declare const updateChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -1731,6 +1728,9 @@ export declare const updateChatbotSchema: z.ZodObject<{
         triggerKeywords?: string[] | undefined;
         welcomeMessage?: string | null | undefined;
         fallbackMessage?: string | null | undefined;
+    };
+    params: {
+        id: string;
     };
 }>;
 export declare const getChatbotsSchema: z.ZodObject<{
@@ -1749,34 +1749,34 @@ export declare const getChatbotsSchema: z.ZodObject<{
         page: number;
         limit: number;
         sortBy: "name" | "status" | "createdAt";
-        sortOrder: "desc" | "asc";
+        sortOrder: "asc" | "desc";
         search?: string | undefined;
         status?: "ACTIVE" | "DRAFT" | "PAUSED" | undefined;
     }, {
         search?: string | undefined;
+        status?: "ACTIVE" | "DRAFT" | "PAUSED" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        status?: "ACTIVE" | "DRAFT" | "PAUSED" | undefined;
         sortBy?: "name" | "status" | "createdAt" | undefined;
-        sortOrder?: "desc" | "asc" | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     query: {
         page: number;
         limit: number;
         sortBy: "name" | "status" | "createdAt";
-        sortOrder: "desc" | "asc";
+        sortOrder: "asc" | "desc";
         search?: string | undefined;
         status?: "ACTIVE" | "DRAFT" | "PAUSED" | undefined;
     };
 }, {
     query: {
         search?: string | undefined;
+        status?: "ACTIVE" | "DRAFT" | "PAUSED" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        status?: "ACTIVE" | "DRAFT" | "PAUSED" | undefined;
         sortBy?: "name" | "status" | "createdAt" | undefined;
-        sortOrder?: "desc" | "asc" | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
     };
 }>;
 export declare const getChatbotByIdSchema: z.ZodObject<{
@@ -1829,18 +1829,18 @@ export declare const duplicateChatbotSchema: z.ZodObject<{
         name: string;
     }>;
 }, "strip", z.ZodTypeAny, {
-    params: {
-        id: string;
-    };
     body: {
         name: string;
+    };
+    params: {
+        id: string;
     };
 }, {
-    params: {
-        id: string;
-    };
     body: {
         name: string;
+    };
+    params: {
+        id: string;
     };
 }>;
 export declare const activateChatbotSchema: z.ZodObject<{
@@ -1882,22 +1882,22 @@ export declare const testChatbotSchema: z.ZodObject<{
         sessionData?: Record<string, any> | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
-    params: {
-        id: string;
-    };
     body: {
         message: string;
         contactPhone?: string | undefined;
         sessionData?: Record<string, any> | undefined;
+    };
+    params: {
+        id: string;
     };
 }, {
-    params: {
-        id: string;
-    };
     body: {
         message: string;
         contactPhone?: string | undefined;
         sessionData?: Record<string, any> | undefined;
+    };
+    params: {
+        id: string;
     };
 }>;
 export declare const saveFlowSchema: z.ZodObject<{
@@ -2132,6 +2132,8 @@ export declare const saveFlowSchema: z.ZodObject<{
                     tagNames: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
                 }, z.ZodTypeAny, "passthrough">>;
             }, "strip", z.ZodTypeAny, {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -2165,7 +2167,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -2176,13 +2178,13 @@ export declare const saveFlowSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
                 };
             }, {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -2216,7 +2218,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -2227,8 +2229,6 @@ export declare const saveFlowSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -2294,6 +2294,8 @@ export declare const saveFlowSchema: z.ZodObject<{
             }>>;
         }, "strip", z.ZodTypeAny, {
             nodes: {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -2327,7 +2329,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -2338,8 +2340,6 @@ export declare const saveFlowSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -2365,6 +2365,8 @@ export declare const saveFlowSchema: z.ZodObject<{
             } | undefined;
         }, {
             nodes: {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -2398,7 +2400,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -2409,8 +2411,6 @@ export declare const saveFlowSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -2438,6 +2438,8 @@ export declare const saveFlowSchema: z.ZodObject<{
     }, "strip", z.ZodTypeAny, {
         flowData: {
             nodes: {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -2471,7 +2473,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -2482,8 +2484,6 @@ export declare const saveFlowSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -2511,6 +2511,8 @@ export declare const saveFlowSchema: z.ZodObject<{
     }, {
         flowData: {
             nodes: {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -2544,7 +2546,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -2555,8 +2557,6 @@ export declare const saveFlowSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -2583,12 +2583,11 @@ export declare const saveFlowSchema: z.ZodObject<{
         };
     }>;
 }, "strip", z.ZodTypeAny, {
-    params: {
-        id: string;
-    };
     body: {
         flowData: {
             nodes: {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -2622,7 +2621,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -2633,8 +2632,6 @@ export declare const saveFlowSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -2659,14 +2656,16 @@ export declare const saveFlowSchema: z.ZodObject<{
                 zoom: number;
             } | undefined;
         };
+    };
+    params: {
+        id: string;
     };
 }, {
-    params: {
-        id: string;
-    };
     body: {
         flowData: {
             nodes: {
+                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                id: string;
                 data: {
                     label: string;
                     options?: string[] | undefined;
@@ -2700,7 +2699,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
+                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -2711,8 +2710,6 @@ export declare const saveFlowSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
-                type: "message" | "end" | "assign" | "tag" | "action" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -2737,6 +2734,9 @@ export declare const saveFlowSchema: z.ZodObject<{
                 zoom: number;
             } | undefined;
         };
+    };
+    params: {
+        id: string;
     };
 }>;
 export type CreateChatbotSchema = z.infer<typeof createChatbotSchema>;

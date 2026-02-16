@@ -14,7 +14,7 @@ export declare const getConversationsSchema: z.ZodObject<{
         page: number;
         limit: number;
         sortBy: "createdAt" | "lastMessageAt" | "unreadCount";
-        sortOrder: "desc" | "asc";
+        sortOrder: "asc" | "desc";
         search?: string | undefined;
         isArchived?: boolean | undefined;
         isRead?: boolean | undefined;
@@ -29,14 +29,14 @@ export declare const getConversationsSchema: z.ZodObject<{
         assignedTo?: string | undefined;
         labels?: string | undefined;
         sortBy?: "createdAt" | "lastMessageAt" | "unreadCount" | undefined;
-        sortOrder?: "desc" | "asc" | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     query: {
         page: number;
         limit: number;
         sortBy: "createdAt" | "lastMessageAt" | "unreadCount";
-        sortOrder: "desc" | "asc";
+        sortOrder: "asc" | "desc";
         search?: string | undefined;
         isArchived?: boolean | undefined;
         isRead?: boolean | undefined;
@@ -53,7 +53,7 @@ export declare const getConversationsSchema: z.ZodObject<{
         assignedTo?: string | undefined;
         labels?: string | undefined;
         sortBy?: "createdAt" | "lastMessageAt" | "unreadCount" | undefined;
-        sortOrder?: "desc" | "asc" | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
     };
 }>;
 export declare const getConversationByIdSchema: z.ZodObject<{
@@ -301,9 +301,6 @@ export declare const sendMessageSchema: z.ZodObject<{
         filename?: string | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
-    params: {
-        id: string;
-    };
     body: {
         type: "text" | "document" | "image" | "video" | "audio" | "interactive" | "location";
         interactive?: {
@@ -327,11 +324,11 @@ export declare const sendMessageSchema: z.ZodObject<{
         mediaType?: string | undefined;
         replyToMessageId?: string | undefined;
         filename?: string | undefined;
+    };
+    params: {
+        id: string;
     };
 }, {
-    params: {
-        id: string;
-    };
     body: {
         type: "text" | "document" | "image" | "video" | "audio" | "interactive" | "location";
         interactive?: {
@@ -355,6 +352,9 @@ export declare const sendMessageSchema: z.ZodObject<{
         mediaType?: string | undefined;
         replyToMessageId?: string | undefined;
         filename?: string | undefined;
+    };
+    params: {
+        id: string;
     };
 }>;
 export declare const updateConversationSchema: z.ZodObject<{
@@ -382,24 +382,24 @@ export declare const updateConversationSchema: z.ZodObject<{
         labels?: string[] | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
-    params: {
-        id: string;
-    };
     body: {
         isArchived?: boolean | undefined;
         isRead?: boolean | undefined;
         assignedTo?: string | null | undefined;
         labels?: string[] | undefined;
+    };
+    params: {
+        id: string;
     };
 }, {
-    params: {
-        id: string;
-    };
     body: {
         isArchived?: boolean | undefined;
         isRead?: boolean | undefined;
         assignedTo?: string | null | undefined;
         labels?: string[] | undefined;
+    };
+    params: {
+        id: string;
     };
 }>;
 export declare const markAsReadSchema: z.ZodObject<{
@@ -452,18 +452,18 @@ export declare const assignConversationSchema: z.ZodObject<{
         userId: string | null;
     }>;
 }, "strip", z.ZodTypeAny, {
-    params: {
-        id: string;
-    };
     body: {
         userId: string | null;
+    };
+    params: {
+        id: string;
     };
 }, {
-    params: {
-        id: string;
-    };
     body: {
         userId: string | null;
+    };
+    params: {
+        id: string;
     };
 }>;
 export declare const addLabelsSchema: z.ZodObject<{
@@ -482,18 +482,18 @@ export declare const addLabelsSchema: z.ZodObject<{
         labels: string[];
     }>;
 }, "strip", z.ZodTypeAny, {
-    params: {
-        id: string;
-    };
     body: {
         labels: string[];
+    };
+    params: {
+        id: string;
     };
 }, {
-    params: {
-        id: string;
-    };
     body: {
         labels: string[];
+    };
+    params: {
+        id: string;
     };
 }>;
 export declare const deleteConversationSchema: z.ZodObject<{

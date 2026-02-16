@@ -85,7 +85,7 @@ const formatCampaign = (campaign: any): CampaignResponse => {
     templateName: campaign.template?.name || '',
     whatsappAccountId: campaign.whatsappAccountId,
     whatsappAccountPhone: campaign.whatsappAccount?.phoneNumber || '',
-    contactGroupId: campaign.contactGroupId,
+    contactGroupId: campaign.ContactGroupId,
     contactGroupName: campaign.ContactGroup?.name || null,
     audienceFilter: campaign.audienceFilter as AudienceFilter | null,
     variableMapping: null,

@@ -40,6 +40,7 @@ export declare const createTemplateSchema: z.ZodObject<{
         language: string;
         category: "MARKETING" | "UTILITY" | "AUTHENTICATION";
         bodyText: string;
+        whatsappAccountId?: string | undefined;
         headerType?: string | null | undefined;
         headerContent?: string | null | undefined;
         footerText?: string | null | undefined;
@@ -53,10 +54,10 @@ export declare const createTemplateSchema: z.ZodObject<{
             type: string;
             index: number;
         }[] | undefined;
-        whatsappAccountId?: string | undefined;
     }, {
         name: string;
         bodyText: string;
+        whatsappAccountId?: string | undefined;
         language?: string | undefined;
         category?: "MARKETING" | "UTILITY" | "AUTHENTICATION" | undefined;
         headerType?: string | null | undefined;
@@ -72,7 +73,6 @@ export declare const createTemplateSchema: z.ZodObject<{
             type: string;
             index: number;
         }[] | undefined;
-        whatsappAccountId?: string | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     body: {
@@ -80,6 +80,7 @@ export declare const createTemplateSchema: z.ZodObject<{
         language: string;
         category: "MARKETING" | "UTILITY" | "AUTHENTICATION";
         bodyText: string;
+        whatsappAccountId?: string | undefined;
         headerType?: string | null | undefined;
         headerContent?: string | null | undefined;
         footerText?: string | null | undefined;
@@ -93,12 +94,12 @@ export declare const createTemplateSchema: z.ZodObject<{
             type: string;
             index: number;
         }[] | undefined;
-        whatsappAccountId?: string | undefined;
     };
 }, {
     body: {
         name: string;
         bodyText: string;
+        whatsappAccountId?: string | undefined;
         language?: string | undefined;
         category?: "MARKETING" | "UTILITY" | "AUTHENTICATION" | undefined;
         headerType?: string | null | undefined;
@@ -114,7 +115,6 @@ export declare const createTemplateSchema: z.ZodObject<{
             type: string;
             index: number;
         }[] | undefined;
-        whatsappAccountId?: string | undefined;
     };
 }>;
 export declare const updateTemplateSchema: z.ZodObject<{
@@ -197,9 +197,6 @@ export declare const updateTemplateSchema: z.ZodObject<{
         }[] | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
-    params: {
-        id: string;
-    };
     body: {
         name?: string | undefined;
         language?: string | undefined;
@@ -218,11 +215,11 @@ export declare const updateTemplateSchema: z.ZodObject<{
             type: string;
             index: number;
         }[] | undefined;
+    };
+    params: {
+        id: string;
     };
 }, {
-    params: {
-        id: string;
-    };
     body: {
         name?: string | undefined;
         language?: string | undefined;
@@ -241,6 +238,9 @@ export declare const updateTemplateSchema: z.ZodObject<{
             type: string;
             index: number;
         }[] | undefined;
+    };
+    params: {
+        id: string;
     };
 }>;
 export declare const getTemplateByIdSchema: z.ZodObject<{
@@ -296,20 +296,20 @@ export declare const duplicateTemplateSchema: z.ZodObject<{
         whatsappAccountId?: string | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
-    params: {
-        id: string;
-    };
     body: {
         name: string;
         whatsappAccountId?: string | undefined;
+    };
+    params: {
+        id: string;
     };
 }, {
-    params: {
-        id: string;
-    };
     body: {
         name: string;
         whatsappAccountId?: string | undefined;
+    };
+    params: {
+        id: string;
     };
 }>;
 export declare const submitTemplateSchema: z.ZodObject<{
@@ -438,21 +438,21 @@ export declare const getTemplatesQuerySchema: z.ZodObject<{
         limit: number;
         search?: string | undefined;
         status?: "PENDING" | "APPROVED" | "REJECTED" | undefined;
+        whatsappAccountId?: string | undefined;
         language?: string | undefined;
         category?: "MARKETING" | "UTILITY" | "AUTHENTICATION" | undefined;
-        whatsappAccountId?: string | undefined;
         sortBy?: string | undefined;
-        sortOrder?: "desc" | "asc" | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
     }, {
         search?: string | undefined;
+        status?: "PENDING" | "APPROVED" | "REJECTED" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        status?: "PENDING" | "APPROVED" | "REJECTED" | undefined;
+        whatsappAccountId?: string | undefined;
         language?: string | undefined;
         category?: "MARKETING" | "UTILITY" | "AUTHENTICATION" | undefined;
-        whatsappAccountId?: string | undefined;
         sortBy?: string | undefined;
-        sortOrder?: "desc" | "asc" | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
     }>>;
 }, "strip", z.ZodTypeAny, {
     query?: {
@@ -460,23 +460,23 @@ export declare const getTemplatesQuerySchema: z.ZodObject<{
         limit: number;
         search?: string | undefined;
         status?: "PENDING" | "APPROVED" | "REJECTED" | undefined;
+        whatsappAccountId?: string | undefined;
         language?: string | undefined;
         category?: "MARKETING" | "UTILITY" | "AUTHENTICATION" | undefined;
-        whatsappAccountId?: string | undefined;
         sortBy?: string | undefined;
-        sortOrder?: "desc" | "asc" | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
     } | undefined;
 }, {
     query?: {
         search?: string | undefined;
+        status?: "PENDING" | "APPROVED" | "REJECTED" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        status?: "PENDING" | "APPROVED" | "REJECTED" | undefined;
+        whatsappAccountId?: string | undefined;
         language?: string | undefined;
         category?: "MARKETING" | "UTILITY" | "AUTHENTICATION" | undefined;
-        whatsappAccountId?: string | undefined;
         sortBy?: string | undefined;
-        sortOrder?: "desc" | "asc" | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
     } | undefined;
 }>;
 //# sourceMappingURL=templates.schema.d.ts.map

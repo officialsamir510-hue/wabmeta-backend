@@ -277,7 +277,7 @@ class MetaApiClient {
             const response = await this.client.get(`/${wabaId}/phone_numbers`, {
                 params: {
                     access_token: accessToken,
-                    fields: 'id,verified_name,display_phone_number,quality_rating,code_verification_status,platform_type,throughput,status,name_status',
+                    fields: 'id,verified_name,display_phone_number,quality_rating,code_verification_status,platform_type,throughput,status,name_status,messaging_limit_tier',
                 },
             });
             const phoneNumbers = (response.data.data || []).map((phone) => ({
@@ -290,6 +290,7 @@ class MetaApiClient {
                 throughput: phone.throughput,
                 status: phone.status,
                 nameStatus: phone.name_status,
+                messagingLimitTier: phone.messaging_limit_tier,
             }));
             console.log(`[Meta API] ✅ Found ${phoneNumbers.length} phone numbers`);
             return phoneNumbers;

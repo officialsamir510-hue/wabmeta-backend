@@ -73,18 +73,19 @@ declare class WhatsAppService {
                 id: string;
                 createdAt: Date;
                 updatedAt: Date;
-                phoneNumberId: string | null;
                 contactId: string;
+                phoneNumberId: string | null;
                 lastMessageAt: Date | null;
                 lastMessagePreview: string | null;
+                lastCustomerMessageAt: Date | null;
+                windowExpiresAt: Date | null;
+                isWindowOpen: boolean;
+                lastBotMessageAt: Date | null;
                 isArchived: boolean;
                 isRead: boolean;
                 unreadCount: number;
                 assignedTo: string | null;
                 labels: string[];
-                lastCustomerMessageAt: Date | null;
-                windowExpiresAt: Date | null;
-                isWindowOpen: boolean;
             };
         } & {
             type: import(".prisma/client").$Enums.MessageType;
@@ -92,7 +93,10 @@ declare class WhatsAppService {
             status: import(".prisma/client").$Enums.MessageStatus;
             createdAt: Date;
             updatedAt: Date;
+            metadata: import("@prisma/client/runtime/library").JsonValue | null;
+            whatsappAccountId: string | null;
             waMessageId: string | null;
+            wamId: string | null;
             direction: import(".prisma/client").$Enums.MessageDirection;
             content: string | null;
             mediaUrl: string | null;
@@ -107,12 +111,9 @@ declare class WhatsAppService {
             failedAt: Date | null;
             failureReason: string | null;
             replyToMessageId: string | null;
-            metadata: import("@prisma/client/runtime/library").JsonValue | null;
             retryCount: number;
             statusUpdatedAt: Date | null;
-            wamId: string | null;
             conversationId: string;
-            whatsappAccountId: string | null;
         };
     }>;
     /**
@@ -146,18 +147,19 @@ declare class WhatsAppService {
                 id: string;
                 createdAt: Date;
                 updatedAt: Date;
-                phoneNumberId: string | null;
                 contactId: string;
+                phoneNumberId: string | null;
                 lastMessageAt: Date | null;
                 lastMessagePreview: string | null;
+                lastCustomerMessageAt: Date | null;
+                windowExpiresAt: Date | null;
+                isWindowOpen: boolean;
+                lastBotMessageAt: Date | null;
                 isArchived: boolean;
                 isRead: boolean;
                 unreadCount: number;
                 assignedTo: string | null;
                 labels: string[];
-                lastCustomerMessageAt: Date | null;
-                windowExpiresAt: Date | null;
-                isWindowOpen: boolean;
             };
         } & {
             type: import(".prisma/client").$Enums.MessageType;
@@ -165,7 +167,10 @@ declare class WhatsAppService {
             status: import(".prisma/client").$Enums.MessageStatus;
             createdAt: Date;
             updatedAt: Date;
+            metadata: import("@prisma/client/runtime/library").JsonValue | null;
+            whatsappAccountId: string | null;
             waMessageId: string | null;
+            wamId: string | null;
             direction: import(".prisma/client").$Enums.MessageDirection;
             content: string | null;
             mediaUrl: string | null;
@@ -180,12 +185,9 @@ declare class WhatsAppService {
             failedAt: Date | null;
             failureReason: string | null;
             replyToMessageId: string | null;
-            metadata: import("@prisma/client/runtime/library").JsonValue | null;
             retryCount: number;
             statusUpdatedAt: Date | null;
-            wamId: string | null;
             conversationId: string;
-            whatsappAccountId: string | null;
         };
     }>;
     /**
@@ -219,18 +221,19 @@ declare class WhatsAppService {
                 id: string;
                 createdAt: Date;
                 updatedAt: Date;
-                phoneNumberId: string | null;
                 contactId: string;
+                phoneNumberId: string | null;
                 lastMessageAt: Date | null;
                 lastMessagePreview: string | null;
+                lastCustomerMessageAt: Date | null;
+                windowExpiresAt: Date | null;
+                isWindowOpen: boolean;
+                lastBotMessageAt: Date | null;
                 isArchived: boolean;
                 isRead: boolean;
                 unreadCount: number;
                 assignedTo: string | null;
                 labels: string[];
-                lastCustomerMessageAt: Date | null;
-                windowExpiresAt: Date | null;
-                isWindowOpen: boolean;
             };
         } & {
             type: import(".prisma/client").$Enums.MessageType;
@@ -238,7 +241,10 @@ declare class WhatsAppService {
             status: import(".prisma/client").$Enums.MessageStatus;
             createdAt: Date;
             updatedAt: Date;
+            metadata: import("@prisma/client/runtime/library").JsonValue | null;
+            whatsappAccountId: string | null;
             waMessageId: string | null;
+            wamId: string | null;
             direction: import(".prisma/client").$Enums.MessageDirection;
             content: string | null;
             mediaUrl: string | null;
@@ -253,12 +259,9 @@ declare class WhatsAppService {
             failedAt: Date | null;
             failureReason: string | null;
             replyToMessageId: string | null;
-            metadata: import("@prisma/client/runtime/library").JsonValue | null;
             retryCount: number;
             statusUpdatedAt: Date | null;
-            wamId: string | null;
             conversationId: string;
-            whatsappAccountId: string | null;
         };
     }>;
     /**
@@ -292,18 +295,19 @@ declare class WhatsAppService {
                 id: string;
                 createdAt: Date;
                 updatedAt: Date;
-                phoneNumberId: string | null;
                 contactId: string;
+                phoneNumberId: string | null;
                 lastMessageAt: Date | null;
                 lastMessagePreview: string | null;
+                lastCustomerMessageAt: Date | null;
+                windowExpiresAt: Date | null;
+                isWindowOpen: boolean;
+                lastBotMessageAt: Date | null;
                 isArchived: boolean;
                 isRead: boolean;
                 unreadCount: number;
                 assignedTo: string | null;
                 labels: string[];
-                lastCustomerMessageAt: Date | null;
-                windowExpiresAt: Date | null;
-                isWindowOpen: boolean;
             };
         } & {
             type: import(".prisma/client").$Enums.MessageType;
@@ -311,7 +315,10 @@ declare class WhatsAppService {
             status: import(".prisma/client").$Enums.MessageStatus;
             createdAt: Date;
             updatedAt: Date;
+            metadata: import("@prisma/client/runtime/library").JsonValue | null;
+            whatsappAccountId: string | null;
             waMessageId: string | null;
+            wamId: string | null;
             direction: import(".prisma/client").$Enums.MessageDirection;
             content: string | null;
             mediaUrl: string | null;
@@ -326,12 +333,9 @@ declare class WhatsAppService {
             failedAt: Date | null;
             failureReason: string | null;
             replyToMessageId: string | null;
-            metadata: import("@prisma/client/runtime/library").JsonValue | null;
             retryCount: number;
             statusUpdatedAt: Date | null;
-            wamId: string | null;
             conversationId: string;
-            whatsappAccountId: string | null;
         };
     }>;
     /**
@@ -387,12 +391,20 @@ declare class WhatsAppService {
         createdAt: Date;
         updatedAt: Date;
         accessToken: string | null;
-        webhookSecret: string | null;
         phoneNumberId: string;
+        webhookSecret: string | null;
         wabaId: string;
         displayName: string;
         qualityRating: string | null;
         tokenExpiresAt: Date | null;
+        codeVerificationStatus: string | null;
+        nameStatus: string | null;
+        verifiedName: string | null;
+        messagingLimit: string | null;
+        dailyMessageLimit: number;
+        dailyMessagesUsed: number;
+        lastLimitReset: Date;
+        businessProfile: import("@prisma/client/runtime/library").JsonValue | null;
         isDefault: boolean;
     } | null>;
     /**

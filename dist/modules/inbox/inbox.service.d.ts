@@ -27,18 +27,19 @@ declare class InboxService {
             id: string;
             createdAt: Date;
             updatedAt: Date;
-            phoneNumberId: string | null;
             contactId: string;
+            phoneNumberId: string | null;
             lastMessageAt: Date | null;
             lastMessagePreview: string | null;
+            lastCustomerMessageAt: Date | null;
+            windowExpiresAt: Date | null;
+            isWindowOpen: boolean;
+            lastBotMessageAt: Date | null;
             isArchived: boolean;
             isRead: boolean;
             unreadCount: number;
             assignedTo: string | null;
             labels: string[];
-            lastCustomerMessageAt: Date | null;
-            windowExpiresAt: Date | null;
-            isWindowOpen: boolean;
         }[];
         pagination: {
             page: number;
@@ -80,18 +81,19 @@ declare class InboxService {
         id: string;
         createdAt: Date;
         updatedAt: Date;
-        phoneNumberId: string | null;
         contactId: string;
+        phoneNumberId: string | null;
         lastMessageAt: Date | null;
         lastMessagePreview: string | null;
+        lastCustomerMessageAt: Date | null;
+        windowExpiresAt: Date | null;
+        isWindowOpen: boolean;
+        lastBotMessageAt: Date | null;
         isArchived: boolean;
         isRead: boolean;
         unreadCount: number;
         assignedTo: string | null;
         labels: string[];
-        lastCustomerMessageAt: Date | null;
-        windowExpiresAt: Date | null;
-        isWindowOpen: boolean;
     }>;
     /**
      * Get conversation by ID (alias for controller compatibility)
@@ -120,18 +122,19 @@ declare class InboxService {
         id: string;
         createdAt: Date;
         updatedAt: Date;
-        phoneNumberId: string | null;
         contactId: string;
+        phoneNumberId: string | null;
         lastMessageAt: Date | null;
         lastMessagePreview: string | null;
+        lastCustomerMessageAt: Date | null;
+        windowExpiresAt: Date | null;
+        isWindowOpen: boolean;
+        lastBotMessageAt: Date | null;
         isArchived: boolean;
         isRead: boolean;
         unreadCount: number;
         assignedTo: string | null;
         labels: string[];
-        lastCustomerMessageAt: Date | null;
-        windowExpiresAt: Date | null;
-        isWindowOpen: boolean;
     }>;
     /**
      * Get messages for a conversation
@@ -147,7 +150,10 @@ declare class InboxService {
             status: import(".prisma/client").$Enums.MessageStatus;
             createdAt: Date;
             updatedAt: Date;
+            metadata: Prisma.JsonValue | null;
+            whatsappAccountId: string | null;
             waMessageId: string | null;
+            wamId: string | null;
             direction: import(".prisma/client").$Enums.MessageDirection;
             content: string | null;
             mediaUrl: string | null;
@@ -162,12 +168,9 @@ declare class InboxService {
             failedAt: Date | null;
             failureReason: string | null;
             replyToMessageId: string | null;
-            metadata: Prisma.JsonValue | null;
             retryCount: number;
             statusUpdatedAt: Date | null;
-            wamId: string | null;
             conversationId: string;
-            whatsappAccountId: string | null;
         }[];
         pagination: {
             page: number;
@@ -191,18 +194,19 @@ declare class InboxService {
         id: string;
         createdAt: Date;
         updatedAt: Date;
-        phoneNumberId: string | null;
         contactId: string;
+        phoneNumberId: string | null;
         lastMessageAt: Date | null;
         lastMessagePreview: string | null;
+        lastCustomerMessageAt: Date | null;
+        windowExpiresAt: Date | null;
+        isWindowOpen: boolean;
+        lastBotMessageAt: Date | null;
         isArchived: boolean;
         isRead: boolean;
         unreadCount: number;
         assignedTo: string | null;
         labels: string[];
-        lastCustomerMessageAt: Date | null;
-        windowExpiresAt: Date | null;
-        isWindowOpen: boolean;
     }>;
     /**
      * Update archive status
@@ -213,18 +217,19 @@ declare class InboxService {
         id: string;
         createdAt: Date;
         updatedAt: Date;
-        phoneNumberId: string | null;
         contactId: string;
+        phoneNumberId: string | null;
         lastMessageAt: Date | null;
         lastMessagePreview: string | null;
+        lastCustomerMessageAt: Date | null;
+        windowExpiresAt: Date | null;
+        isWindowOpen: boolean;
+        lastBotMessageAt: Date | null;
         isArchived: boolean;
         isRead: boolean;
         unreadCount: number;
         assignedTo: string | null;
         labels: string[];
-        lastCustomerMessageAt: Date | null;
-        windowExpiresAt: Date | null;
-        isWindowOpen: boolean;
     }>;
     /**
      * Archive conversation
@@ -235,18 +240,19 @@ declare class InboxService {
         id: string;
         createdAt: Date;
         updatedAt: Date;
-        phoneNumberId: string | null;
         contactId: string;
+        phoneNumberId: string | null;
         lastMessageAt: Date | null;
         lastMessagePreview: string | null;
+        lastCustomerMessageAt: Date | null;
+        windowExpiresAt: Date | null;
+        isWindowOpen: boolean;
+        lastBotMessageAt: Date | null;
         isArchived: boolean;
         isRead: boolean;
         unreadCount: number;
         assignedTo: string | null;
         labels: string[];
-        lastCustomerMessageAt: Date | null;
-        windowExpiresAt: Date | null;
-        isWindowOpen: boolean;
     }>;
     /**
      * Update labels
@@ -257,18 +263,19 @@ declare class InboxService {
         id: string;
         createdAt: Date;
         updatedAt: Date;
-        phoneNumberId: string | null;
         contactId: string;
+        phoneNumberId: string | null;
         lastMessageAt: Date | null;
         lastMessagePreview: string | null;
+        lastCustomerMessageAt: Date | null;
+        windowExpiresAt: Date | null;
+        isWindowOpen: boolean;
+        lastBotMessageAt: Date | null;
         isArchived: boolean;
         isRead: boolean;
         unreadCount: number;
         assignedTo: string | null;
         labels: string[];
-        lastCustomerMessageAt: Date | null;
-        windowExpiresAt: Date | null;
-        isWindowOpen: boolean;
     }>;
     /**
      * Add labels to conversation
@@ -278,18 +285,19 @@ declare class InboxService {
         id: string;
         createdAt: Date;
         updatedAt: Date;
-        phoneNumberId: string | null;
         contactId: string;
+        phoneNumberId: string | null;
         lastMessageAt: Date | null;
         lastMessagePreview: string | null;
+        lastCustomerMessageAt: Date | null;
+        windowExpiresAt: Date | null;
+        isWindowOpen: boolean;
+        lastBotMessageAt: Date | null;
         isArchived: boolean;
         isRead: boolean;
         unreadCount: number;
         assignedTo: string | null;
         labels: string[];
-        lastCustomerMessageAt: Date | null;
-        windowExpiresAt: Date | null;
-        isWindowOpen: boolean;
     }>;
     /**
      * Remove label from conversation
@@ -299,18 +307,19 @@ declare class InboxService {
         id: string;
         createdAt: Date;
         updatedAt: Date;
-        phoneNumberId: string | null;
         contactId: string;
+        phoneNumberId: string | null;
         lastMessageAt: Date | null;
         lastMessagePreview: string | null;
+        lastCustomerMessageAt: Date | null;
+        windowExpiresAt: Date | null;
+        isWindowOpen: boolean;
+        lastBotMessageAt: Date | null;
         isArchived: boolean;
         isRead: boolean;
         unreadCount: number;
         assignedTo: string | null;
         labels: string[];
-        lastCustomerMessageAt: Date | null;
-        windowExpiresAt: Date | null;
-        isWindowOpen: boolean;
     }>;
     /**
      * Assign conversation
@@ -321,18 +330,19 @@ declare class InboxService {
         id: string;
         createdAt: Date;
         updatedAt: Date;
-        phoneNumberId: string | null;
         contactId: string;
+        phoneNumberId: string | null;
         lastMessageAt: Date | null;
         lastMessagePreview: string | null;
+        lastCustomerMessageAt: Date | null;
+        windowExpiresAt: Date | null;
+        isWindowOpen: boolean;
+        lastBotMessageAt: Date | null;
         isArchived: boolean;
         isRead: boolean;
         unreadCount: number;
         assignedTo: string | null;
         labels: string[];
-        lastCustomerMessageAt: Date | null;
-        windowExpiresAt: Date | null;
-        isWindowOpen: boolean;
     }>;
     /**
      * Update conversation
@@ -342,18 +352,19 @@ declare class InboxService {
         id: string;
         createdAt: Date;
         updatedAt: Date;
-        phoneNumberId: string | null;
         contactId: string;
+        phoneNumberId: string | null;
         lastMessageAt: Date | null;
         lastMessagePreview: string | null;
+        lastCustomerMessageAt: Date | null;
+        windowExpiresAt: Date | null;
+        isWindowOpen: boolean;
+        lastBotMessageAt: Date | null;
         isArchived: boolean;
         isRead: boolean;
         unreadCount: number;
         assignedTo: string | null;
         labels: string[];
-        lastCustomerMessageAt: Date | null;
-        windowExpiresAt: Date | null;
-        isWindowOpen: boolean;
     }>;
     /**
      * Delete conversation
@@ -397,18 +408,19 @@ declare class InboxService {
                 id: string;
                 createdAt: Date;
                 updatedAt: Date;
-                phoneNumberId: string | null;
                 contactId: string;
+                phoneNumberId: string | null;
                 lastMessageAt: Date | null;
                 lastMessagePreview: string | null;
+                lastCustomerMessageAt: Date | null;
+                windowExpiresAt: Date | null;
+                isWindowOpen: boolean;
+                lastBotMessageAt: Date | null;
                 isArchived: boolean;
                 isRead: boolean;
                 unreadCount: number;
                 assignedTo: string | null;
                 labels: string[];
-                lastCustomerMessageAt: Date | null;
-                windowExpiresAt: Date | null;
-                isWindowOpen: boolean;
             };
         } & {
             type: import(".prisma/client").$Enums.MessageType;
@@ -416,7 +428,10 @@ declare class InboxService {
             status: import(".prisma/client").$Enums.MessageStatus;
             createdAt: Date;
             updatedAt: Date;
+            metadata: Prisma.JsonValue | null;
+            whatsappAccountId: string | null;
             waMessageId: string | null;
+            wamId: string | null;
             direction: import(".prisma/client").$Enums.MessageDirection;
             content: string | null;
             mediaUrl: string | null;
@@ -431,12 +446,9 @@ declare class InboxService {
             failedAt: Date | null;
             failureReason: string | null;
             replyToMessageId: string | null;
-            metadata: Prisma.JsonValue | null;
             retryCount: number;
             statusUpdatedAt: Date | null;
-            wamId: string | null;
             conversationId: string;
-            whatsappAccountId: string | null;
         })[];
         meta: {
             page: number;
@@ -489,18 +501,19 @@ declare class InboxService {
         id: string;
         createdAt: Date;
         updatedAt: Date;
-        phoneNumberId: string | null;
         contactId: string;
+        phoneNumberId: string | null;
         lastMessageAt: Date | null;
         lastMessagePreview: string | null;
+        lastCustomerMessageAt: Date | null;
+        windowExpiresAt: Date | null;
+        isWindowOpen: boolean;
+        lastBotMessageAt: Date | null;
         isArchived: boolean;
         isRead: boolean;
         unreadCount: number;
         assignedTo: string | null;
         labels: string[];
-        lastCustomerMessageAt: Date | null;
-        windowExpiresAt: Date | null;
-        isWindowOpen: boolean;
     }>;
     /**
      * Send message (placeholder - implement with WhatsApp API)
@@ -511,7 +524,10 @@ declare class InboxService {
         status: import(".prisma/client").$Enums.MessageStatus;
         createdAt: Date;
         updatedAt: Date;
+        metadata: Prisma.JsonValue | null;
+        whatsappAccountId: string | null;
         waMessageId: string | null;
+        wamId: string | null;
         direction: import(".prisma/client").$Enums.MessageDirection;
         content: string | null;
         mediaUrl: string | null;
@@ -526,12 +542,9 @@ declare class InboxService {
         failedAt: Date | null;
         failureReason: string | null;
         replyToMessageId: string | null;
-        metadata: Prisma.JsonValue | null;
         retryCount: number;
         statusUpdatedAt: Date | null;
-        wamId: string | null;
         conversationId: string;
-        whatsappAccountId: string | null;
     }>;
 }
 export declare const inboxService: InboxService;

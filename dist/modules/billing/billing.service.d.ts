@@ -16,13 +16,13 @@ declare class BillingService {
             maxCampaigns: number;
             maxChatbots: number;
             maxTemplates: number;
-            features: import("@prisma/client/runtime/library").JsonValue;
-            isActive: boolean;
             maxWhatsAppAccounts: number;
             maxMessagesPerMonth: number;
             maxCampaignsPerMonth: number;
             maxAutomations: number;
             maxApiCalls: number;
+            features: import("@prisma/client/runtime/library").JsonValue;
+            isActive: boolean;
         } | {
             id: string;
             name: string;
@@ -62,13 +62,13 @@ declare class BillingService {
             maxCampaigns: number;
             maxChatbots: number;
             maxTemplates: number;
-            features: import("@prisma/client/runtime/library").JsonValue;
-            isActive: boolean;
             maxWhatsAppAccounts: number;
             maxMessagesPerMonth: number;
             maxCampaignsPerMonth: number;
             maxAutomations: number;
             maxApiCalls: number;
+            features: import("@prisma/client/runtime/library").JsonValue;
+            isActive: boolean;
         };
         organizationId: string;
         id: string;
@@ -176,12 +176,12 @@ declare class BillingService {
         maxCampaigns: number;
         maxChatbots: number;
         maxTemplates: number;
-        isActive: boolean;
         maxWhatsAppAccounts: number;
         maxMessagesPerMonth: number;
         maxCampaignsPerMonth: number;
         maxAutomations: number;
         maxApiCalls: number;
+        isActive: boolean;
     }[]>;
     private getDefaultPlans;
     getUsage(organizationId: string): Promise<{
@@ -259,13 +259,13 @@ declare class BillingService {
             maxCampaigns: number;
             maxChatbots: number;
             maxTemplates: number;
-            features: import("@prisma/client/runtime/library").JsonValue;
-            isActive: boolean;
             maxWhatsAppAccounts: number;
             maxMessagesPerMonth: number;
             maxCampaignsPerMonth: number;
             maxAutomations: number;
             maxApiCalls: number;
+            features: import("@prisma/client/runtime/library").JsonValue;
+            isActive: boolean;
         };
         message: string;
     }>;
@@ -352,13 +352,13 @@ declare class BillingService {
                 maxCampaigns: number;
                 maxChatbots: number;
                 maxTemplates: number;
-                features: import("@prisma/client/runtime/library").JsonValue;
-                isActive: boolean;
                 maxWhatsAppAccounts: number;
                 maxMessagesPerMonth: number;
                 maxCampaignsPerMonth: number;
                 maxAutomations: number;
                 maxApiCalls: number;
+                features: import("@prisma/client/runtime/library").JsonValue;
+                isActive: boolean;
             };
         } & {
             organizationId: string;

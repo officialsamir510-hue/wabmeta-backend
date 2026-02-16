@@ -1,7 +1,9 @@
-// src/modules/meta/meta.routes.ts
+// 📁 src/modules/meta/meta.routes.ts
 
 import { Router } from 'express';
-import { metaController } from './meta.controller';
+import { MetaController } from './meta.controller'; // Changed import
+const metaController = new MetaController(); // Instantiate
+
 import { authenticate } from '../../middleware/auth';
 import { validate } from '../../middleware/validate';
 import { tokenExchangeSchema } from './meta.schema';
@@ -12,11 +14,28 @@ const router = Router();
 // PUBLIC ROUTES
 // ============================================
 
+// Webhook verification (GET) - No auth needed
+router.get('/webhook', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  const verifyToken = process.env.META_WEBHOOK_VERIFY_TOKEN;
+
+  if (mode === 'subscribe' && token === verifyToken) {
+    console.log('✅ Webhook verified');
+    res.status(200).send(challenge);
+  } else {
+    console.error('❌ Webhook verification failed');
+    res.sendStatus(403);
+  }
+});
+
 // Get embedded signup configuration
-router.get('/config', metaController.getEmbeddedConfig.bind(metaController));
+router.get('/config', metaController.getEmbeddedSignupConfig.bind(metaController));
 
 // Get integration status
-router.get('/status', metaController.getStatus.bind(metaController));
+router.get('/status', metaController.getIntegrationStatus.bind(metaController));
 
 // ============================================
 // PROTECTED ROUTES (Requires Authentication)
@@ -37,27 +56,11 @@ router.post(
   metaController.handleCallback.bind(metaController)
 );
 
-// Backward-compatible alias for frontend that uses /meta/connect
+// Connect via token/code directly
 router.post(
   '/connect',
   validate(tokenExchangeSchema),
-  metaController.handleCallback.bind(metaController)
-);
-
-// ============================================
-// DEBUG ROUTES
-// ============================================
-
-// Debug single account token
-router.get(
-  '/debug-token/:accountId',
-  metaController.debugToken.bind(metaController)
-);
-
-// Debug all accounts for organization
-router.get(
-  '/debug-all/:organizationId',
-  metaController.debugAllTokens.bind(metaController)
+  metaController.connect.bind(metaController)
 );
 
 // ============================================
@@ -105,33 +108,5 @@ router.post(
   '/organizations/:organizationId/accounts/:accountId/sync-templates',
   metaController.syncTemplates.bind(metaController)
 );
-
-// ============================================
-// DANGER ZONE - Development/Debug Routes
-// ============================================
-
-// ⚠️ DANGEROUS: Reset all Meta connections and data for organization
-// This will delete all WhatsApp accounts, templates, campaigns, messages, etc.
-// Use only for development/debugging
-if (process.env.NODE_ENV !== 'production') {
-  router.post('/reset-account', metaController.resetAccount.bind(metaController));
-  router.post('/force-disconnect-all', metaController.forceDisconnectAll.bind(metaController));
-} else {
-  // In production, require special header or admin role
-  router.post('/reset-account',
-    (req, res, next) => {
-      // Add extra security check for production
-      const adminKey = req.headers['x-admin-key'];
-      if (adminKey !== process.env.ADMIN_SECRET_KEY) {
-        return res.status(403).json({
-          success: false,
-          message: 'This operation requires admin privileges'
-        });
-      }
-      next();
-    },
-    metaController.resetAccount.bind(metaController)
-  );
-}
 
 export default router;

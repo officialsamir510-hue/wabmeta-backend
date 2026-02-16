@@ -190,8 +190,8 @@ export declare const sendTemplateMessageSchema: z.ZodObject<{
         }>, "many">>;
     }, "strip", z.ZodTypeAny, {
         to: string;
-        templateName: string;
         whatsappAccountId: string;
+        templateName: string;
         languageCode: string;
         components?: {
             type: "body" | "header" | "button";
@@ -214,8 +214,8 @@ export declare const sendTemplateMessageSchema: z.ZodObject<{
         }[] | undefined;
     }, {
         to: string;
-        templateName: string;
         whatsappAccountId: string;
+        templateName: string;
         components?: {
             type: "body" | "header" | "button";
             parameters: {
@@ -240,8 +240,8 @@ export declare const sendTemplateMessageSchema: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     body: {
         to: string;
-        templateName: string;
         whatsappAccountId: string;
+        templateName: string;
         languageCode: string;
         components?: {
             type: "body" | "header" | "button";
@@ -266,8 +266,8 @@ export declare const sendTemplateMessageSchema: z.ZodObject<{
 }, {
     body: {
         to: string;
-        templateName: string;
         whatsappAccountId: string;
+        templateName: string;
         components?: {
             type: "body" | "header" | "button";
             parameters: {
@@ -301,15 +301,15 @@ export declare const sendMediaMessageSchema: z.ZodObject<{
     }, "strip", z.ZodTypeAny, {
         type: "document" | "image" | "video" | "audio";
         to: string;
-        mediaUrl: string;
         whatsappAccountId: string;
+        mediaUrl: string;
         caption?: string | undefined;
         filename?: string | undefined;
     }, {
         type: "document" | "image" | "video" | "audio";
         to: string;
-        mediaUrl: string;
         whatsappAccountId: string;
+        mediaUrl: string;
         caption?: string | undefined;
         filename?: string | undefined;
     }>;
@@ -317,8 +317,8 @@ export declare const sendMediaMessageSchema: z.ZodObject<{
     body: {
         type: "document" | "image" | "video" | "audio";
         to: string;
-        mediaUrl: string;
         whatsappAccountId: string;
+        mediaUrl: string;
         caption?: string | undefined;
         filename?: string | undefined;
     };
@@ -326,8 +326,8 @@ export declare const sendMediaMessageSchema: z.ZodObject<{
     body: {
         type: "document" | "image" | "video" | "audio";
         to: string;
-        mediaUrl: string;
         whatsappAccountId: string;
+        mediaUrl: string;
         caption?: string | undefined;
         filename?: string | undefined;
     };
@@ -382,8 +382,8 @@ export declare const sendInteractiveMessageSchema: z.ZodObject<{
         }>, "many">>;
     }, "strip", z.ZodTypeAny, {
         to: string;
-        bodyText: string;
         whatsappAccountId: string;
+        bodyText: string;
         interactiveType: "list" | "button";
         footerText?: string | undefined;
         buttons?: {
@@ -401,8 +401,8 @@ export declare const sendInteractiveMessageSchema: z.ZodObject<{
         headerText?: string | undefined;
     }, {
         to: string;
-        bodyText: string;
         whatsappAccountId: string;
+        bodyText: string;
         interactiveType: "list" | "button";
         footerText?: string | undefined;
         buttons?: {
@@ -422,8 +422,8 @@ export declare const sendInteractiveMessageSchema: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     body: {
         to: string;
-        bodyText: string;
         whatsappAccountId: string;
+        bodyText: string;
         interactiveType: "list" | "button";
         footerText?: string | undefined;
         buttons?: {
@@ -443,8 +443,8 @@ export declare const sendInteractiveMessageSchema: z.ZodObject<{
 }, {
     body: {
         to: string;
-        bodyText: string;
         whatsappAccountId: string;
+        bodyText: string;
         interactiveType: "list" | "button";
         footerText?: string | undefined;
         buttons?: {
