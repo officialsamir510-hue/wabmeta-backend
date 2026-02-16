@@ -1,11 +1,11 @@
-// 📁 src/modules/meta/meta.routes.ts - COMPLETE WITH FIX
+// 📁 src/modules/meta/meta.routes.ts - COMPLETE WITH ALL ORG ROUTES
 
 import { Router } from 'express';
 import { metaController } from './meta.controller';
 import { authenticate } from '../../middleware/auth';
 import { metaService } from './meta.service';
 import { successResponse } from '../../utils/response';
-import { config } from '../../config';
+import prisma from '../../config/database';
 
 const router = Router();
 
@@ -18,7 +18,9 @@ router.get('/webhook', (req, res) => {
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  if (mode === 'subscribe' && token === config.meta.webhookVerifyToken) {
+  const verifyToken = process.env.META_WEBHOOK_VERIFY_TOKEN;
+
+  if (mode === 'subscribe' && token === verifyToken) {
     console.log('✅ Webhook verified');
     res.status(200).send(challenge);
   } else {
@@ -46,7 +48,7 @@ router.get('/config', metaController.getEmbeddedSignupConfig.bind(metaController
 router.get('/integration-status', metaController.getIntegrationStatus.bind(metaController));
 
 // ============================================
-// ORGANIZATION ROUTES
+// ORGANIZATION ROUTES (Frontend uses these)
 // ============================================
 
 // Get organization's WhatsApp accounts
@@ -62,6 +64,89 @@ router.get('/organizations/:organizationId/accounts', async (req, res, next) => 
   }
 });
 
+// Get single organization account
+router.get('/organizations/:organizationId/accounts/:accountId', async (req, res, next) => {
+  try {
+    const { organizationId, accountId } = req.params;
+
+    const account = await metaService.getAccount(accountId, organizationId);
+
+    return successResponse(res, { data: account, message: 'Account fetched' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Disconnect organization's WhatsApp account
+router.delete('/organizations/:organizationId/accounts/:accountId', async (req, res, next) => {
+  try {
+    const { organizationId, accountId } = req.params;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      throw new Error('Authentication required');
+    }
+
+    // Verify user has permission
+    const membership = await prisma.organizationMember.findFirst({
+      where: {
+        organizationId,
+        userId,
+        role: { in: ['OWNER', 'ADMIN'] },
+      },
+    });
+
+    if (!membership) {
+      throw new Error('You do not have permission to disconnect');
+    }
+
+    const result = await metaService.disconnectAccount(accountId, organizationId);
+
+    return successResponse(res, { data: result, message: 'Account disconnected' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Set organization's default account
+router.post('/organizations/:organizationId/accounts/:accountId/default', async (req, res, next) => {
+  try {
+    const { organizationId, accountId } = req.params;
+
+    const result = await metaService.setDefaultAccount(accountId, organizationId);
+
+    return successResponse(res, { data: result, message: 'Default account updated' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Sync organization account templates
+router.post('/organizations/:organizationId/accounts/:accountId/sync-templates', async (req, res, next) => {
+  try {
+    const { organizationId, accountId } = req.params;
+
+    const result = await metaService.syncTemplates(accountId, organizationId);
+
+    return successResponse(res, { data: result, message: 'Templates synced' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Refresh organization account health
+router.post('/organizations/:organizationId/accounts/:accountId/health', async (req, res, next) => {
+  try {
+    const { organizationId, accountId } = req.params;
+
+    const result = await metaService.refreshAccountHealth(accountId, organizationId);
+
+    return successResponse(res, { data: result, message: 'Health check completed' });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Organization status
 router.get(
   '/organizations/:organizationId/status',
@@ -69,7 +154,7 @@ router.get(
 );
 
 // ============================================
-// ACCOUNT MANAGEMENT ROUTES
+// ACCOUNT MANAGEMENT ROUTES (Header-based)
 // ============================================
 
 // Get all accounts (alternative endpoint)
