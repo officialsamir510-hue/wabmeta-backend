@@ -1,3 +1,5 @@
+// 📁 prisma/schema.prisma - COMPLETE UPDATED VERSION
+
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["fullTextIndex", "fullTextSearch"]
@@ -156,6 +158,8 @@ model Plan {
   description          String?
   monthlyPrice         Decimal        @db.Decimal(10, 2)
   yearlyPrice          Decimal        @db.Decimal(10, 2)
+  
+  // Limits
   maxContacts          Int
   maxMessages          Int
   maxTeamMembers       Int
@@ -167,6 +171,7 @@ model Plan {
   maxCampaignsPerMonth Int
   maxAutomations       Int
   maxApiCalls          Int
+  
   features             Json           @default("[]")
   isActive             Boolean        @default(true)
   createdAt            DateTime       @default(now())
@@ -210,7 +215,7 @@ enum SubscriptionStatus {
 }
 
 // ============================================
-// WHATSAPP ACCOUNTS
+// WHATSAPP ACCOUNTS - ✅ UPDATED
 // ============================================
 
 model WhatsAppAccount {
@@ -221,27 +226,39 @@ model WhatsAppAccount {
   phoneNumber             String
   displayName             String
   qualityRating           String?
+  
+  // Tokens
   accessToken             String?
   tokenExpiresAt          DateTime?
+  
+  // Webhook
   webhookSecret           String?
+  
+  // Status & Verification - ✅ ADDED
   status                  WhatsAppAccountStatus @default(PENDING)
-  codeVerificationStatus  String?
-  nameStatus              String?
+  codeVerificationStatus  String?               // VERIFIED, NOT_VERIFIED
+  nameStatus              String?               // APPROVED, PENDING, REJECTED
   verifiedName            String?
-  messagingLimit          String?
+  
+  // Rate Limiting - ✅ ADDED
+  messagingLimit          String?               // TIER_50, TIER_250, TIER_1K, TIER_10K, TIER_100K, TIER_UNLIMITED
   dailyMessageLimit       Int                   @default(1000)
   dailyMessagesUsed       Int                   @default(0)
   lastLimitReset          DateTime              @default(now())
-  businessProfile         Json?
+  
+  // Business Profile - ✅ ADDED
+  businessProfile         Json?                 // Complete Meta business profile
+  
   isDefault               Boolean               @default(false)
   createdAt               DateTime              @default(now())
   updatedAt               DateTime              @updatedAt
   
+  // Relations
   organization            Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  templates               Template[]
+  templates               Template[]            // ✅ ADDED
   campaigns               Campaign[]
   messages                Message[]
-  messageQueue            MessageQueue[]
+  messageQueue            MessageQueue[]        // ✅ ADDED
 
   @@index([organizationId])
   @@index([wabaId])
@@ -258,7 +275,7 @@ enum WhatsAppAccountStatus {
 }
 
 // ============================================
-// META CONNECTION
+// META CONNECTION - ✅ UPDATED
 // ============================================
 
 model MetaConnection {
@@ -319,7 +336,7 @@ enum ConnectionStatus {
 }
 
 // ============================================
-// OAUTH STATE
+// OAUTH STATE - ✅ NEW
 // ============================================
 
 model OAuthState {
@@ -362,7 +379,7 @@ model Contact {
   groupMemberships ContactGroupMember[]
   conversations    Conversation[]
   campaignContacts CampaignContact[]
-  messageQueue     MessageQueue[]
+  messageQueue     MessageQueue[]       // ✅ ADDED
 
   @@unique([organizationId, phone])
   @@index([organizationId])
@@ -410,35 +427,47 @@ enum ContactStatus {
 }
 
 // ============================================
-// TEMPLATES - UPDATED
+// TEMPLATES - ✅ COMPLETELY UPDATED
 // ============================================
 
 model Template {
   id                String           @id @default(cuid())
   organizationId    String
-  whatsappAccountId String?
-  wabaId            String?
+  
+  // ✅ CRITICAL: Link to specific WhatsApp Account
+  whatsappAccountId String
+  wabaId            String           // Meta WABA ID for syncing
+  
   metaTemplateId    String?
   name              String
   language          String           @default("en")
   category          TemplateCategory @default(MARKETING)
+  
+  // Content
   headerType        String?
   headerContent     String?
   bodyText          String
   footerText        String?
   buttons           Json             @default("[]")
   variables         Json             @default("[]")
+  
+  // Status
   status            TemplateStatus   @default(PENDING)
   rejectionReason   String?
-  qualityScore      String?
+  
+  // ✅ NEW: Quality metrics
+  qualityScore      String?          // HIGH, MEDIUM, LOW, UNKNOWN
+  
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
   
+  // Relations
   organization      Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  whatsappAccount   WhatsAppAccount? @relation(fields: [whatsappAccountId], references: [id], onDelete: Cascade)
+  whatsappAccount   WhatsAppAccount  @relation(fields: [whatsappAccountId], references: [id], onDelete: Cascade)
   campaigns         Campaign[]
-  messageQueue      MessageQueue[]
+  messageQueue      MessageQueue[]   // ✅ ADDED
 
+  // ✅ UPDATED: Unique per WhatsApp Account
   @@unique([whatsappAccountId, name, language])
   @@index([organizationId])
   @@index([whatsappAccountId])
@@ -461,7 +490,7 @@ enum TemplateStatus {
 }
 
 // ============================================
-// CAMPAIGNS
+// CAMPAIGNS - ✅ UPDATED
 // ============================================
 
 model Campaign {
@@ -477,22 +506,28 @@ model Campaign {
   scheduledAt       DateTime?
   startedAt         DateTime?
   completedAt       DateTime?
+  
+  // Stats
   totalContacts     Int               @default(0)
   sentCount         Int               @default(0)
   deliveredCount    Int               @default(0)
   readCount         Int               @default(0)
   failedCount       Int               @default(0)
+  
+  // ✅ NEW: Created by user
   createdById       String
+  
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   
+  // Relations
   organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   template          Template          @relation(fields: [templateId], references: [id])
   whatsappAccount   WhatsAppAccount   @relation(fields: [whatsappAccountId], references: [id])
   contactGroup      ContactGroup?     @relation(fields: [contactGroupId], references: [id])
   createdBy         User              @relation("CampaignCreator", fields: [createdById], references: [id])
   campaignContacts  CampaignContact[]
-  messageQueue      MessageQueue[]
+  messageQueue      MessageQueue[]    // ✅ ADDED
 
   @@index([organizationId])
   @@index([status])
@@ -538,21 +573,31 @@ model CampaignContact {
 }
 
 // ============================================
-// MESSAGE QUEUE - NEW
+// MESSAGE QUEUE - ✅ NEW MODEL
 // ============================================
 
 model MessageQueue {
   id                String           @id @default(cuid())
+  
+  // References
   campaignId        String?
   contactId         String
   whatsappAccountId String
   templateId        String
+  
+  // Message details
   templateParams    Json?
+  
+  // Queue management
   status            QueueStatus      @default(PENDING)
   priority          Int              @default(0)
+  
+  // Retry logic
   retryCount        Int              @default(0)
   maxRetries        Int              @default(3)
   nextRetryAt       DateTime?
+  
+  // Results
   waMessageId       String?
   sentAt            DateTime?
   deliveredAt       DateTime?
@@ -560,9 +605,11 @@ model MessageQueue {
   failedAt          DateTime?
   errorMessage      String?
   errorCode         String?
+  
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
   
+  // Relations
   campaign          Campaign?        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   contact           Contact          @relation(fields: [contactId], references: [id], onDelete: Cascade)
   whatsappAccount   WhatsAppAccount  @relation(fields: [whatsappAccountId], references: [id])
@@ -589,7 +636,7 @@ enum QueueStatus {
 }
 
 // ============================================
-// CONVERSATIONS - UPDATED
+// CONVERSATIONS - ✅ UPDATED
 // ============================================
 
 model Conversation {
@@ -597,12 +644,16 @@ model Conversation {
   organizationId        String
   contactId             String
   phoneNumberId         String?
+  
   lastMessageAt         DateTime?
   lastMessagePreview    String?
+  
+  // ✅ NEW: 24-hour messaging window tracking
   lastCustomerMessageAt DateTime?
   windowExpiresAt       DateTime?
   isWindowOpen          Boolean      @default(true)
   lastBotMessageAt      DateTime?
+  
   isArchived            Boolean      @default(false)
   isRead                Boolean      @default(true)
   unreadCount           Int          @default(0)
@@ -693,7 +744,7 @@ enum MessageStatus {
 }
 
 // ============================================
-// CHATBOT
+// CHATBOT - ✅ UPDATED
 // ============================================
 
 model Chatbot {
@@ -707,7 +758,10 @@ model Chatbot {
   welcomeMessage  String?
   fallbackMessage String?
   status          ChatbotStatus @default(DRAFT)
+  
+  // ✅ NEW: Created by user
   createdById     String
+  
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   

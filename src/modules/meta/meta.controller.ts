@@ -27,7 +27,7 @@ export class MetaController {
       }
 
       // Verify user has access to this organization
-      const userId = req.user?.id;
+      const userId = (req as any).user?.id;
       if (!userId) {
         throw new AppError('Authentication required', 401);
       }
@@ -128,7 +128,7 @@ export class MetaController {
       console.log('   Organization ID:', organizationId);
 
       // Verify user has access
-      const userId = req.user?.id;
+      const userId = (req as any).user?.id;
       if (!userId) {
         throw new AppError('Authentication required', 401);
       }
@@ -191,7 +191,7 @@ export class MetaController {
       }
 
       // Verify user has access
-      const userId = req.user?.id;
+      const userId = (req as any).user?.id;
       if (!userId) {
         throw new AppError('Authentication required', 401);
       }
@@ -284,7 +284,7 @@ export class MetaController {
       }
 
       // Verify user has access
-      const userId = req.user?.id;
+      const userId = (req as any).user?.id;
       if (!userId) {
         throw new AppError('Authentication required', 401);
       }
