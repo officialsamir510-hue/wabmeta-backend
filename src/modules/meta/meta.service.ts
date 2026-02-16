@@ -1,4 +1,4 @@
-// 📁 src/modules/meta/meta.service.ts - FIXED DISCONNECT & RECONNECT
+// 📁 src/modules/meta/meta.service.ts - COMPLETE FIXED VERSION
 
 import {
   PrismaClient,
@@ -291,38 +291,54 @@ export class MetaService {
       if (existingAccount) {
         // Account exists - check organization
         if (existingAccount.organizationId === organizationId) {
-          // ✅ Same organization - UPDATE existing account
-          console.log('🔄 Updating existing account for same organization');
+          // ✅ Same organization - REACTIVATE/UPDATE existing account
+          console.log('🔄 Reactivating existing account for same organization');
+
+          // Check if there's a default account already
+          const hasDefault = await prisma.whatsAppAccount.findFirst({
+            where: {
+              organizationId,
+              isDefault: true,
+              id: { not: existingAccount.id },
+            },
+          });
 
           savedAccount = await prisma.whatsAppAccount.update({
             where: { id: existingAccount.id },
             data: {
               accessToken: encryptedToken,
               tokenExpiresAt,
-              wabaId, // Update WABA ID in case it changed
+              wabaId,
               displayName: primaryPhone.verifiedName || primaryPhone.displayPhoneNumber,
               verifiedName: primaryPhone.verifiedName,
               qualityRating: primaryPhone.qualityRating,
               status: WhatsAppAccountStatus.CONNECTED,
+              isDefault: existingAccount.isDefault || !hasDefault, // Restore or set as default if no other default
               codeVerificationStatus: primaryPhone.codeVerificationStatus,
               nameStatus: primaryPhone.nameStatus,
               messagingLimit: primaryPhone.messagingLimitTier,
             } as any,
           });
 
-          console.log('✅ Account updated successfully');
+          console.log('✅ Account reactivated successfully');
         } else {
-          // ✅ Different organization - DELETE old and CREATE new
+          // ✅ Different organization - Soft disconnect old, CREATE new
           console.log('🔄 Phone number switching organizations');
           console.log(`   Old org: ${existingAccount.organizationId}`);
           console.log(`   New org: ${organizationId}`);
 
-          // Delete old account
-          await prisma.whatsAppAccount.delete({
+          // Soft disconnect old account (preserves data for old org)
+          await prisma.whatsAppAccount.update({
             where: { id: existingAccount.id },
+            data: {
+              status: WhatsAppAccountStatus.DISCONNECTED,
+              accessToken: null,
+              tokenExpiresAt: null,
+              isDefault: false,
+            },
           });
 
-          console.log('✅ Old account deleted');
+          console.log('✅ Old account soft-disconnected (data preserved)');
 
           // Check if new org already has accounts
           const accountCount = await prisma.whatsAppAccount.count({
@@ -346,7 +362,7 @@ export class MetaService {
               tokenExpiresAt,
               webhookSecret: encryptedWebhookSecret,
               status: WhatsAppAccountStatus.CONNECTED,
-              isDefault: accountCount === 0, // First account is default
+              isDefault: accountCount === 0,
               codeVerificationStatus: primaryPhone.codeVerificationStatus,
               nameStatus: primaryPhone.nameStatus,
               messagingLimit: primaryPhone.messagingLimitTier,
@@ -504,8 +520,15 @@ export class MetaService {
     };
   }
 
-  // ✅ FIXED: DELETE account instead of marking as disconnected
+  /**
+   * ✅ SAFE DISCONNECT - Soft disconnect, preserves data
+   * Idempotent: Can be called multiple times safely
+   * Handles default account switching automatically
+   */
   async disconnectAccount(accountId: string, organizationId: string) {
+    console.log(`🔌 Disconnecting account: ${accountId}`);
+
+    // Find account (safe - checks organization ownership)
     const account = await prisma.whatsAppAccount.findFirst({
       where: {
         id: accountId,
@@ -513,19 +536,45 @@ export class MetaService {
       },
     });
 
+    // ✅ Idempotent: If already not found, treat as already disconnected
     if (!account) {
-      throw new AppError('WhatsApp account not found', 404);
+      console.log(`ℹ️  Account not found or already disconnected: ${accountId}`);
+      return {
+        success: true,
+        message: 'Account already disconnected (not found)',
+      };
     }
 
-    console.log(`🗑️ Deleting WhatsApp account: ${accountId}`);
+    // Check if already disconnected
+    if (account.status === WhatsAppAccountStatus.DISCONNECTED && !account.accessToken) {
+      console.log(`ℹ️  Account already disconnected: ${accountId}`);
+      return {
+        success: true,
+        message: 'Account already disconnected',
+      };
+    }
 
-    // If this was the default account, make another one default first
+    // ✅ Soft disconnect: Mark as disconnected, clear token
+    // This preserves campaign history, templates, and other relations
+    await prisma.whatsAppAccount.update({
+      where: { id: accountId },
+      data: {
+        status: WhatsAppAccountStatus.DISCONNECTED,
+        accessToken: null,
+        tokenExpiresAt: null,
+        isDefault: false,
+      },
+    });
+
+    console.log(`✅ Account disconnected: ${accountId}`);
+
+    // ✅ If it was default, set another CONNECTED account as default
     if (account.isDefault) {
       const anotherAccount = await prisma.whatsAppAccount.findFirst({
         where: {
           organizationId,
-          id: { not: accountId },
           status: WhatsAppAccountStatus.CONNECTED,
+          id: { not: accountId },
         },
         orderBy: { createdAt: 'asc' },
       });
@@ -536,17 +585,15 @@ export class MetaService {
           data: { isDefault: true },
         });
         console.log(`✅ New default account: ${anotherAccount.id}`);
+      } else {
+        console.log(`ℹ️  No other connected accounts found`);
       }
     }
 
-    // ✅ DELETE the account completely
-    await prisma.whatsAppAccount.delete({
-      where: { id: accountId },
-    });
-
-    console.log(`✅ Account deleted successfully: ${accountId}`);
-
-    return { success: true, message: 'Account disconnected successfully' };
+    return {
+      success: true,
+      message: 'Account disconnected successfully',
+    };
   }
 
   async setDefaultAccount(accountId: string, organizationId: string) {
@@ -593,7 +640,6 @@ export class MetaService {
       const debugInfo = await metaApi.debugToken(accessToken);
 
       if (!debugInfo.data.is_valid) {
-        // Token invalid - mark as disconnected
         await prisma.whatsAppAccount.update({
           where: { id: accountId },
           data: {
@@ -610,7 +656,6 @@ export class MetaService {
         };
       }
 
-      // Get phone number details
       const phoneNumbers = await metaApi.getPhoneNumbers(account.wabaId, accessToken);
       const phone = phoneNumbers.find((p) => p.id === account.phoneNumberId);
 
@@ -627,7 +672,6 @@ export class MetaService {
         };
       }
 
-      // Update account with latest info
       await prisma.whatsAppAccount.update({
         where: { id: accountId },
         data: {
@@ -765,10 +809,10 @@ export class MetaService {
 
     let removed = 0;
     if (toRemove.length > 0) {
-      const result = await prisma.template.deleteMany({
+      const deleteResult = await prisma.template.deleteMany({
         where: { id: { in: toRemove.map((t) => t.id) } },
       });
-      removed = result.count;
+      removed = deleteResult.count;
     }
 
     console.log(`✅ Sync complete:`);
