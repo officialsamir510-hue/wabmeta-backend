@@ -1,9 +1,37 @@
-export type AccessTokenResponse = {
+export interface AccessTokenResponse {
     access_token: string;
     token_type: string;
     expires_in?: number;
-};
-export declare const whatsappApi: {
+}
+export interface SendMessageResponse {
+    messages: Array<{
+        id: string;
+    }>;
+    contacts?: Array<{
+        input: string;
+        wa_id: string;
+    }>;
+}
+export interface TemplateParams {
+    header?: any;
+    body?: any[];
+    buttons?: Array<{
+        type?: string;
+        text?: string;
+        payload?: string;
+    }>;
+}
+export interface MediaParams {
+    type: 'image' | 'video' | 'document' | 'audio';
+    url?: string;
+    id?: string;
+    caption?: string;
+    filename?: string;
+}
+declare class WhatsAppAPI {
+    private client;
+    private clientUnversioned;
+    constructor();
     /**
      * Exchange OAuth code for short-lived access token
      */
@@ -13,66 +41,25 @@ export declare const whatsappApi: {
      */
     exchangeForLongLivedToken(shortLivedToken: string): Promise<AccessTokenResponse>;
     /**
+     * Debug token - check validity, scopes, expiry
+     */
+    debugToken(inputToken: string): Promise<any>;
+    /**
      * Get current user info
      */
     getMe(accessToken: string): Promise<any>;
     /**
-     * Debug token - check validity, scopes, expiry
-     * Uses unversioned endpoint for best compatibility
-     */
-    debugToken(inputToken: string): Promise<any>;
-    /**
      * Get businesses owned by the user
      */
-    getUserBusinesses(accessToken: string): Promise<any>;
+    getUserBusinesses(accessToken: string): Promise<any[]>;
     /**
      * Get WhatsApp Business Accounts owned by a business
      */
-    getOwnedWabas(businessId: string, accessToken: string): Promise<any>;
+    getOwnedWabas(businessId: string, accessToken: string): Promise<any[]>;
     /**
      * Get phone numbers under a WABA
      */
-    getWabaPhoneNumbers(wabaId: string, accessToken: string): Promise<any>;
-    /**
-     * Subscribe app to WABA webhooks
-     */
-    subscribeAppToWaba(wabaId: string, accessToken: string): Promise<any>;
-    /**
-     * Send message via Cloud API
-     */
-    sendMessage(phoneNumberId: string, accessToken: string, payload: any): Promise<any>;
-    /**
-     * Mark message as read
-     */
-    markAsRead(phoneNumberId: string, accessToken: string, messageId: string): Promise<any>;
-    /**
-     * Create message template on Meta WABA
-     */
-    createMessageTemplate(wabaId: string, accessToken: string, payload: any): Promise<any>;
-    /**
-     * List all templates from Meta WABA
-     */
-    listMessageTemplates(wabaId: string, accessToken: string): Promise<any>;
-    /**
-     * Get single template by ID
-     */
-    getMessageTemplate(templateId: string, accessToken: string): Promise<any>;
-    /**
-     * Delete template from Meta WABA
-     */
-    deleteMessageTemplate(wabaId: string, accessToken: string, templateName: string): Promise<any>;
-    /**
-     * Upload media to WhatsApp
-     */
-    uploadMedia(phoneNumberId: string, accessToken: string, formData: FormData): Promise<any>;
-    /**
-     * Get media URL by media ID
-     */
-    getMediaUrl(mediaId: string, accessToken: string): Promise<any>;
-    /**
-     * Download media from URL
-     */
-    downloadMedia(mediaUrl: string, accessToken: string): Promise<any>;
+    getWabaPhoneNumbers(wabaId: string, accessToken: string): Promise<any[]>;
     /**
      * Get phone number details
      */
@@ -81,5 +68,81 @@ export declare const whatsappApi: {
      * Register phone number for WhatsApp
      */
     registerPhoneNumber(phoneNumberId: string, accessToken: string, pin: string): Promise<any>;
-};
+    /**
+     * Subscribe app to WABA webhooks
+     */
+    subscribeAppToWaba(wabaId: string, accessToken: string): Promise<any>;
+    /**
+     * Send template message
+     */
+    sendTemplateMessage(phoneNumberId: string, to: string, templateName: string, language: string, components?: TemplateParams, accessToken?: string): Promise<{
+        waMessageId: string;
+    }>;
+    /**
+     * Send text message
+     */
+    sendTextMessage(phoneNumberId: string, to: string, message: string, accessToken: string, previewUrl?: boolean): Promise<{
+        waMessageId: string;
+    }>;
+    /**
+     * Send media message
+     */
+    sendMediaMessage(phoneNumberId: string, to: string, media: MediaParams, accessToken: string): Promise<{
+        waMessageId: string;
+    }>;
+    /**
+     * Send message (generic)
+     */
+    sendMessage(phoneNumberId: string, accessToken: string, payload: any): Promise<any>;
+    /**
+     * Mark message as read
+     */
+    markAsRead(phoneNumberId: string, messageId: string, accessToken: string): Promise<boolean>;
+    /**
+     * Create message template
+     */
+    createMessageTemplate(wabaId: string, accessToken: string, payload: any): Promise<any>;
+    /**
+     * List message templates
+     */
+    listMessageTemplates(wabaId: string, accessToken: string): Promise<any[]>;
+    /**
+     * Get single template
+     */
+    getMessageTemplate(templateId: string, accessToken: string): Promise<any>;
+    /**
+     * Delete message template
+     */
+    deleteMessageTemplate(wabaId: string, accessToken: string, templateName: string): Promise<any>;
+    /**
+     * Upload media
+     */
+    uploadMedia(phoneNumberId: string, accessToken: string, formData: any): Promise<any>;
+    /**
+     * Get media URL
+     */
+    getMediaUrl(mediaId: string, accessToken: string): Promise<any>;
+    /**
+     * Download media
+     */
+    downloadMedia(mediaUrl: string, accessToken: string): Promise<any>;
+    /**
+     * Generate app secret proof for secure API calls
+     */
+    private generateAppSecretProof;
+    /**
+     * Build template components
+     */
+    private buildTemplateComponents;
+    /**
+     * Format error for logging
+     */
+    private formatError;
+    /**
+     * Handle and format errors
+     */
+    private handleError;
+}
+export declare const whatsappApi: WhatsAppAPI;
+export default whatsappApi;
 //# sourceMappingURL=whatsapp.api.d.ts.map

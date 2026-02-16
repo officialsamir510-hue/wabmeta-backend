@@ -1,9 +1,10 @@
-// src/modules/campaigns/campaigns.routes.ts
+// 📁 src/modules/campaigns/campaigns.routes.ts - COMPLETE CAMPAIGN ROUTES
 
 import { Router } from 'express';
 import { campaignsController } from './campaigns.controller';
 import { validate } from '../../middleware/validate';
 import { authenticate } from '../../middleware/auth';
+import { successResponse } from '../../utils/response';
 import {
   createCampaignSchema,
   updateCampaignSchema,
@@ -21,11 +22,26 @@ import {
 
 const router = Router();
 
+// ============================================
+// MIDDLEWARE
+// ============================================
+
 // All routes require authentication
 router.use(authenticate);
 
 // ============================================
-// CAMPAIGN ROUTES
+// STATISTICS & ANALYTICS (Must be before :id routes)
+// ============================================
+
+/**
+ * @route   GET /api/v1/campaigns/stats
+ * @desc    Get campaign statistics for organization
+ * @access  Private
+ */
+router.get('/stats', campaignsController.getStats.bind(campaignsController));
+
+// ============================================
+// CAMPAIGN CRUD ROUTES
 // ============================================
 
 /**
@@ -51,13 +67,6 @@ router.get(
 );
 
 /**
- * @route   GET /api/v1/campaigns/stats
- * @desc    Get campaign statistics
- * @access  Private
- */
-router.get('/stats', campaignsController.getStats.bind(campaignsController));
-
-/**
  * @route   GET /api/v1/campaigns/:id
  * @desc    Get campaign by ID
  * @access  Private
@@ -70,7 +79,7 @@ router.get(
 
 /**
  * @route   PUT /api/v1/campaigns/:id
- * @desc    Update campaign
+ * @desc    Update campaign (only DRAFT or SCHEDULED)
  * @access  Private
  */
 router.put(
@@ -81,7 +90,7 @@ router.put(
 
 /**
  * @route   DELETE /api/v1/campaigns/:id
- * @desc    Delete campaign
+ * @desc    Delete campaign (cannot delete RUNNING campaigns)
  * @access  Private
  */
 router.delete(
@@ -90,9 +99,13 @@ router.delete(
   campaignsController.delete.bind(campaignsController)
 );
 
+// ============================================
+// CAMPAIGN ANALYTICS & CONTACTS
+// ============================================
+
 /**
  * @route   GET /api/v1/campaigns/:id/analytics
- * @desc    Get campaign analytics
+ * @desc    Get detailed campaign analytics
  * @access  Private
  */
 router.get(
@@ -103,7 +116,7 @@ router.get(
 
 /**
  * @route   GET /api/v1/campaigns/:id/contacts
- * @desc    Get campaign contacts with status
+ * @desc    Get campaign contacts with delivery status
  * @access  Private
  */
 router.get(
@@ -112,9 +125,13 @@ router.get(
   campaignsController.getContacts.bind(campaignsController)
 );
 
+// ============================================
+// CAMPAIGN CONTROL ROUTES
+// ============================================
+
 /**
  * @route   POST /api/v1/campaigns/:id/start
- * @desc    Start campaign
+ * @desc    Start campaign (validates token before starting)
  * @access  Private
  */
 router.post(
@@ -136,7 +153,7 @@ router.post(
 
 /**
  * @route   POST /api/v1/campaigns/:id/resume
- * @desc    Resume paused campaign
+ * @desc    Resume paused campaign (validates token)
  * @access  Private
  */
 router.post(
@@ -147,7 +164,7 @@ router.post(
 
 /**
  * @route   POST /api/v1/campaigns/:id/cancel
- * @desc    Cancel campaign
+ * @desc    Cancel campaign (marks as FAILED)
  * @access  Private
  */
 router.post(
@@ -158,7 +175,7 @@ router.post(
 
 /**
  * @route   POST /api/v1/campaigns/:id/retry
- * @desc    Retry failed messages
+ * @desc    Retry failed/pending messages
  * @access  Private
  */
 router.post(
@@ -169,7 +186,7 @@ router.post(
 
 /**
  * @route   POST /api/v1/campaigns/:id/duplicate
- * @desc    Duplicate campaign
+ * @desc    Duplicate campaign with new name
  * @access  Private
  */
 router.post(
@@ -177,5 +194,126 @@ router.post(
   validate(duplicateCampaignSchema),
   campaignsController.duplicate.bind(campaignsController)
 );
+
+// ============================================
+// QUEUE MANAGEMENT (Optional - if using message queue)
+// ============================================
+
+/**
+ * @route   GET /api/v1/campaigns/queue/stats
+ * @desc    Get message queue statistics
+ * @access  Private (Admin only recommended)
+ */
+router.get('/queue/stats', async (req, res, next) => {
+  try {
+    // Optional: Check if messageQueueWorker exists
+    const messageQueueWorker = await import('../../services/messageQueue.service').catch(() => null);
+
+    if (!messageQueueWorker) {
+      return successResponse(res, {
+        data: {
+          enabled: false,
+          message: 'Message queue service not configured',
+        },
+        message: 'Queue not available',
+      });
+    }
+
+    const stats = await messageQueueWorker.messageQueueWorker.getQueueStats();
+    return successResponse(res, { data: stats, message: 'Queue statistics' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route   POST /api/v1/campaigns/queue/retry/:campaignId?
+ * @desc    Retry failed messages in queue (optional campaign filter)
+ * @access  Private (Admin only recommended)
+ */
+router.post('/queue/retry/:campaignId?', async (req, res, next) => {
+  try {
+    const { campaignId } = req.params as any;
+
+    const messageQueueWorker = await import('../../services/messageQueue.service').catch(() => null);
+
+    if (!messageQueueWorker) {
+      return res.status(404).json({
+        success: false,
+        message: 'Message queue service not configured',
+      });
+    }
+
+    const count = await messageQueueWorker.messageQueueWorker.retryFailedMessages(campaignId);
+
+    return successResponse(res, {
+      data: {
+        retriedCount: count,
+        campaignId: campaignId || 'all',
+      },
+      message: `${count} failed messages queued for retry`,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route   POST /api/v1/campaigns/queue/clear
+ * @desc    Clear failed messages from queue
+ * @access  Private (Admin only)
+ */
+router.post('/queue/clear', async (req, res, next) => {
+  try {
+    const messageQueueWorker = await import('../../services/messageQueue.service').catch(() => null);
+
+    if (!messageQueueWorker) {
+      return res.status(404).json({
+        success: false,
+        message: 'Message queue service not configured',
+      });
+    }
+
+    // Clear failed messages
+    const count = await messageQueueWorker.messageQueueWorker.clearFailedMessages();
+
+    return successResponse(res, {
+      data: {
+        clearedCount: count,
+      },
+      message: `${count} failed messages cleared from queue`,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route   GET /api/v1/campaigns/queue/health
+ * @desc    Check queue health status
+ * @access  Private (Admin only)
+ */
+router.get('/queue/health', async (req, res, next) => {
+  try {
+    const messageQueueWorker = await import('../../services/messageQueue.service').catch(() => null);
+
+    if (!messageQueueWorker) {
+      return res.json({
+        success: true,
+        data: {
+          enabled: false,
+          healthy: true,
+          message: 'Queue not configured (using direct sending)',
+        },
+      });
+    }
+
+    const health = await messageQueueWorker.messageQueueWorker.getHealthStatus();
+
+    return successResponse(res, { data: health, message: 'Queue health status' });
+  } catch (error) {
+    next(error);
+  }
+});
 
 export default router;

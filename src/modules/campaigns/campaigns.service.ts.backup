@@ -1,10 +1,8 @@
-// 📁 src/modules/campaigns/campaigns.service.ts - COMPLETE WITH QUEUE & TOKEN VALIDATION
+// src/modules/campaigns/campaigns.service.ts
 
-import { PrismaClient, CampaignStatus, MessageStatus, Prisma } from '@prisma/client';
+import prisma from '../../config/database';
 import { AppError } from '../../middleware/errorHandler';
-import { whatsappApi } from '../whatsapp/whatsapp.api';
-import { metaService } from '../meta/meta.service';
-import { v4 as uuidv4 } from 'uuid';
+import { CampaignStatus, MessageStatus, Prisma } from '@prisma/client';
 import {
   CreateCampaignInput,
   UpdateCampaignInput,
@@ -18,19 +16,16 @@ import {
   CampaignAnalytics,
   AudienceFilter,
 } from './campaigns.types';
-
-const prisma = new PrismaClient();
+import { whatsappApi } from '../whatsapp/whatsapp.api';
+import { v4 as uuidv4 } from 'uuid';
+import { metaService } from '../meta/meta.service'; // ✅ ADDED: Import metaService
 
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
 
-const digitsOnly = (p: string): string => String(p || '').replace(/\D/g, '');
-
-const toMetaLang = (lang: string): string => {
-  if (lang?.includes('_')) return lang;
-  return lang === 'en' ? 'en_US' : 'en_US';
-};
+const digitsOnly = (p: string) => String(p || '').replace(/\D/g, '');
+const toMetaLang = (lang: string) => (lang?.includes('_') ? lang : lang === 'en' ? 'en_US' : 'en_US');
 
 const buildTemplateSendPayload = (args: {
   to: string;
@@ -48,14 +43,14 @@ const buildTemplateSendPayload = (args: {
       ? [
         {
           type: 'body',
-          parameters: args.params.map((t) => ({ type: 'text', text: String(t) })),
+          parameters: args.params.map((t) => ({ type: 'text', text: t })),
         },
       ]
       : [],
   },
 });
 
-const buildParamsFromContact = (contact: any, varCount: number): string[] => {
+const buildParamsFromContact = (contact: any, varCount: number) => {
   const fallback = [
     contact?.firstName || '',
     contact?.lastName || '',
@@ -64,21 +59,17 @@ const buildParamsFromContact = (contact: any, varCount: number): string[] => {
   ].filter(Boolean);
 
   const params: string[] = [];
-  for (let i = 0; i < varCount; i++) {
-    params.push(fallback[i] || 'NA');
-  }
+  for (let i = 0; i < varCount; i++) params.push(fallback[i] || 'NA');
   return params;
 };
 
 const calculateRates = (campaign: any): { deliveryRate: number; readRate: number } => {
-  const deliveryRate =
-    campaign.sentCount > 0 ? Math.round((campaign.deliveredCount / campaign.sentCount) * 100) : 0;
-
-  const readRate =
-    campaign.deliveredCount > 0
-      ? Math.round((campaign.readCount / campaign.deliveredCount) * 100)
-      : 0;
-
+  const deliveryRate = campaign.sentCount > 0
+    ? Math.round((campaign.deliveredCount / campaign.sentCount) * 100)
+    : 0;
+  const readRate = campaign.deliveredCount > 0
+    ? Math.round((campaign.readCount / campaign.deliveredCount) * 100)
+    : 0;
   return { deliveryRate, readRate };
 };
 
@@ -91,11 +82,11 @@ const formatCampaign = (campaign: any): CampaignResponse => {
     name: campaign.name,
     description: campaign.description,
     templateId: campaign.templateId,
-    templateName: (campaign as any).template?.name || (campaign as any).Template?.name || '',
+    templateName: campaign.template?.name || '',
     whatsappAccountId: campaign.whatsappAccountId,
-    whatsappAccountPhone: (campaign as any).whatsappAccount?.phoneNumber || (campaign as any).WhatsAppAccount?.phoneNumber || '',
+    whatsappAccountPhone: campaign.whatsappAccount?.phoneNumber || '',
     contactGroupId: campaign.contactGroupId,
-    contactGroupName: (campaign as any).contactGroup?.name || (campaign as any).ContactGroup?.name || null,
+    contactGroupName: campaign.contactGroup?.name || null,
     audienceFilter: campaign.audienceFilter as AudienceFilter | null,
     variableMapping: null,
     status: campaign.status,
@@ -118,11 +109,8 @@ const formatCampaign = (campaign: any): CampaignResponse => {
 const formatCampaignContact = (cc: any): CampaignContactResponse => ({
   id: cc.id,
   contactId: cc.contactId,
-  phone: (cc as any).contact?.phone || (cc as any).Contact?.phone || '',
-  fullName:
-    [(cc as any).contact?.firstName || (cc as any).Contact?.firstName, (cc as any).contact?.lastName || (cc as any).Contact?.lastName].filter(Boolean).join(' ') ||
-    (cc as any).contact?.phone || (cc as any).Contact?.phone ||
-    '',
+  phone: cc.contact?.phone || '',
+  fullName: [cc.contact?.firstName, cc.contact?.lastName].filter(Boolean).join(' ') || cc.contact?.phone || '',
   status: cc.status,
   waMessageId: cc.waMessageId,
   sentAt: cc.sentAt,
@@ -159,44 +147,82 @@ export class CampaignsService {
 
     let waAccount = null;
 
-    // Method 1: Try exact match
+    // Method 1: Try exact match (id + organizationId)
     if (whatsappAccountId) {
       waAccount = await prisma.whatsAppAccount.findFirst({
         where: {
           id: whatsappAccountId,
-          organizationId,
+          organizationId
         },
       });
 
       if (waAccount) return waAccount;
     }
 
-    // Method 2: Try by phoneNumberId
+    // Method 2: Try by ID only (check if organizationId is missing/null)
+    if (!waAccount && whatsappAccountId) {
+      const byIdOnly = await prisma.whatsAppAccount.findUnique({
+        where: { id: whatsappAccountId },
+      });
+
+      if (byIdOnly) {
+        if (!byIdOnly.organizationId) {
+          waAccount = await prisma.whatsAppAccount.update({
+            where: { id: byIdOnly.id },
+            data: { organizationId },
+          });
+          return waAccount;
+        }
+
+        if (byIdOnly.organizationId !== organizationId) {
+          throw new AppError('WhatsApp account belongs to another organization', 403);
+        }
+
+        return byIdOnly;
+      }
+    }
+
+    // Method 3: Try by phoneNumberId
     if (!waAccount && phoneNumberId) {
       waAccount = await prisma.whatsAppAccount.findFirst({
         where: {
           phoneNumberId,
-          organizationId,
+          organizationId
         },
       });
 
       if (waAccount) return waAccount;
+
+      const byPhoneNumberId = await prisma.whatsAppAccount.findFirst({
+        where: { phoneNumberId },
+      });
+
+      if (byPhoneNumberId && !byPhoneNumberId.organizationId) {
+        waAccount = await prisma.whatsAppAccount.update({
+          where: { id: byPhoneNumberId.id },
+          data: { organizationId },
+        });
+        return waAccount;
+      }
     }
 
-    // Method 3: Fallback - get default/first connected account
+    // Method 4: Fallback - get default/first connected account for this org
     if (!waAccount) {
       waAccount = await prisma.whatsAppAccount.findFirst({
         where: {
           organizationId,
           status: 'CONNECTED',
         },
-        orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
+        orderBy: [
+          { isDefault: 'desc' },
+          { createdAt: 'desc' },
+        ],
       });
 
       if (waAccount) return waAccount;
     }
 
-    // Method 4: Last resort - any account
+    // Method 5: Last resort - any account for this org
     if (!waAccount) {
       waAccount = await prisma.whatsAppAccount.findFirst({
         where: { organizationId },
@@ -212,11 +238,7 @@ export class CampaignsService {
   // ==========================================
   // CREATE CAMPAIGN
   // ==========================================
-  async create(
-    organizationId: string,
-    userId: string,
-    input: CreateCampaignInput
-  ): Promise<CampaignResponse> {
+  async create(organizationId: string, userId: string, input: CreateCampaignInput): Promise<CampaignResponse> {
     const {
       name,
       description,
@@ -378,11 +400,15 @@ export class CampaignsService {
   // ==========================================
   // GET CAMPAIGNS LIST
   // ==========================================
-  async getList(
-    organizationId: string,
-    query: CampaignsQueryInput
-  ): Promise<CampaignsListResponse> {
-    const { page = 1, limit = 20, search, status, sortBy = 'createdAt', sortOrder = 'desc' } = query;
+  async getList(organizationId: string, query: CampaignsQueryInput): Promise<CampaignsListResponse> {
+    const {
+      page = 1,
+      limit = 20,
+      search,
+      status,
+      sortBy = 'createdAt',
+      sortOrder = 'desc',
+    } = query;
 
     const skip = (page - 1) * limit;
 
@@ -410,8 +436,8 @@ export class CampaignsService {
         include: {
           template: { select: { name: true } },
           whatsappAccount: { select: { phoneNumber: true } },
-          contactGroup: { select: { name: true } },
-        } as any,
+          ContactGroup: { select: { name: true } },
+        },
       }),
       prisma.campaign.count({ where }),
     ]);
@@ -453,25 +479,24 @@ export class CampaignsService {
             displayName: true,
           },
         },
-        contactGroup: {
+        ContactGroup: {
           select: {
             id: true,
             name: true,
           },
         },
-      } as any,
+      },
     });
 
     if (!campaign) {
       throw new AppError('Campaign not found', 404);
     }
 
-    const c = campaign as any;
     return {
       ...formatCampaign(campaign),
-      template: c.template || c.Template,
-      whatsappAccount: c.whatsappAccount || c.WhatsAppAccount,
-      contactGroup: c.contactGroup || c.ContactGroup,
+      template: campaign.template,
+      whatsappAccount: campaign.whatsappAccount,
+      contactGroup: campaign.ContactGroup,
     };
   }
 
@@ -525,8 +550,8 @@ export class CampaignsService {
       include: {
         template: { select: { name: true } },
         whatsappAccount: { select: { phoneNumber: true } },
-        contactGroup: { select: { name: true } },
-      } as any,
+        ContactGroup: { select: { name: true } },
+      },
     });
 
     return formatCampaign(updated);
@@ -561,7 +586,7 @@ export class CampaignsService {
   }
 
   // ==========================================
-  // START CAMPAIGN - ✅ WITH TOKEN VALIDATION
+  // START CAMPAIGN - ✅ FIXED
   // ==========================================
   async start(organizationId: string, campaignId: string): Promise<CampaignResponse> {
     const campaign = await prisma.campaign.findFirst({
@@ -585,8 +610,20 @@ export class CampaignsService {
       throw new AppError('WhatsApp account is not connected', 400);
     }
 
-    // ✅ Validate token
-    const accountData = await metaService.getAccountWithToken(campaign.whatsappAccountId);
+    // ✅ ADDED: Check token expiry BEFORE starting
+    const now = new Date();
+    if (campaign.whatsappAccount.tokenExpiresAt &&
+      campaign.whatsappAccount.tokenExpiresAt < now) {
+      throw new AppError(
+        'WhatsApp account token expired. Please reconnect in Settings → WhatsApp.',
+        400
+      );
+    }
+
+    // ✅ ADDED: Verify token can be decrypted
+    const accountData = await metaService.getAccountWithToken(
+      campaign.whatsappAccountId
+    );
 
     if (!accountData) {
       throw new AppError(
@@ -608,13 +645,13 @@ export class CampaignsService {
       where: { id: campaignId },
       data: {
         status: 'RUNNING',
-        startedAt: campaign.startedAt || new Date(),
+        startedAt: campaign.startedAt || new Date()
       },
       include: {
         template: { select: { name: true, language: true, variables: true } },
         whatsappAccount: { select: { id: true, phoneNumber: true } },
-        contactGroup: { select: { name: true } },
-      } as any,
+        ContactGroup: { select: { name: true } },
+      },
     });
 
     console.log(`🚀 Starting campaign: ${campaignId}`);
@@ -628,11 +665,14 @@ export class CampaignsService {
   }
 
   // ==========================================
-  // PAUSE/RESUME/CANCEL
+  // PAUSE CAMPAIGN
   // ==========================================
   async pause(organizationId: string, campaignId: string): Promise<CampaignResponse> {
     const campaign = await prisma.campaign.findFirst({
-      where: { id: campaignId, organizationId },
+      where: {
+        id: campaignId,
+        organizationId,
+      },
     });
 
     if (!campaign) {
@@ -649,8 +689,8 @@ export class CampaignsService {
       include: {
         template: { select: { name: true } },
         whatsappAccount: { select: { phoneNumber: true } },
-        contactGroup: { select: { name: true } },
-      } as any,
+        ContactGroup: { select: { name: true } },
+      },
     });
 
     console.log(`⏸️ Campaign paused: ${campaignId}`);
@@ -658,9 +698,15 @@ export class CampaignsService {
     return formatCampaign(updated);
   }
 
+  // ==========================================
+  // RESUME CAMPAIGN
+  // ==========================================
   async resume(organizationId: string, campaignId: string): Promise<CampaignResponse> {
     const campaign = await prisma.campaign.findFirst({
-      where: { id: campaignId, organizationId },
+      where: {
+        id: campaignId,
+        organizationId,
+      },
     });
 
     if (!campaign) {
@@ -671,8 +717,10 @@ export class CampaignsService {
       throw new AppError('Only paused campaigns can be resumed', 400);
     }
 
-    // ✅ Validate token before resuming
-    const accountData = await metaService.getAccountWithToken(campaign.whatsappAccountId);
+    // ✅ ADDED: Verify token before resuming
+    const accountData = await metaService.getAccountWithToken(
+      campaign.whatsappAccountId
+    );
 
     if (!accountData || !accountData.accessToken.startsWith('EAA')) {
       throw new AppError(
@@ -687,8 +735,8 @@ export class CampaignsService {
       include: {
         template: { select: { name: true } },
         whatsappAccount: { select: { phoneNumber: true } },
-        contactGroup: { select: { name: true } },
-      } as any,
+        ContactGroup: { select: { name: true } },
+      },
     });
 
     console.log(`▶️ Campaign resumed: ${campaignId}`);
@@ -701,9 +749,15 @@ export class CampaignsService {
     return formatCampaign(updated);
   }
 
+  // ==========================================
+  // CANCEL CAMPAIGN
+  // ==========================================
   async cancel(organizationId: string, campaignId: string): Promise<CampaignResponse> {
     const campaign = await prisma.campaign.findFirst({
-      where: { id: campaignId, organizationId },
+      where: {
+        id: campaignId,
+        organizationId,
+      },
     });
 
     if (!campaign) {
@@ -723,8 +777,8 @@ export class CampaignsService {
       include: {
         template: { select: { name: true } },
         whatsappAccount: { select: { phoneNumber: true } },
-        contactGroup: { select: { name: true } },
-      } as any,
+        ContactGroup: { select: { name: true } },
+      },
     });
 
     console.log(`❌ Campaign cancelled: ${campaignId}`);
@@ -744,7 +798,10 @@ export class CampaignsService {
     const skip = (page - 1) * limit;
 
     const campaign = await prisma.campaign.findFirst({
-      where: { id: campaignId, organizationId },
+      where: {
+        id: campaignId,
+        organizationId,
+      },
     });
 
     if (!campaign) {
@@ -766,14 +823,14 @@ export class CampaignsService {
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: {
-          contact: {
+          Contact: {
             select: {
               phone: true,
               firstName: true,
               lastName: true,
             },
           },
-        } as any,
+        },
       }),
       prisma.campaignContact.count({ where }),
     ]);
@@ -799,15 +856,20 @@ export class CampaignsService {
     retryPending: boolean = false
   ): Promise<{ message: string; retryCount: number }> {
     const campaign = await prisma.campaign.findFirst({
-      where: { id: campaignId, organizationId },
+      where: {
+        id: campaignId,
+        organizationId,
+      },
     });
 
     if (!campaign) {
       throw new AppError('Campaign not found', 404);
     }
 
-    // ✅ Validate token before retry
-    const accountData = await metaService.getAccountWithToken(campaign.whatsappAccountId);
+    // ✅ ADDED: Verify token before retry
+    const accountData = await metaService.getAccountWithToken(
+      campaign.whatsappAccountId
+    );
 
     if (!accountData || !accountData.accessToken.startsWith('EAA')) {
       throw new AppError(
@@ -866,7 +928,10 @@ export class CampaignsService {
     newName: string
   ): Promise<CampaignResponse> {
     const original = await prisma.campaign.findFirst({
-      where: { id: campaignId, organizationId },
+      where: {
+        id: campaignId,
+        organizationId,
+      },
     });
 
     if (!original) {
@@ -887,16 +952,17 @@ export class CampaignsService {
           templateId: original.templateId,
           whatsappAccountId: original.whatsappAccountId,
           contactGroupId: original.contactGroupId,
-          audienceFilter: original.audienceFilter === null ? undefined : toJsonValue(original.audienceFilter),
+          audienceFilter: original.audienceFilter === null
+            ? undefined
+            : toJsonValue(original.audienceFilter),
           status: 'DRAFT',
           totalContacts: originalContacts.length,
-          createdById: (original as any).createdById,
-        } as any,
+        },
         include: {
           template: { select: { name: true } },
           whatsappAccount: { select: { phoneNumber: true } },
-          contactGroup: { select: { name: true } },
-        } as any,
+          ContactGroup: { select: { name: true } },
+        },
       });
 
       if (originalContacts.length > 0) {
@@ -921,7 +987,7 @@ export class CampaignsService {
   }
 
   // ==========================================
-  // PROCESS CAMPAIGN SENDING - ✅ WITH DECRYPTED TOKEN
+  // PROCESS CAMPAIGN SENDING - ✅ COMPLETELY FIXED
   // ==========================================
   private async processCampaignSending(organizationId: string, campaignId: string): Promise<void> {
     console.log(`📤 Starting send process for campaign: ${campaignId}`);
@@ -941,12 +1007,15 @@ export class CampaignsService {
       return;
     }
 
-    // ✅ Get DECRYPTED token
-    const accountData = await metaService.getAccountWithToken(campaign.whatsappAccountId);
+    // ✅ FIX: Get DECRYPTED token using metaService
+    const accountData = await metaService.getAccountWithToken(
+      campaign.whatsappAccountId
+    );
 
     if (!accountData) {
       console.error('❌ WhatsApp account not found or token unavailable');
 
+      // Mark campaign as failed
       await prisma.campaign.update({
         where: { id: campaignId },
         data: {
@@ -958,11 +1027,11 @@ export class CampaignsService {
       return;
     }
 
-    const { account, accessToken } = accountData;
+    const { account, accessToken } = accountData; // ✅ accessToken is now DECRYPTED
 
-    // Verify token format
+    // Verify token is valid format
     if (!accessToken.startsWith('EAA')) {
-      console.error('❌ Invalid access token format');
+      console.error('❌ Invalid access token format:', accessToken.substring(0, 10) + '...');
 
       await prisma.campaign.update({
         where: { id: campaignId },
@@ -999,28 +1068,28 @@ export class CampaignsService {
     const varCount = Array.isArray(vars) ? vars.length : 0;
 
     let batchCount = 0;
-    const MAX_BATCHES = 100;
+    const MAX_BATCHES = 100; // Prevent infinite loops
     let totalSent = 0;
     let totalFailed = 0;
 
     while (batchCount < MAX_BATCHES) {
       batchCount++;
 
-      // Check campaign status
+      // Check campaign status before each batch
       const currentCampaign = await prisma.campaign.findUnique({
         where: { id: campaignId },
         select: { status: true },
       });
 
       if (!currentCampaign || currentCampaign.status !== 'RUNNING') {
-        console.log(`⚠️ Campaign stopped at batch ${batchCount}`);
+        console.log(`⚠️ Campaign stopped at batch ${batchCount} (status: ${currentCampaign?.status})`);
         break;
       }
 
       // Get pending contacts
       const pending = await prisma.campaignContact.findMany({
         where: { campaignId, status: 'PENDING' },
-        take: 25,
+        take: 25, // Process 25 at a time
         orderBy: { createdAt: 'asc' },
         include: {
           contact: {
@@ -1029,14 +1098,14 @@ export class CampaignsService {
               phone: true,
               firstName: true,
               lastName: true,
-              email: true,
-            },
+              email: true
+            }
           },
-        } as any,
-      });
+        },
+      }) as any;
 
       if (!pending.length) {
-        console.log(`✅ No more pending contacts`);
+        console.log(`✅ No more pending contacts (batch ${batchCount})`);
         break;
       }
 
@@ -1044,7 +1113,7 @@ export class CampaignsService {
 
       // Process each contact
       for (const cc of pending) {
-        const to = (cc as any).Contact?.phone;
+        const to = cc.contact?.phone;
 
         if (!to) {
           await this.updateContactStatus(
@@ -1059,8 +1128,10 @@ export class CampaignsService {
         }
 
         try {
-          const params = buildParamsFromContact((cc as any).Contact || (cc as any).contact, varCount);
+          // Build template parameters
+          const params = buildParamsFromContact(cc.contact, varCount);
 
+          // Build message payload
           const payload = buildTemplateSendPayload({
             to,
             templateName,
@@ -1068,8 +1139,12 @@ export class CampaignsService {
             params,
           });
 
-          // ✅ Use DECRYPTED token
-          const res = await whatsappApi.sendMessage(account.phoneNumberId, accessToken, payload);
+          // ✅ FIX: Use DECRYPTED token
+          const res = await whatsappApi.sendMessage(
+            account.phoneNumberId,
+            accessToken,  // ✅ Now plaintext!
+            payload
+          );
 
           const waMessageId = res?.messages?.[0]?.id;
 
@@ -1077,20 +1152,28 @@ export class CampaignsService {
             throw new Error('No message ID returned from WhatsApp API');
           }
 
-          await this.updateContactStatus(campaignId, cc.contactId, 'SENT', waMessageId);
+          // Update contact status to SENT
+          await this.updateContactStatus(
+            campaignId,
+            cc.contactId,
+            'SENT',
+            waMessageId
+          );
 
           totalSent++;
           console.log(`✅ Message sent to ${to} (${waMessageId})`);
 
-          // Rate limiting
+          // Rate limiting: ~80 messages/second max (WhatsApp limit)
           await new Promise((r) => setTimeout(r, 80));
+
         } catch (e: any) {
           console.error(`❌ Failed to send to ${to}:`, e.message);
 
-          // Check for token error
+          // Check if it's a token error (code 190)
           if (e?.response?.data?.error?.code === 190) {
             console.error('❌ OAuth token invalid - stopping campaign');
 
+            // Mark account as disconnected
             await prisma.whatsAppAccount.update({
               where: { id: account.id },
               data: {
@@ -1100,6 +1183,7 @@ export class CampaignsService {
               },
             });
 
+            // Mark campaign as failed
             await prisma.campaign.update({
               where: { id: campaignId },
               data: {
@@ -1108,28 +1192,39 @@ export class CampaignsService {
               },
             });
 
-            return;
+            console.log(`❌ Campaign failed due to invalid token. Total sent: ${totalSent}, Total failed: ${totalFailed}`);
+
+            return; // Stop processing entirely
           }
 
-          // Rate limit handling
+          // Check for rate limit error (code 130429)
           if (e?.response?.data?.error?.code === 130429) {
             console.warn('⚠️ Rate limit hit, waiting 60 seconds...');
-            await new Promise((r) => setTimeout(r, 60000));
+            await new Promise((r) => setTimeout(r, 60000)); // Wait 1 minute
           }
 
           const reason = e?.response?.data?.error?.message || e?.message || 'Send failed';
 
-          await this.updateContactStatus(campaignId, cc.contactId, 'FAILED', undefined, reason);
+          await this.updateContactStatus(
+            campaignId,
+            cc.contactId,
+            'FAILED',
+            undefined,
+            reason
+          );
 
           totalFailed++;
         }
       }
     }
 
-    console.log(
-      `📊 Campaign ${campaignId} send process completed. Sent: ${totalSent}, Failed: ${totalFailed}`
-    );
+    if (batchCount >= MAX_BATCHES) {
+      console.warn(`⚠️ Campaign stopped: max batches (${MAX_BATCHES}) reached`);
+    }
 
+    console.log(`📊 Campaign ${campaignId} send process completed. Sent: ${totalSent}, Failed: ${totalFailed}`);
+
+    // Check if campaign is complete
     await this.checkAndComplete(campaignId);
   }
 
@@ -1147,7 +1242,7 @@ export class CampaignsService {
           deliveredCount: true,
           readCount: true,
           failedCount: true,
-        },
+        }
       });
 
       const statusCounts = await prisma.campaign.groupBy({
@@ -1162,13 +1257,15 @@ export class CampaignsService {
       const totalRead = stats._sum.readCount || 0;
 
       const getStatusCount = (status: CampaignStatus) =>
-        statusCounts.find((s) => s.status === status)?._count || 0;
+        statusCounts.find(s => s.status === status)?._count || 0;
 
-      const deliveryRate =
-        totalSent > 0 ? Number(((totalDelivered / totalSent) * 100).toFixed(1)) : 0;
+      const deliveryRate = totalSent > 0
+        ? Number(((totalDelivered / totalSent) * 100).toFixed(1))
+        : 0;
 
-      const readRate =
-        totalDelivered > 0 ? Number(((totalRead / totalDelivered) * 100).toFixed(1)) : 0;
+      const readRate = totalDelivered > 0
+        ? Number(((totalRead / totalDelivered) * 100).toFixed(1))
+        : 0;
 
       return {
         total,
@@ -1211,7 +1308,10 @@ export class CampaignsService {
   // ==========================================
   async getAnalytics(organizationId: string, campaignId: string): Promise<CampaignAnalytics> {
     const campaign = await prisma.campaign.findFirst({
-      where: { id: campaignId, organizationId },
+      where: {
+        id: campaignId,
+        organizationId,
+      },
     });
 
     if (!campaign) {
