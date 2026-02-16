@@ -16,7 +16,7 @@ import { AppError } from '../../middleware/errorHandler';
 
 const prisma = new PrismaClient();
 
-class MetaService {
+export class MetaService {
   // ============================================
   // HELPER METHODS
   // ============================================
@@ -532,6 +532,31 @@ class MetaService {
     console.log(`✅ Default account: ${accountId}`);
 
     return { success: true, message: 'Default account updated' };
+  }
+
+  async refreshAccountHealth(accountId: string, organizationId: string) {
+    const accountData = await this.getAccountWithToken(accountId);
+    if (!accountData) {
+      throw new AppError('Account not found or access denied', 404);
+    }
+
+    if (accountData.account.organizationId !== organizationId) {
+      throw new AppError('Account does not belong to this organization', 403);
+    }
+
+    const { account, accessToken } = accountData;
+    const isValid = await metaApi.validateToken(accessToken);
+
+    const status = isValid ? 'ACTIVE' : 'DISCONNECTED';
+
+    const updated = await prisma.whatsAppAccount.update({
+      where: { id: accountId },
+      data: {
+        status: status as WhatsAppAccountStatus,
+      },
+    });
+
+    return this.sanitizeAccount(updated);
   }
 
   // ============================================
