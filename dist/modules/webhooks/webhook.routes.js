@@ -1,19 +1,22 @@
 "use strict";
-// 📁 src/modules/webhooks/webhook.routes.ts - COMPLETE
+// 📁 src/modules/webhooks/webhook.routes.ts - COMPLETE WEBHOOK ROUTES
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const webhook_service_1 = require("./webhook.service");
+const database_1 = __importDefault(require("../../config/database"));
+const auth_1 = require("../../middleware/auth");
 const router = (0, express_1.Router)();
 // ============================================
-// WEBHOOK VERIFICATION (GET)
+// WEBHOOK VERIFICATION (GET) - PUBLIC
 // ============================================
 router.get('/', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
+    console.log('📨 Webhook verification request received');
     const result = webhook_service_1.webhookService.verifyWebhook(mode, token, challenge);
     if (result) {
         res.status(200).send(result);
@@ -23,7 +26,7 @@ router.get('/', (req, res) => {
     }
 });
 // ============================================
-// WEBHOOK HANDLER (POST)
+// WEBHOOK HANDLER (POST) - PUBLIC
 // ============================================
 router.post('/', async (req, res) => {
     try {
@@ -43,16 +46,16 @@ router.post('/', async (req, res) => {
     }
     catch (error) {
         console.error('❌ Webhook handler error:', error);
-        // Still send 200 to prevent Meta from retrying
         if (!res.headersSent) {
             res.sendStatus(200);
         }
     }
 });
 // ============================================
-// WEBHOOK LOGS (Admin)
+// PROTECTED ROUTES (Admin/Debug)
 // ============================================
-router.get('/logs', async (req, res) => {
+// Get webhook logs
+router.get('/logs', auth_1.authenticate, async (req, res) => {
     try {
         const { page = 1, limit = 50, status, eventType } = req.query;
         const where = {};
@@ -97,10 +100,8 @@ router.get('/logs', async (req, res) => {
         res.status(500).json({ success: false, message: 'Failed to fetch logs' });
     }
 });
-// ============================================
-// MANUAL WINDOW EXPIRY (Cron job endpoint)
-// ============================================
-router.post('/expire-windows', async (req, res) => {
+// Manual window expiry (Cron job endpoint)
+router.post('/expire-windows', auth_1.authenticate, async (req, res) => {
     try {
         const count = await webhook_service_1.webhookService.expireConversationWindows();
         res.json({ success: true, expired: count });
@@ -110,10 +111,8 @@ router.post('/expire-windows', async (req, res) => {
         res.status(500).json({ success: false, message: 'Failed to expire windows' });
     }
 });
-// ============================================
-// MANUAL LIMIT RESET (Cron job endpoint)
-// ============================================
-router.post('/reset-limits', async (req, res) => {
+// Manual limit reset (Cron job endpoint)
+router.post('/reset-limits', auth_1.authenticate, async (req, res) => {
     try {
         const count = await webhook_service_1.webhookService.resetDailyMessageLimits();
         res.json({ success: true, reset: count });
@@ -123,7 +122,5 @@ router.post('/reset-limits', async (req, res) => {
         res.status(500).json({ success: false, message: 'Failed to reset limits' });
     }
 });
-// Import prisma
-const database_1 = __importDefault(require("../../config/database"));
 exports.default = router;
 //# sourceMappingURL=webhook.routes.js.map

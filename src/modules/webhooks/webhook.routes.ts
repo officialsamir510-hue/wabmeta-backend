@@ -1,17 +1,21 @@
-// 📁 src/modules/webhooks/webhook.routes.ts - COMPLETE
+// 📁 src/modules/webhooks/webhook.routes.ts - COMPLETE WEBHOOK ROUTES
 
 import { Router, Request, Response } from 'express';
 import { webhookService } from './webhook.service';
+import prisma from '../../config/database';
+import { authenticate } from '../../middleware/auth';
 
 const router = Router();
 
 // ============================================
-// WEBHOOK VERIFICATION (GET)
+// WEBHOOK VERIFICATION (GET) - PUBLIC
 // ============================================
 router.get('/', (req: Request, res: Response) => {
   const mode = req.query['hub.mode'] as string;
   const token = req.query['hub.verify_token'] as string;
   const challenge = req.query['hub.challenge'] as string;
+
+  console.log('📨 Webhook verification request received');
 
   const result = webhookService.verifyWebhook(mode, token, challenge);
 
@@ -23,7 +27,7 @@ router.get('/', (req: Request, res: Response) => {
 });
 
 // ============================================
-// WEBHOOK HANDLER (POST)
+// WEBHOOK HANDLER (POST) - PUBLIC
 // ============================================
 router.post('/', async (req: Request, res: Response) => {
   try {
@@ -43,7 +47,6 @@ router.post('/', async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('❌ Webhook handler error:', error);
-    // Still send 200 to prevent Meta from retrying
     if (!res.headersSent) {
       res.sendStatus(200);
     }
@@ -51,9 +54,11 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 // ============================================
-// WEBHOOK LOGS (Admin)
+// PROTECTED ROUTES (Admin/Debug)
 // ============================================
-router.get('/logs', async (req: Request, res: Response) => {
+
+// Get webhook logs
+router.get('/logs', authenticate, async (req: Request, res: Response) => {
   try {
     const { page = 1, limit = 50, status, eventType } = req.query;
 
@@ -103,10 +108,8 @@ router.get('/logs', async (req: Request, res: Response) => {
   }
 });
 
-// ============================================
-// MANUAL WINDOW EXPIRY (Cron job endpoint)
-// ============================================
-router.post('/expire-windows', async (req: Request, res: Response) => {
+// Manual window expiry (Cron job endpoint)
+router.post('/expire-windows', authenticate, async (req: Request, res: Response) => {
   try {
     const count = await webhookService.expireConversationWindows();
     res.json({ success: true, expired: count });
@@ -116,10 +119,8 @@ router.post('/expire-windows', async (req: Request, res: Response) => {
   }
 });
 
-// ============================================
-// MANUAL LIMIT RESET (Cron job endpoint)
-// ============================================
-router.post('/reset-limits', async (req: Request, res: Response) => {
+// Manual limit reset (Cron job endpoint)
+router.post('/reset-limits', authenticate, async (req: Request, res: Response) => {
   try {
     const count = await webhookService.resetDailyMessageLimits();
     res.json({ success: true, reset: count });
@@ -128,8 +129,5 @@ router.post('/reset-limits', async (req: Request, res: Response) => {
     res.status(500).json({ success: false, message: 'Failed to reset limits' });
   }
 });
-
-// Import prisma
-import prisma from '../../config/database';
 
 export default router;

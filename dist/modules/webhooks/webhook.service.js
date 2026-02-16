@@ -1,13 +1,11 @@
 "use strict";
-// 📁 src/modules/webhooks/webhook.service.ts - COMPLETE FIXED VERSION
+// 📁 src/modules/webhooks/webhook.service.ts - COMPLETE WEBHOOK SERVICE
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.webhookService = exports.webhookEvents = void 0;
+exports.webhookService = void 0;
 const client_1 = require("@prisma/client");
 const config_1 = require("../../config");
 const encryption_1 = require("../../utils/encryption");
 const meta_api_1 = require("../meta/meta.api");
-const events_1 = require("events");
-exports.webhookEvents = new events_1.EventEmitter();
 const prisma = new client_1.PrismaClient();
 // ============================================
 // WEBHOOK SERVICE CLASS
@@ -140,7 +138,6 @@ class WebhookService {
                 },
             });
             if (!contact) {
-                // Create new contact
                 contact = await prisma.contact.create({
                     data: {
                         organizationId: account.organizationId,
@@ -153,7 +150,6 @@ class WebhookService {
                 console.log(`✅ New contact created: ${contact.id}`);
             }
             else if (contactName && !contact.firstName) {
-                // Update contact name if available
                 await prisma.contact.update({
                     where: { id: contact.id },
                     data: { firstName: contactName },
@@ -185,7 +181,6 @@ class WebhookService {
                 console.log(`✅ New conversation created: ${conversation.id}`);
             }
             else {
-                // Update conversation
                 await prisma.conversation.update({
                     where: { id: conversation.id },
                     data: {
@@ -230,12 +225,6 @@ class WebhookService {
                 },
             });
             console.log(`✅ Message saved: ${messageData.id}`);
-            // Emit new message event
-            exports.webhookEvents.emit('newMessage', {
-                organizationId: account.organizationId,
-                conversationId: conversation.id,
-                messages: [messageData]
-            });
             // Update contact stats
             await prisma.contact.update({
                 where: { id: contact.id },
@@ -244,8 +233,6 @@ class WebhookService {
                     messageCount: { increment: 1 },
                 },
             });
-            // TODO: Trigger chatbot/automation if needed
-            // await this.triggerAutomations(account, contact, conversation, messageData);
         }
         catch (error) {
             console.error('❌ Error processing incoming message:', error);
@@ -259,10 +246,7 @@ class WebhookService {
             console.log(`📊 Status update: ${status.id} -> ${status.status}`);
             const message = await prisma.message.findFirst({
                 where: {
-                    OR: [
-                        { waMessageId: status.id },
-                        { wamId: status.id },
-                    ],
+                    OR: [{ waMessageId: status.id }, { wamId: status.id }],
                 },
             });
             if (!message) {
@@ -286,9 +270,8 @@ class WebhookService {
                     break;
                 case 'failed':
                     updateData.failedAt = timestamp;
-                    updateData.failureReason = status.errors?.[0]?.message ||
-                        status.errors?.[0]?.title ||
-                        'Unknown error';
+                    updateData.failureReason =
+                        status.errors?.[0]?.message || status.errors?.[0]?.title || 'Unknown error';
                     break;
             }
             await prisma.message.update({
@@ -311,14 +294,6 @@ class WebhookService {
                     });
                 }
             }
-            // Emit message status event
-            exports.webhookEvents.emit('messageStatus', {
-                organizationId: account.organizationId,
-                conversationId: message.conversationId,
-                messageId: message.id,
-                status: status.status,
-                timestamp: timestamp
-            });
             // Update campaign contact if applicable
             if (message.templateId) {
                 await prisma.campaignContact.updateMany({
@@ -334,10 +309,6 @@ class WebhookService {
                         }),
                     },
                 });
-                // Update campaign stats
-                if (message.templateName) {
-                    await this.updateCampaignStats(message.conversationId, status.status);
-                }
             }
         }
         catch (error) {
@@ -452,65 +423,17 @@ class WebhookService {
         if (!mediaId)
             return null;
         try {
-            // Get access token
             const decryptedToken = (0, encryption_1.safeDecryptStrict)(account.accessToken);
             if (!decryptedToken) {
                 console.error('❌ Failed to decrypt token for media retrieval');
                 return null;
             }
-            // Get media URL from Meta
             const mediaUrl = await meta_api_1.metaApi.getMediaUrl(mediaId, decryptedToken);
             return mediaUrl;
         }
         catch (error) {
             console.error('❌ Error fetching media URL:', error);
             return null;
-        }
-    }
-    async updateCampaignStats(conversationId, status) {
-        try {
-            const conversation = await prisma.conversation.findUnique({
-                where: { id: conversationId },
-                include: {
-                    messages: {
-                        where: {
-                            direction: client_1.MessageDirection.OUTBOUND,
-                            templateId: { not: null },
-                        },
-                        orderBy: { createdAt: 'desc' },
-                        take: 1,
-                    },
-                },
-            });
-            if (!conversation?.messages[0])
-                return;
-            // Find campaign from message
-            const campaignContact = await prisma.campaignContact.findFirst({
-                where: {
-                    waMessageId: conversation.messages[0].waMessageId,
-                },
-                include: { campaign: true },
-            });
-            if (!campaignContact)
-                return;
-            const updateField = {
-                sent: 'sentCount',
-                delivered: 'deliveredCount',
-                read: 'readCount',
-                failed: 'failedCount',
-            };
-            const field = updateField[status];
-            if (field) {
-                await prisma.campaign.update({
-                    where: { id: campaignContact.campaignId },
-                    data: {
-                        [field]: { increment: 1 },
-                    },
-                });
-            }
-        }
-        catch (error) {
-            console.error('❌ Error updating campaign stats:', error);
         }
     }
     // ============================================
