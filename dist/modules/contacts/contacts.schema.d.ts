@@ -10,10 +10,10 @@ export declare const createContactSchema: z.ZodObject<{
         customFields: z.ZodDefault<z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>>;
         groupIds: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodString, "many">>>;
     }, "strip", z.ZodTypeAny, {
+        tags: string[];
         phone: string;
         countryCode: string;
         customFields: Record<string, any>;
-        tags: string[];
         groupIds: string[];
         email?: string | null | undefined;
         firstName?: string | null | undefined;
@@ -21,19 +21,19 @@ export declare const createContactSchema: z.ZodObject<{
     }, {
         phone: string;
         email?: string | null | undefined;
+        tags?: string[] | undefined;
         firstName?: string | null | undefined;
         lastName?: string | null | undefined;
         countryCode?: string | undefined;
         customFields?: Record<string, any> | undefined;
-        tags?: string[] | undefined;
         groupIds?: string[] | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     body: {
+        tags: string[];
         phone: string;
         countryCode: string;
         customFields: Record<string, any>;
-        tags: string[];
         groupIds: string[];
         email?: string | null | undefined;
         firstName?: string | null | undefined;
@@ -43,11 +43,11 @@ export declare const createContactSchema: z.ZodObject<{
     body: {
         phone: string;
         email?: string | null | undefined;
+        tags?: string[] | undefined;
         firstName?: string | null | undefined;
         lastName?: string | null | undefined;
         countryCode?: string | undefined;
         customFields?: Record<string, any> | undefined;
-        tags?: string[] | undefined;
         groupIds?: string[] | undefined;
     };
 }>;
@@ -83,13 +83,13 @@ export declare const updateContactSchema: z.ZodObject<{
         customFields?: Record<string, any> | undefined;
     }, {
         email?: string | null | undefined;
+        tags?: string[] | undefined;
         firstName?: string | null | undefined;
         lastName?: string | null | undefined;
         phone?: string | undefined;
         status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         countryCode?: string | undefined;
         customFields?: Record<string, any> | undefined;
-        tags?: string[] | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     body: {
@@ -108,13 +108,13 @@ export declare const updateContactSchema: z.ZodObject<{
 }, {
     body: {
         email?: string | null | undefined;
+        tags?: string[] | undefined;
         firstName?: string | null | undefined;
         lastName?: string | null | undefined;
         phone?: string | undefined;
         status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         countryCode?: string | undefined;
         customFields?: Record<string, any> | undefined;
-        tags?: string[] | undefined;
     };
     params: {
         id: string;
@@ -140,15 +140,15 @@ export declare const getContactsSchema: z.ZodObject<{
         sortBy: "firstName" | "lastName" | "createdAt" | "lastMessageAt";
         sortOrder: "asc" | "desc";
         search?: string | undefined;
-        status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         tags?: string | undefined;
+        status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         groupId?: string | undefined;
     }, {
         search?: string | undefined;
+        tags?: string | undefined;
         status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        tags?: string | undefined;
         groupId?: string | undefined;
         sortBy?: "firstName" | "lastName" | "createdAt" | "lastMessageAt" | undefined;
         sortOrder?: "asc" | "desc" | undefined;
@@ -160,17 +160,17 @@ export declare const getContactsSchema: z.ZodObject<{
         sortBy: "firstName" | "lastName" | "createdAt" | "lastMessageAt";
         sortOrder: "asc" | "desc";
         search?: string | undefined;
-        status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         tags?: string | undefined;
+        status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         groupId?: string | undefined;
     };
 }, {
     query: {
         search?: string | undefined;
+        tags?: string | undefined;
         status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        tags?: string | undefined;
         groupId?: string | undefined;
         sortBy?: "firstName" | "lastName" | "createdAt" | "lastMessageAt" | undefined;
         sortOrder?: "asc" | "desc" | undefined;
@@ -221,8 +221,8 @@ export declare const importContactsSchema: z.ZodObject<{
             tags: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodString, "many">>>;
             customFields: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
         }, "strip", z.ZodTypeAny, {
-            phone: string;
             tags: string[];
+            phone: string;
             email?: string | null | undefined;
             firstName?: string | null | undefined;
             lastName?: string | null | undefined;
@@ -231,37 +231,37 @@ export declare const importContactsSchema: z.ZodObject<{
         }, {
             phone: string;
             email?: string | null | undefined;
+            tags?: string[] | undefined;
             firstName?: string | null | undefined;
             lastName?: string | null | undefined;
             countryCode?: string | undefined;
             customFields?: Record<string, any> | undefined;
-            tags?: string[] | undefined;
         }>, "many">;
         groupId: z.ZodOptional<z.ZodString>;
         tags: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodString, "many">>>;
         skipDuplicates: z.ZodDefault<z.ZodOptional<z.ZodBoolean>>;
     }, "strip", z.ZodTypeAny, {
+        tags: string[];
         contacts: {
-            phone: string;
             tags: string[];
+            phone: string;
             email?: string | null | undefined;
             firstName?: string | null | undefined;
             lastName?: string | null | undefined;
             countryCode?: string | undefined;
             customFields?: Record<string, any> | undefined;
         }[];
-        tags: string[];
         skipDuplicates: boolean;
         groupId?: string | undefined;
     }, {
         contacts: {
             phone: string;
             email?: string | null | undefined;
+            tags?: string[] | undefined;
             firstName?: string | null | undefined;
             lastName?: string | null | undefined;
             countryCode?: string | undefined;
             customFields?: Record<string, any> | undefined;
-            tags?: string[] | undefined;
         }[];
         tags?: string[] | undefined;
         skipDuplicates?: boolean | undefined;
@@ -269,16 +269,16 @@ export declare const importContactsSchema: z.ZodObject<{
     }>;
 }, "strip", z.ZodTypeAny, {
     body: {
+        tags: string[];
         contacts: {
-            phone: string;
             tags: string[];
+            phone: string;
             email?: string | null | undefined;
             firstName?: string | null | undefined;
             lastName?: string | null | undefined;
             countryCode?: string | undefined;
             customFields?: Record<string, any> | undefined;
         }[];
-        tags: string[];
         skipDuplicates: boolean;
         groupId?: string | undefined;
     };
@@ -287,11 +287,11 @@ export declare const importContactsSchema: z.ZodObject<{
         contacts: {
             phone: string;
             email?: string | null | undefined;
+            tags?: string[] | undefined;
             firstName?: string | null | undefined;
             lastName?: string | null | undefined;
             countryCode?: string | undefined;
             customFields?: Record<string, any> | undefined;
-            tags?: string[] | undefined;
         }[];
         tags?: string[] | undefined;
         skipDuplicates?: boolean | undefined;
@@ -310,27 +310,27 @@ export declare const bulkUpdateContactsSchema: z.ZodObject<{
         }>>;
     }, "strip", z.ZodTypeAny, {
         contactIds: string[];
-        status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         tags?: string[] | undefined;
+        status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         groupIds?: string[] | undefined;
     }, {
         contactIds: string[];
-        status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         tags?: string[] | undefined;
+        status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         groupIds?: string[] | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     body: {
         contactIds: string[];
-        status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         tags?: string[] | undefined;
+        status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         groupIds?: string[] | undefined;
     };
 }, {
     body: {
         contactIds: string[];
-        status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         tags?: string[] | undefined;
+        status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         groupIds?: string[] | undefined;
     };
 }>;

@@ -1,7 +1,7 @@
 "use strict";
 // 📁 src/modules/meta/meta.service.ts - COMPLETE FIXED VERSION
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.metaService = void 0;
+exports.metaService = exports.MetaService = void 0;
 const client_1 = require("@prisma/client");
 const meta_api_1 = require("./meta.api");
 const config_1 = require("../../config");
@@ -71,7 +71,7 @@ class MetaService {
         };
     }
     // ============================================
-    // CONNECTION FLOW
+    // CONNECTION FLOW - ✅ FIXED RECONNECT LOGIC
     // ============================================
     async completeConnection(codeOrToken, organizationId, userId, onProgress) {
         try {
@@ -208,17 +208,17 @@ class MetaService {
                 message: 'Webhooks configured',
             });
             // ============================================
-            // STEP 5: Save to Database
+            // STEP 5: Save to Database - ✅ FIXED LOGIC
             // ============================================
             onProgress?.({
                 step: 'SAVING',
                 status: 'in_progress',
                 message: 'Saving account...',
             });
-            // Check existing
+            // ✅ Check existing by phoneNumberId ONLY
             const existingAccount = await prisma.whatsAppAccount.findFirst({
                 where: {
-                    OR: [{ wabaId }, { phoneNumberId: primaryPhone.id }],
+                    phoneNumberId: primaryPhone.id,
                 },
             });
             console.log('🔐 Encrypting token...');
@@ -233,30 +233,84 @@ class MetaService {
             const cleanPhoneNumber = primaryPhone.displayPhoneNumber.replace(/\D/g, '');
             let savedAccount;
             if (existingAccount) {
-                // Reconnect existing
-                if (existingAccount.organizationId !== organizationId) {
-                    throw new errorHandler_1.AppError('This number is already connected to another organization', 409);
+                // Account exists - check organization
+                if (existingAccount.organizationId === organizationId) {
+                    // ✅ Same organization - REACTIVATE/UPDATE existing account
+                    console.log('🔄 Reactivating existing account for same organization');
+                    // Check if there's a default account already
+                    const hasDefault = await prisma.whatsAppAccount.findFirst({
+                        where: {
+                            organizationId,
+                            isDefault: true,
+                            id: { not: existingAccount.id },
+                        },
+                    });
+                    savedAccount = await prisma.whatsAppAccount.update({
+                        where: { id: existingAccount.id },
+                        data: {
+                            accessToken: encryptedToken,
+                            tokenExpiresAt,
+                            wabaId,
+                            displayName: primaryPhone.verifiedName || primaryPhone.displayPhoneNumber,
+                            verifiedName: primaryPhone.verifiedName,
+                            qualityRating: primaryPhone.qualityRating,
+                            status: client_1.WhatsAppAccountStatus.CONNECTED,
+                            isDefault: existingAccount.isDefault || !hasDefault, // Restore or set as default if no other default
+                            codeVerificationStatus: primaryPhone.codeVerificationStatus,
+                            nameStatus: primaryPhone.nameStatus,
+                            messagingLimit: primaryPhone.messagingLimitTier,
+                        },
+                    });
+                    console.log('✅ Account reactivated successfully');
                 }
-                console.log('🔄 Reconnecting existing account');
-                savedAccount = await prisma.whatsAppAccount.update({
-                    where: { id: existingAccount.id },
-                    data: {
-                        accessToken: encryptedToken,
-                        tokenExpiresAt,
-                        displayName: primaryPhone.verifiedName || primaryPhone.displayPhoneNumber,
-                        verifiedName: primaryPhone.verifiedName,
-                        qualityRating: primaryPhone.qualityRating,
-                        status: client_1.WhatsAppAccountStatus.CONNECTED,
-                        codeVerificationStatus: primaryPhone.codeVerificationStatus,
-                        nameStatus: primaryPhone.nameStatus,
-                        messagingLimit: primaryPhone.messagingLimitTier,
-                    },
-                });
-                console.log('✅ Account reconnected');
+                else {
+                    // ✅ Different organization - Soft disconnect old, CREATE new
+                    console.log('🔄 Phone number switching organizations');
+                    console.log(`   Old org: ${existingAccount.organizationId}`);
+                    console.log(`   New org: ${organizationId}`);
+                    // Soft disconnect old account (preserves data for old org)
+                    await prisma.whatsAppAccount.update({
+                        where: { id: existingAccount.id },
+                        data: {
+                            status: client_1.WhatsAppAccountStatus.DISCONNECTED,
+                            accessToken: null,
+                            tokenExpiresAt: null,
+                            isDefault: false,
+                        },
+                    });
+                    console.log('✅ Old account soft-disconnected (data preserved)');
+                    // Check if new org already has accounts
+                    const accountCount = await prisma.whatsAppAccount.count({
+                        where: { organizationId },
+                    });
+                    const webhookVerifyToken = (0, uuid_1.v4)();
+                    const encryptedWebhookSecret = (0, encryption_1.encrypt)(webhookVerifyToken);
+                    // Create new account for current organization
+                    savedAccount = await prisma.whatsAppAccount.create({
+                        data: {
+                            organizationId,
+                            wabaId,
+                            phoneNumberId: primaryPhone.id,
+                            phoneNumber: cleanPhoneNumber,
+                            displayName: primaryPhone.verifiedName || primaryPhone.displayPhoneNumber,
+                            verifiedName: primaryPhone.verifiedName,
+                            qualityRating: primaryPhone.qualityRating,
+                            accessToken: encryptedToken,
+                            tokenExpiresAt,
+                            webhookSecret: encryptedWebhookSecret,
+                            status: client_1.WhatsAppAccountStatus.CONNECTED,
+                            isDefault: accountCount === 0,
+                            codeVerificationStatus: primaryPhone.codeVerificationStatus,
+                            nameStatus: primaryPhone.nameStatus,
+                            messagingLimit: primaryPhone.messagingLimitTier,
+                        },
+                    });
+                    console.log('✅ New account created for new organization');
+                }
             }
             else {
-                // Create new
-                console.log('🔄 Creating new account');
+                // ✅ No existing account - CREATE new
+                console.log('🔄 Creating completely new account');
                 const accountCount = await prisma.whatsAppAccount.count({
                     where: { organizationId },
                 });
@@ -374,31 +428,55 @@ class MetaService {
             accessToken: decryptedToken,
         };
     }
+    /**
+     * ✅ SAFE DISCONNECT - Soft disconnect, preserves data
+     * Idempotent: Can be called multiple times safely
+     * Handles default account switching automatically
+     */
     async disconnectAccount(accountId, organizationId) {
+        console.log(`🔌 Disconnecting account: ${accountId}`);
+        // Find account (safe - checks organization ownership)
         const account = await prisma.whatsAppAccount.findFirst({
             where: {
                 id: accountId,
                 organizationId,
             },
         });
+        // ✅ Idempotent: If already not found, treat as already disconnected
         if (!account) {
-            throw new errorHandler_1.AppError('WhatsApp account not found', 404);
+            console.log(`ℹ️  Account not found or already disconnected: ${accountId}`);
+            return {
+                success: true,
+                message: 'Account already disconnected (not found)',
+            };
         }
+        // Check if already disconnected
+        if (account.status === client_1.WhatsAppAccountStatus.DISCONNECTED && !account.accessToken) {
+            console.log(`ℹ️  Account already disconnected: ${accountId}`);
+            return {
+                success: true,
+                message: 'Account already disconnected',
+            };
+        }
+        // ✅ Soft disconnect: Mark as disconnected, clear token
+        // This preserves campaign history, templates, and other relations
         await prisma.whatsAppAccount.update({
             where: { id: accountId },
             data: {
                 status: client_1.WhatsAppAccountStatus.DISCONNECTED,
                 accessToken: null,
                 tokenExpiresAt: null,
+                isDefault: false,
             },
         });
         console.log(`✅ Account disconnected: ${accountId}`);
+        // ✅ If it was default, set another CONNECTED account as default
         if (account.isDefault) {
             const anotherAccount = await prisma.whatsAppAccount.findFirst({
                 where: {
                     organizationId,
-                    id: { not: accountId },
                     status: client_1.WhatsAppAccountStatus.CONNECTED,
+                    id: { not: accountId },
                 },
                 orderBy: { createdAt: 'asc' },
             });
@@ -409,8 +487,14 @@ class MetaService {
                 });
                 console.log(`✅ New default account: ${anotherAccount.id}`);
             }
+            else {
+                console.log(`ℹ️  No other connected accounts found`);
+            }
         }
-        return { success: true, message: 'Account disconnected' };
+        return {
+            success: true,
+            message: 'Account disconnected successfully',
+        };
     }
     async setDefaultAccount(accountId, organizationId) {
         const account = await prisma.whatsAppAccount.findFirst({
@@ -433,6 +517,85 @@ class MetaService {
         });
         console.log(`✅ Default account: ${accountId}`);
         return { success: true, message: 'Default account updated' };
+    }
+    async refreshAccountHealth(accountId, organizationId) {
+        const accountData = await this.getAccountWithToken(accountId);
+        if (!accountData) {
+            throw new errorHandler_1.AppError('Account not found or access denied', 404);
+        }
+        if (accountData.account.organizationId !== organizationId) {
+            throw new errorHandler_1.AppError('Account does not belong to this organization', 403);
+        }
+        const { account, accessToken } = accountData;
+        try {
+            const debugInfo = await meta_api_1.metaApi.debugToken(accessToken);
+            if (!debugInfo.data.is_valid) {
+                await prisma.whatsAppAccount.update({
+                    where: { id: accountId },
+                    data: {
+                        status: client_1.WhatsAppAccountStatus.DISCONNECTED,
+                        accessToken: null,
+                        tokenExpiresAt: null,
+                    },
+                });
+                return {
+                    healthy: false,
+                    reason: 'Access token expired',
+                    action: 'Please reconnect',
+                };
+            }
+            const phoneNumbers = await meta_api_1.metaApi.getPhoneNumbers(account.wabaId, accessToken);
+            const phone = phoneNumbers.find((p) => p.id === account.phoneNumberId);
+            if (!phone) {
+                await prisma.whatsAppAccount.update({
+                    where: { id: accountId },
+                    data: { status: client_1.WhatsAppAccountStatus.DISCONNECTED },
+                });
+                return {
+                    healthy: false,
+                    reason: 'Phone number not found',
+                    action: 'Phone may have been removed',
+                };
+            }
+            await prisma.whatsAppAccount.update({
+                where: { id: accountId },
+                data: {
+                    qualityRating: phone.qualityRating,
+                    displayName: phone.verifiedName || phone.displayPhoneNumber,
+                    verifiedName: phone.verifiedName,
+                    status: client_1.WhatsAppAccountStatus.CONNECTED,
+                    codeVerificationStatus: phone.codeVerificationStatus,
+                    nameStatus: phone.nameStatus,
+                    messagingLimit: phone.messagingLimitTier,
+                },
+            });
+            console.log(`✅ Health check passed: ${accountId}`);
+            return {
+                healthy: true,
+                qualityRating: phone.qualityRating,
+                verifiedName: phone.verifiedName,
+                displayPhoneNumber: phone.displayPhoneNumber,
+                status: phone.status,
+                codeVerificationStatus: phone.codeVerificationStatus,
+                nameStatus: phone.nameStatus,
+                messagingLimit: phone.messagingLimitTier,
+            };
+        }
+        catch (error) {
+            console.error(`❌ Health check failed: ${accountId}`, error);
+            await prisma.whatsAppAccount.update({
+                where: { id: accountId },
+                data: {
+                    status: client_1.WhatsAppAccountStatus.DISCONNECTED,
+                    accessToken: null,
+                },
+            });
+            return {
+                healthy: false,
+                reason: error.message || 'Health check failed',
+                action: 'Please reconnect',
+            };
+        }
     }
     // ============================================
     // TEMPLATE SYNC
@@ -512,10 +675,10 @@ class MetaService {
         const toRemove = existingTemplates.filter((t) => !metaKeys.has(`${t.name}_${t.language}`));
         let removed = 0;
         if (toRemove.length > 0) {
-            const result = await prisma.template.deleteMany({
+            const deleteResult = await prisma.template.deleteMany({
                 where: { id: { in: toRemove.map((t) => t.id) } },
             });
-            removed = result.count;
+            removed = deleteResult.count;
         }
         console.log(`✅ Sync complete:`);
         console.log(`   Created: ${created}`);
@@ -676,6 +839,7 @@ class MetaService {
         return variables;
     }
 }
+exports.MetaService = MetaService;
 exports.metaService = new MetaService();
 exports.default = exports.metaService;
 //# sourceMappingURL=meta.service.js.map

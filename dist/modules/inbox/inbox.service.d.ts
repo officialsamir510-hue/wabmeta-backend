@@ -16,12 +16,12 @@ declare class InboxService {
             contact: {
                 name: string;
                 email: string | null;
+                tags: string[];
                 id: string;
                 firstName: string | null;
                 lastName: string | null;
                 phone: string;
                 avatar: string | null;
-                tags: string[];
             };
             organizationId: string;
             id: string;
@@ -61,6 +61,7 @@ declare class InboxService {
         contact: {
             email: string | null;
             organizationId: string;
+            tags: string[];
             id: string;
             firstName: string | null;
             lastName: string | null;
@@ -72,7 +73,6 @@ declare class InboxService {
             lastMessageAt: Date | null;
             countryCode: string;
             customFields: Prisma.JsonValue;
-            tags: string[];
             messageCount: number;
             source: string | null;
         };
@@ -102,6 +102,7 @@ declare class InboxService {
         contact: {
             email: string | null;
             organizationId: string;
+            tags: string[];
             id: string;
             firstName: string | null;
             lastName: string | null;
@@ -113,7 +114,6 @@ declare class InboxService {
             lastMessageAt: Date | null;
             countryCode: string;
             customFields: Prisma.JsonValue;
-            tags: string[];
             messageCount: number;
             source: string | null;
         };
@@ -388,6 +388,7 @@ declare class InboxService {
                 contact: {
                     email: string | null;
                     organizationId: string;
+                    tags: string[];
                     id: string;
                     firstName: string | null;
                     lastName: string | null;
@@ -399,7 +400,6 @@ declare class InboxService {
                     lastMessageAt: Date | null;
                     countryCode: string;
                     customFields: Prisma.JsonValue;
-                    tags: string[];
                     messageCount: number;
                     source: string | null;
                 };
@@ -481,6 +481,7 @@ declare class InboxService {
         contact: {
             email: string | null;
             organizationId: string;
+            tags: string[];
             id: string;
             firstName: string | null;
             lastName: string | null;
@@ -492,7 +493,6 @@ declare class InboxService {
             lastMessageAt: Date | null;
             countryCode: string;
             customFields: Prisma.JsonValue;
-            tags: string[];
             messageCount: number;
             source: string | null;
         };

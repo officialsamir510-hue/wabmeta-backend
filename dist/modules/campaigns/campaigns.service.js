@@ -1,5 +1,5 @@
 "use strict";
-// 📁 src/modules/campaigns/campaigns.service.ts - COMPLETE WITH QUEUE & TOKEN VALIDATION
+// 📁 src/modules/campaigns/campaigns.service.ts - COMPLETE WITH ALL FIXES
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.campaignsService = exports.CampaignsService = void 0;
 const client_1 = require("@prisma/client");
@@ -12,10 +12,48 @@ const prisma = new client_1.PrismaClient();
 // HELPER FUNCTIONS
 // ============================================
 const digitsOnly = (p) => String(p || '').replace(/\D/g, '');
+// ✅ FIX-1: Safe toMetaLang function
 const toMetaLang = (lang) => {
-    if (lang?.includes('_'))
-        return lang;
-    return lang === 'en' ? 'en_US' : 'en_US';
+    const l = String(lang || '').trim();
+    if (!l)
+        return 'en_US'; // fallback if empty
+    if (l.includes('_'))
+        return l; // already in correct format like en_US
+    // Common mappings
+    const langMap = {
+        en: 'en_US',
+        hi: 'hi_IN',
+        es: 'es_ES',
+        pt: 'pt_BR',
+        ar: 'ar_AR',
+        fr: 'fr_FR',
+        de: 'de_DE',
+        id: 'id_ID',
+        it: 'it_IT',
+        ja: 'ja_JP',
+        ko: 'ko_KR',
+        ru: 'ru_RU',
+        zh: 'zh_CN',
+    };
+    return langMap[l.toLowerCase()] || 'en_US';
+};
+// ✅ FIX-4: Recipient formatting with country code
+const toRecipient = (c) => {
+    const phone = String(c?.phone || '').trim();
+    if (!phone)
+        return null;
+    // If starts with +, just strip to digits
+    if (phone.startsWith('+'))
+        return digitsOnly(phone);
+    const digits = digitsOnly(phone);
+    if (!digits)
+        return null;
+    // If already has country code (more than 10 digits), use as-is
+    if (digits.length > 10)
+        return digits;
+    // Add country code
+    const cc = digitsOnly(c?.countryCode || '91'); // Default to India
+    return `${cc}${digits}`;
 };
 const buildTemplateSendPayload = (args) => ({
     messaging_product: 'whatsapp',
@@ -64,7 +102,9 @@ const formatCampaign = (campaign) => {
         templateId: campaign.templateId,
         templateName: campaign.template?.name || campaign.Template?.name || '',
         whatsappAccountId: campaign.whatsappAccountId,
-        whatsappAccountPhone: campaign.whatsappAccount?.phoneNumber || campaign.WhatsAppAccount?.phoneNumber || '',
+        whatsappAccountPhone: campaign.whatsappAccount?.phoneNumber ||
+            campaign.WhatsAppAccount?.phoneNumber ||
+            '',
         contactGroupId: campaign.contactGroupId,
         contactGroupName: campaign.contactGroup?.name || campaign.ContactGroup?.name || null,
         audienceFilter: campaign.audienceFilter,
@@ -89,8 +129,14 @@ const formatCampaignContact = (cc) => ({
     id: cc.id,
     contactId: cc.contactId,
     phone: cc.contact?.phone || cc.Contact?.phone || '',
-    fullName: [cc.contact?.firstName || cc.Contact?.firstName, cc.contact?.lastName || cc.Contact?.lastName].filter(Boolean).join(' ') ||
-        cc.contact?.phone || cc.Contact?.phone ||
+    fullName: [
+        cc.contact?.firstName || cc.Contact?.firstName,
+        cc.contact?.lastName || cc.Contact?.lastName,
+    ]
+        .filter(Boolean)
+        .join(' ') ||
+        cc.contact?.phone ||
+        cc.Contact?.phone ||
         '',
     status: cc.status,
     waMessageId: cc.waMessageId,
@@ -189,6 +235,15 @@ class CampaignsService {
         const waAccount = await this.findWhatsAppAccount(organizationId, whatsappAccountId, phoneNumberId);
         if (!waAccount) {
             throw new errorHandler_1.AppError('WhatsApp account not found. Please connect WhatsApp first in Settings → WhatsApp.', 400);
+        }
+        // ✅ FIX-3: Ensure template belongs to same WhatsApp account
+        if (template.whatsappAccountId &&
+            template.whatsappAccountId !== waAccount.id) {
+            throw new errorHandler_1.AppError('Selected template belongs to a different WhatsApp account. Please select a template for the connected number.', 400);
+        }
+        // ✅ FIX-3: Ensure WABA match (extra safety)
+        if (template.wabaId && template.wabaId !== waAccount.wabaId) {
+            throw new errorHandler_1.AppError('Selected template belongs to a different WABA. Please sync templates for this number and select again.', 400);
         }
         // Validate contact group if provided
         if (contactGroupId) {
@@ -294,7 +349,7 @@ class CampaignsService {
     // GET CAMPAIGNS LIST
     // ==========================================
     async getList(organizationId, query) {
-        const { page = 1, limit = 20, search, status, sortBy = 'createdAt', sortOrder = 'desc' } = query;
+        const { page = 1, limit = 20, search, status, sortBy = 'createdAt', sortOrder = 'desc', } = query;
         const skip = (page - 1) * limit;
         const where = {
             organizationId,
@@ -349,6 +404,7 @@ class CampaignsService {
                         bodyText: true,
                         headerType: true,
                         headerContent: true,
+                        language: true,
                     },
                 },
                 whatsappAccount: {
@@ -602,6 +658,7 @@ class CampaignsService {
                     contact: {
                         select: {
                             phone: true,
+                            countryCode: true,
                             firstName: true,
                             lastName: true,
                         },
@@ -723,7 +780,7 @@ class CampaignsService {
         return formatCampaign(duplicate);
     }
     // ==========================================
-    // PROCESS CAMPAIGN SENDING - ✅ WITH DECRYPTED TOKEN
+    // PROCESS CAMPAIGN SENDING - ✅ WITH ALL FIXES
     // ==========================================
     async processCampaignSending(organizationId, campaignId) {
         console.log(`📤 Starting send process for campaign: ${campaignId}`);
@@ -780,6 +837,7 @@ class CampaignsService {
             });
             return;
         }
+        console.log(`📝 Using template: ${templateName} (${templateLang})`);
         const vars = template.variables || [];
         const varCount = Array.isArray(vars) ? vars.length : 0;
         let batchCount = 0;
@@ -797,7 +855,7 @@ class CampaignsService {
                 console.log(`⚠️ Campaign stopped at batch ${batchCount}`);
                 break;
             }
-            // Get pending contacts
+            // ✅ FIX-4: Get pending contacts with countryCode
             const pending = await prisma.campaignContact.findMany({
                 where: { campaignId, status: 'PENDING' },
                 take: 25,
@@ -807,6 +865,7 @@ class CampaignsService {
                         select: {
                             id: true,
                             phone: true,
+                            countryCode: true, // ✅ Added for proper phone formatting
                             firstName: true,
                             lastName: true,
                             email: true,
@@ -819,23 +878,38 @@ class CampaignsService {
                 break;
             }
             console.log(`📤 Processing batch ${batchCount}: ${pending.length} contacts`);
-            // Process each contact
+            // ✅ Process each contact with safety checks
             for (const cc of pending) {
-                const to = cc.Contact?.phone;
-                if (!to) {
-                    await this.updateContactStatus(campaignId, cc.contactId, 'FAILED', undefined, 'Contact phone missing');
+                // ✅ Support both Prisma shapes safely
+                const c = cc.contact || cc.Contact;
+                // ✅ FIX-4: Use toRecipient for proper phone formatting
+                const to = toRecipient(c);
+                // ✅ Validate phone exists and is not empty
+                if (!to || to.length < 10) {
+                    await this.updateContactStatus(campaignId, cc.contactId, 'FAILED', undefined, 'Contact phone missing, empty, or invalid format');
+                    totalFailed++;
+                    continue;
+                }
+                // ✅ Prevent sending to same number as business account
+                const toDigits = digitsOnly(to);
+                const fromDigits = digitsOnly(account.phoneNumber);
+                if (toDigits && fromDigits && toDigits === fromDigits) {
+                    console.warn(`⚠️ Skipping self-send to ${to}`);
+                    await this.updateContactStatus(campaignId, cc.contactId, 'FAILED', undefined, 'Cannot send to business number (sender = recipient)');
                     totalFailed++;
                     continue;
                 }
                 try {
-                    const params = buildParamsFromContact(cc.Contact || cc.contact, varCount);
+                    // ✅ Build params from contact data
+                    const params = buildParamsFromContact(c, varCount);
                     const payload = buildTemplateSendPayload({
                         to,
                         templateName,
                         language: templateLang,
                         params,
                     });
-                    // ✅ Use DECRYPTED token
+                    console.log(`📤 Sending to ${to} with template ${templateName} (${toMetaLang(templateLang)})`);
+                    // ✅ Send with DECRYPTED token
                     const res = await whatsapp_api_1.whatsappApi.sendMessage(account.phoneNumberId, accessToken, payload);
                     const waMessageId = res?.messages?.[0]?.id;
                     if (!waMessageId) {

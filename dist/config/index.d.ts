@@ -52,14 +52,33 @@ export declare const config: {
         readonly callbackUrl: string;
     };
     readonly email: {
-        readonly host: string;
-        readonly port: number;
-        readonly secure: boolean;
-        readonly auth: {
-            readonly user: string;
-            readonly pass: string;
-        };
+        readonly enabled: boolean;
+        readonly resendApiKey: string;
         readonly from: string;
+        readonly fromName: string;
+        readonly smtp: {
+            readonly host: string;
+            readonly port: number;
+            readonly secure: boolean;
+            readonly auth: {
+                readonly user: string;
+                readonly pass: string;
+            };
+        };
+        readonly templates: {
+            readonly welcome: {
+                readonly subject: "Welcome to WabMeta! 🎉";
+            };
+            readonly resetPassword: {
+                readonly subject: "Reset Your Password - WabMeta";
+            };
+            readonly verifyEmail: {
+                readonly subject: "Verify Your Email - WabMeta";
+            };
+            readonly invitation: {
+                readonly subject: "You've been invited to join WabMeta";
+            };
+        };
     };
     readonly razorpay: {
         readonly keyId: string;

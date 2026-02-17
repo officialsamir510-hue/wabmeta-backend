@@ -1,11 +1,14 @@
 "use strict";
 // 📁 src/modules/webhooks/webhook.service.ts - COMPLETE WEBHOOK SERVICE
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.webhookService = void 0;
+exports.webhookService = exports.webhookEvents = void 0;
 const client_1 = require("@prisma/client");
 const config_1 = require("../../config");
 const encryption_1 = require("../../utils/encryption");
 const meta_api_1 = require("../meta/meta.api");
+const events_1 = require("events");
+exports.webhookEvents = new events_1.EventEmitter();
+exports.webhookEvents.setMaxListeners(20);
 const prisma = new client_1.PrismaClient();
 // ============================================
 // WEBHOOK SERVICE CLASS
@@ -225,6 +228,11 @@ class WebhookService {
                 },
             });
             console.log(`✅ Message saved: ${messageData.id}`);
+            // Emit event for real-time updates
+            exports.webhookEvents.emit('newMessage', {
+                ...messageData,
+                organizationId: account.organizationId,
+            });
             // Update contact stats
             await prisma.contact.update({
                 where: { id: contact.id },
@@ -310,6 +318,14 @@ class WebhookService {
                     },
                 });
             }
+            // Emit status update for real-time broadcasting
+            exports.webhookEvents.emit('messageStatus', {
+                messageId: message.id,
+                waMessageId: status.id,
+                status: this.mapStatus(status.status),
+                organizationId: account.organizationId,
+                conversationId: message.conversationId,
+            });
         }
         catch (error) {
             console.error('❌ Error processing status update:', error);

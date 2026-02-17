@@ -9,10 +9,10 @@ const nodemailer_1 = __importDefault(require("nodemailer"));
 const config_1 = require("../config");
 // Create transporter
 const transporter = nodemailer_1.default.createTransport({
-    host: config_1.config.email.host,
-    port: config_1.config.email.port,
-    secure: config_1.config.email.port === 465,
-    auth: { user: config_1.config.email.auth.user, pass: config_1.config.email.auth.pass },
+    host: config_1.config.email.smtp.host,
+    port: config_1.config.email.smtp.port,
+    secure: config_1.config.email.smtp.port === 465,
+    auth: { user: config_1.config.email.smtp.auth.user, pass: config_1.config.email.smtp.auth.pass },
     connectionTimeout: 10000,
     greetingTimeout: 10000,
     socketTimeout: 20000,
@@ -280,7 +280,7 @@ const sendEmail = async (options) => {
             return true;
         }
         // Check if email config is set
-        if (!config_1.config.email.auth.user || !config_1.config.email.auth.pass) {
+        if (!config_1.config.email.smtp.auth.user || !config_1.config.email.smtp.auth.pass) {
             console.log('📧 [SKIP] Email not configured, skipping:', options.subject);
             return true; // Return true to not block the flow
         }
@@ -346,7 +346,7 @@ exports.sendTeamInvitationEmail = sendTeamInvitationEmail;
 // Verify transporter connection
 const verifyEmailConnection = async () => {
     try {
-        if (!config_1.config.email.auth.user || !config_1.config.email.auth.pass) {
+        if (!config_1.config.email.smtp.auth.user || !config_1.config.email.smtp.auth.pass) {
             console.log('📧 Email not configured, skipping verification');
             return true;
         }

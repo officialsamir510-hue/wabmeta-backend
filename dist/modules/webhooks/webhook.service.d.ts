@@ -1,3 +1,5 @@
+import { EventEmitter } from 'events';
+export declare const webhookEvents: EventEmitter<any>;
 declare class WebhookService {
     verifyWebhook(mode: string, token: string, challenge: string): string | null;
     processWebhook(payload: any, signature: string | undefined): Promise<{

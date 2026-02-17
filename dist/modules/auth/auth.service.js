@@ -9,7 +9,7 @@ const database_1 = __importDefault(require("../../config/database"));
 const config_1 = require("../../config");
 const password_1 = require("../../utils/password");
 const jwt_1 = require("../../utils/jwt");
-const email_1 = require("../../utils/email");
+const email_resend_1 = require("../../utils/email.resend");
 const otp_1 = require("../../utils/otp");
 const errorHandler_1 = require("../../middleware/errorHandler");
 const google_auth_library_1 = require("google-auth-library");
@@ -23,7 +23,7 @@ const otpStore = new Map();
 const normalizeEmail = (email) => email.trim().toLowerCase();
 // ✅ Non-blocking email helper (never blocks request)
 const sendEmailNonBlocking = (options) => {
-    void (0, email_1.sendEmail)(options)
+    void (0, email_resend_1.sendEmail)(options)
         .then((ok) => {
         if (!ok)
             console.warn('📧 Email failed (sendEmail returned false):', options.subject);
@@ -105,7 +105,7 @@ class AuthService {
                     data: { emailVerifyToken, emailVerifyExpires },
                 });
                 const verifyUrl = `${config_1.config.frontendUrl}/verify-email?token=${emailVerifyToken}`;
-                const emailContent = email_1.emailTemplates.verifyEmail(existingUser.firstName, verifyUrl);
+                const emailContent = email_resend_1.emailTemplates.verifyEmail(existingUser.firstName, verifyUrl);
                 // ✅ Non-blocking email send (no await)
                 sendEmailNonBlocking({
                     to: normalizedEmail,
@@ -177,7 +177,7 @@ class AuthService {
         });
         // Send verification email (✅ non-blocking)
         const verifyUrl = `${config_1.config.frontendUrl}/verify-email?token=${emailVerifyToken}`;
-        const emailContent = email_1.emailTemplates.verifyEmail(firstName, verifyUrl);
+        const emailContent = email_resend_1.emailTemplates.verifyEmail(firstName, verifyUrl);
         sendEmailNonBlocking({
             to: normalizedEmail,
             subject: emailContent.subject,
@@ -292,7 +292,7 @@ class AuthService {
         });
         // Send email (✅ non-blocking)
         const verifyUrl = `${config_1.config.frontendUrl}/verify-email?token=${emailVerifyToken}`;
-        const emailContent = email_1.emailTemplates.verifyEmail(user.firstName, verifyUrl);
+        const emailContent = email_resend_1.emailTemplates.verifyEmail(user.firstName, verifyUrl);
         sendEmailNonBlocking({
             to: normalizedEmail,
             subject: emailContent.subject,
@@ -325,7 +325,7 @@ class AuthService {
         });
         // Send email (✅ non-blocking)
         const resetUrl = `${config_1.config.frontendUrl}/reset-password?token=${resetToken}`;
-        const emailContent = email_1.emailTemplates.resetPassword(user.firstName, resetUrl);
+        const emailContent = email_resend_1.emailTemplates.resetPassword(user.firstName, resetUrl);
         sendEmailNonBlocking({
             to: normalizedEmail,
             subject: emailContent.subject,
@@ -384,7 +384,7 @@ class AuthService {
             attempts: 0,
         });
         // Send OTP email (✅ non-blocking)
-        const emailContent = email_1.emailTemplates.otp(user.firstName, otp);
+        const emailContent = email_resend_1.emailTemplates.otp(user.firstName, otp);
         sendEmailNonBlocking({
             to: normalizedEmail,
             subject: emailContent.subject,

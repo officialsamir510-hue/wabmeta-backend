@@ -62,27 +62,27 @@ export declare const sendTextMessageSchema: z.ZodObject<{
         text: z.ZodString;
         replyToMessageId: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
-        to: string;
         text: string;
+        to: string;
         whatsappAccountId: string;
         replyToMessageId?: string | undefined;
     }, {
-        to: string;
         text: string;
+        to: string;
         whatsappAccountId: string;
         replyToMessageId?: string | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     body: {
-        to: string;
         text: string;
+        to: string;
         whatsappAccountId: string;
         replyToMessageId?: string | undefined;
     };
 }, {
     body: {
-        to: string;
         text: string;
+        to: string;
         whatsappAccountId: string;
         replyToMessageId?: string | undefined;
     };

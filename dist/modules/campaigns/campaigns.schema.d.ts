@@ -14,14 +14,14 @@ export declare const createCampaignSchema: z.ZodObject<{
             createdBefore: z.ZodOptional<z.ZodString>;
             hasMessaged: z.ZodOptional<z.ZodBoolean>;
         }, "strip", z.ZodTypeAny, {
-            status?: string[] | undefined;
             tags?: string[] | undefined;
+            status?: string[] | undefined;
             createdAfter?: string | undefined;
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
         }, {
-            status?: string[] | undefined;
             tags?: string[] | undefined;
+            status?: string[] | undefined;
             createdAfter?: string | undefined;
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
@@ -41,16 +41,16 @@ export declare const createCampaignSchema: z.ZodObject<{
         name: string;
         whatsappAccountId: string;
         templateId: string;
+        scheduledAt?: string | undefined;
         description?: string | undefined;
         contactGroupId?: string | undefined;
         audienceFilter?: {
-            status?: string[] | undefined;
             tags?: string[] | undefined;
+            status?: string[] | undefined;
             createdAfter?: string | undefined;
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
         } | undefined;
-        scheduledAt?: string | undefined;
         contactIds?: string[] | undefined;
         variableMapping?: Record<string, {
             type: "field" | "static";
@@ -60,16 +60,16 @@ export declare const createCampaignSchema: z.ZodObject<{
         name: string;
         whatsappAccountId: string;
         templateId: string;
+        scheduledAt?: string | undefined;
         description?: string | undefined;
         contactGroupId?: string | undefined;
         audienceFilter?: {
-            status?: string[] | undefined;
             tags?: string[] | undefined;
+            status?: string[] | undefined;
             createdAfter?: string | undefined;
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
         } | undefined;
-        scheduledAt?: string | undefined;
         contactIds?: string[] | undefined;
         variableMapping?: Record<string, {
             type: "field" | "static";
@@ -79,16 +79,16 @@ export declare const createCampaignSchema: z.ZodObject<{
         name: string;
         whatsappAccountId: string;
         templateId: string;
+        scheduledAt?: string | undefined;
         description?: string | undefined;
         contactGroupId?: string | undefined;
         audienceFilter?: {
-            status?: string[] | undefined;
             tags?: string[] | undefined;
+            status?: string[] | undefined;
             createdAfter?: string | undefined;
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
         } | undefined;
-        scheduledAt?: string | undefined;
         contactIds?: string[] | undefined;
         variableMapping?: Record<string, {
             type: "field" | "static";
@@ -98,16 +98,16 @@ export declare const createCampaignSchema: z.ZodObject<{
         name: string;
         whatsappAccountId: string;
         templateId: string;
+        scheduledAt?: string | undefined;
         description?: string | undefined;
         contactGroupId?: string | undefined;
         audienceFilter?: {
-            status?: string[] | undefined;
             tags?: string[] | undefined;
+            status?: string[] | undefined;
             createdAfter?: string | undefined;
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
         } | undefined;
-        scheduledAt?: string | undefined;
         contactIds?: string[] | undefined;
         variableMapping?: Record<string, {
             type: "field" | "static";
@@ -119,16 +119,16 @@ export declare const createCampaignSchema: z.ZodObject<{
         name: string;
         whatsappAccountId: string;
         templateId: string;
+        scheduledAt?: string | undefined;
         description?: string | undefined;
         contactGroupId?: string | undefined;
         audienceFilter?: {
-            status?: string[] | undefined;
             tags?: string[] | undefined;
+            status?: string[] | undefined;
             createdAfter?: string | undefined;
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
         } | undefined;
-        scheduledAt?: string | undefined;
         contactIds?: string[] | undefined;
         variableMapping?: Record<string, {
             type: "field" | "static";
@@ -140,16 +140,16 @@ export declare const createCampaignSchema: z.ZodObject<{
         name: string;
         whatsappAccountId: string;
         templateId: string;
+        scheduledAt?: string | undefined;
         description?: string | undefined;
         contactGroupId?: string | undefined;
         audienceFilter?: {
-            status?: string[] | undefined;
             tags?: string[] | undefined;
+            status?: string[] | undefined;
             createdAfter?: string | undefined;
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
         } | undefined;
-        scheduledAt?: string | undefined;
         contactIds?: string[] | undefined;
         variableMapping?: Record<string, {
             type: "field" | "static";
@@ -178,14 +178,14 @@ export declare const updateCampaignSchema: z.ZodObject<{
             createdBefore: z.ZodOptional<z.ZodString>;
             hasMessaged: z.ZodOptional<z.ZodBoolean>;
         }, "strip", z.ZodTypeAny, {
-            status?: string[] | undefined;
             tags?: string[] | undefined;
+            status?: string[] | undefined;
             createdAfter?: string | undefined;
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
         }, {
-            status?: string[] | undefined;
             tags?: string[] | undefined;
+            status?: string[] | undefined;
             createdAfter?: string | undefined;
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
@@ -203,17 +203,17 @@ export declare const updateCampaignSchema: z.ZodObject<{
         }>>>;
     }, "strip", z.ZodTypeAny, {
         name?: string | undefined;
+        scheduledAt?: string | null | undefined;
         description?: string | null | undefined;
         templateId?: string | undefined;
         contactGroupId?: string | null | undefined;
         audienceFilter?: {
-            status?: string[] | undefined;
             tags?: string[] | undefined;
+            status?: string[] | undefined;
             createdAfter?: string | undefined;
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
         } | undefined;
-        scheduledAt?: string | null | undefined;
         contactIds?: string[] | undefined;
         variableMapping?: Record<string, {
             type: "field" | "static";
@@ -221,17 +221,17 @@ export declare const updateCampaignSchema: z.ZodObject<{
         }> | undefined;
     }, {
         name?: string | undefined;
+        scheduledAt?: string | null | undefined;
         description?: string | null | undefined;
         templateId?: string | undefined;
         contactGroupId?: string | null | undefined;
         audienceFilter?: {
-            status?: string[] | undefined;
             tags?: string[] | undefined;
+            status?: string[] | undefined;
             createdAfter?: string | undefined;
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
         } | undefined;
-        scheduledAt?: string | null | undefined;
         contactIds?: string[] | undefined;
         variableMapping?: Record<string, {
             type: "field" | "static";
@@ -241,17 +241,17 @@ export declare const updateCampaignSchema: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     body: {
         name?: string | undefined;
+        scheduledAt?: string | null | undefined;
         description?: string | null | undefined;
         templateId?: string | undefined;
         contactGroupId?: string | null | undefined;
         audienceFilter?: {
-            status?: string[] | undefined;
             tags?: string[] | undefined;
+            status?: string[] | undefined;
             createdAfter?: string | undefined;
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
         } | undefined;
-        scheduledAt?: string | null | undefined;
         contactIds?: string[] | undefined;
         variableMapping?: Record<string, {
             type: "field" | "static";
@@ -264,17 +264,17 @@ export declare const updateCampaignSchema: z.ZodObject<{
 }, {
     body: {
         name?: string | undefined;
+        scheduledAt?: string | null | undefined;
         description?: string | null | undefined;
         templateId?: string | undefined;
         contactGroupId?: string | null | undefined;
         audienceFilter?: {
-            status?: string[] | undefined;
             tags?: string[] | undefined;
+            status?: string[] | undefined;
             createdAfter?: string | undefined;
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
         } | undefined;
-        scheduledAt?: string | null | undefined;
         contactIds?: string[] | undefined;
         variableMapping?: Record<string, {
             type: "field" | "static";
@@ -304,7 +304,7 @@ export declare const getCampaignsSchema: z.ZodObject<{
     }, "strip", z.ZodTypeAny, {
         page: number;
         limit: number;
-        sortBy: "name" | "createdAt" | "scheduledAt" | "sentCount";
+        sortBy: "name" | "scheduledAt" | "createdAt" | "sentCount";
         sortOrder: "asc" | "desc";
         search?: string | undefined;
         status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
@@ -313,14 +313,14 @@ export declare const getCampaignsSchema: z.ZodObject<{
         status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        sortBy?: "name" | "createdAt" | "scheduledAt" | "sentCount" | undefined;
+        sortBy?: "name" | "scheduledAt" | "createdAt" | "sentCount" | undefined;
         sortOrder?: "asc" | "desc" | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     query: {
         page: number;
         limit: number;
-        sortBy: "name" | "createdAt" | "scheduledAt" | "sentCount";
+        sortBy: "name" | "scheduledAt" | "createdAt" | "sentCount";
         sortOrder: "asc" | "desc";
         search?: string | undefined;
         status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
@@ -331,7 +331,7 @@ export declare const getCampaignsSchema: z.ZodObject<{
         status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        sortBy?: "name" | "createdAt" | "scheduledAt" | "sentCount" | undefined;
+        sortBy?: "name" | "scheduledAt" | "createdAt" | "sentCount" | undefined;
         sortOrder?: "asc" | "desc" | undefined;
     };
 }>;

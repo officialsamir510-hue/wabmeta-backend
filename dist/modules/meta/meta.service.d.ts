@@ -1,6 +1,6 @@
 import { WhatsAppAccount } from '@prisma/client';
 import { ConnectionProgress } from './meta.types';
-declare class MetaService {
+export declare class MetaService {
     private sanitizeAccount;
     getOAuthUrl(state: string): string;
     getEmbeddedSignupConfig(): {
@@ -28,6 +28,11 @@ declare class MetaService {
         account: WhatsAppAccount;
         accessToken: string;
     } | null>;
+    /**
+     * ✅ SAFE DISCONNECT - Soft disconnect, preserves data
+     * Idempotent: Can be called multiple times safely
+     * Handles default account switching automatically
+     */
     disconnectAccount(accountId: string, organizationId: string): Promise<{
         success: boolean;
         message: string;
@@ -35,6 +40,29 @@ declare class MetaService {
     setDefaultAccount(accountId: string, organizationId: string): Promise<{
         success: boolean;
         message: string;
+    }>;
+    refreshAccountHealth(accountId: string, organizationId: string): Promise<{
+        healthy: boolean;
+        qualityRating: string;
+        verifiedName: string;
+        displayPhoneNumber: string;
+        status: string | undefined;
+        codeVerificationStatus: string | undefined;
+        nameStatus: string | undefined;
+        messagingLimit: string | undefined;
+        reason?: undefined;
+        action?: undefined;
+    } | {
+        healthy: boolean;
+        reason: any;
+        action: string;
+        qualityRating?: undefined;
+        verifiedName?: undefined;
+        displayPhoneNumber?: undefined;
+        status?: undefined;
+        codeVerificationStatus?: undefined;
+        nameStatus?: undefined;
+        messagingLimit?: undefined;
     }>;
     syncTemplates(accountId: string, organizationId: string): Promise<{
         created: number;

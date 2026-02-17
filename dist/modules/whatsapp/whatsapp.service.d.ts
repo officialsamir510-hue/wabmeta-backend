@@ -53,6 +53,7 @@ declare class WhatsAppService {
                 contact: {
                     email: string | null;
                     organizationId: string;
+                    tags: string[];
                     id: string;
                     firstName: string | null;
                     lastName: string | null;
@@ -64,7 +65,6 @@ declare class WhatsAppService {
                     lastMessageAt: Date | null;
                     countryCode: string;
                     customFields: import("@prisma/client/runtime/library").JsonValue;
-                    tags: string[];
                     messageCount: number;
                     source: string | null;
                 };
@@ -127,6 +127,7 @@ declare class WhatsAppService {
                 contact: {
                     email: string | null;
                     organizationId: string;
+                    tags: string[];
                     id: string;
                     firstName: string | null;
                     lastName: string | null;
@@ -138,7 +139,6 @@ declare class WhatsAppService {
                     lastMessageAt: Date | null;
                     countryCode: string;
                     customFields: import("@prisma/client/runtime/library").JsonValue;
-                    tags: string[];
                     messageCount: number;
                     source: string | null;
                 };
@@ -201,6 +201,7 @@ declare class WhatsAppService {
                 contact: {
                     email: string | null;
                     organizationId: string;
+                    tags: string[];
                     id: string;
                     firstName: string | null;
                     lastName: string | null;
@@ -212,7 +213,6 @@ declare class WhatsAppService {
                     lastMessageAt: Date | null;
                     countryCode: string;
                     customFields: import("@prisma/client/runtime/library").JsonValue;
-                    tags: string[];
                     messageCount: number;
                     source: string | null;
                 };
@@ -275,6 +275,7 @@ declare class WhatsAppService {
                 contact: {
                     email: string | null;
                     organizationId: string;
+                    tags: string[];
                     id: string;
                     firstName: string | null;
                     lastName: string | null;
@@ -286,7 +287,6 @@ declare class WhatsAppService {
                     lastMessageAt: Date | null;
                     countryCode: string;
                     customFields: import("@prisma/client/runtime/library").JsonValue;
-                    tags: string[];
                     messageCount: number;
                     source: string | null;
                 };

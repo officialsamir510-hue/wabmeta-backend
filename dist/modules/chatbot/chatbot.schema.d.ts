@@ -231,11 +231,10 @@ export declare const createChatbotSchema: z.ZodObject<{
                 }, z.ZodTypeAny, "passthrough">>;
             }, "strip", z.ZodTypeAny, {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -256,7 +255,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -276,17 +275,17 @@ export declare const createChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
                 };
             }, {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -307,7 +306,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -327,6 +326,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -393,11 +393,10 @@ export declare const createChatbotSchema: z.ZodObject<{
         }, "strip", z.ZodTypeAny, {
             nodes: {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -418,7 +417,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -438,6 +437,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -464,11 +464,10 @@ export declare const createChatbotSchema: z.ZodObject<{
         }, {
             nodes: {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -489,7 +488,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -509,6 +508,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -541,11 +541,10 @@ export declare const createChatbotSchema: z.ZodObject<{
         flowData?: {
             nodes: {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -566,7 +565,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -586,6 +585,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -619,11 +619,10 @@ export declare const createChatbotSchema: z.ZodObject<{
         flowData?: {
             nodes: {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -644,7 +643,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -664,6 +663,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -701,11 +701,10 @@ export declare const createChatbotSchema: z.ZodObject<{
         flowData?: {
             nodes: {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -726,7 +725,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -746,6 +745,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -781,11 +781,10 @@ export declare const createChatbotSchema: z.ZodObject<{
         flowData?: {
             nodes: {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -806,7 +805,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -826,6 +825,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -1094,11 +1094,10 @@ export declare const updateChatbotSchema: z.ZodObject<{
                 }, z.ZodTypeAny, "passthrough">>;
             }, "strip", z.ZodTypeAny, {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -1119,7 +1118,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -1139,17 +1138,17 @@ export declare const updateChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
                 };
             }, {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -1170,7 +1169,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -1190,6 +1189,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -1256,11 +1256,10 @@ export declare const updateChatbotSchema: z.ZodObject<{
         }, "strip", z.ZodTypeAny, {
             nodes: {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -1281,7 +1280,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -1301,6 +1300,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -1327,11 +1327,10 @@ export declare const updateChatbotSchema: z.ZodObject<{
         }, {
             nodes: {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -1352,7 +1351,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -1372,6 +1371,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -1409,11 +1409,10 @@ export declare const updateChatbotSchema: z.ZodObject<{
         flowData?: {
             nodes: {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -1434,7 +1433,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -1454,6 +1453,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -1489,11 +1489,10 @@ export declare const updateChatbotSchema: z.ZodObject<{
         flowData?: {
             nodes: {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -1514,7 +1513,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -1534,6 +1533,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -1571,11 +1571,10 @@ export declare const updateChatbotSchema: z.ZodObject<{
         flowData?: {
             nodes: {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -1596,7 +1595,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -1616,6 +1615,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -1656,11 +1656,10 @@ export declare const updateChatbotSchema: z.ZodObject<{
         flowData?: {
             nodes: {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -1681,7 +1680,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -1701,6 +1700,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -2133,11 +2133,10 @@ export declare const saveFlowSchema: z.ZodObject<{
                 }, z.ZodTypeAny, "passthrough">>;
             }, "strip", z.ZodTypeAny, {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -2158,7 +2157,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -2178,17 +2177,17 @@ export declare const saveFlowSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
                 };
             }, {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -2209,7 +2208,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -2229,6 +2228,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -2295,11 +2295,10 @@ export declare const saveFlowSchema: z.ZodObject<{
         }, "strip", z.ZodTypeAny, {
             nodes: {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -2320,7 +2319,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -2340,6 +2339,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -2366,11 +2366,10 @@ export declare const saveFlowSchema: z.ZodObject<{
         }, {
             nodes: {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -2391,7 +2390,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -2411,6 +2410,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -2439,11 +2439,10 @@ export declare const saveFlowSchema: z.ZodObject<{
         flowData: {
             nodes: {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -2464,7 +2463,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -2484,6 +2483,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -2512,11 +2512,10 @@ export declare const saveFlowSchema: z.ZodObject<{
         flowData: {
             nodes: {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -2537,7 +2536,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -2557,6 +2556,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -2587,11 +2587,10 @@ export declare const saveFlowSchema: z.ZodObject<{
         flowData: {
             nodes: {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -2612,7 +2611,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -2632,6 +2631,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
@@ -2665,11 +2665,10 @@ export declare const saveFlowSchema: z.ZodObject<{
         flowData: {
             nodes: {
                 type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
-                id: string;
                 data: {
                     label: string;
-                    options?: string[] | undefined;
                     text?: string | undefined;
+                    options?: string[] | undefined;
                     buttons?: {
                         id: string;
                         title: string;
@@ -2690,7 +2689,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     listButtonText?: string | undefined;
                     questionText?: string | undefined;
                     variableName?: string | undefined;
-                    validationType?: "number" | "email" | "options" | "text" | "date" | "phone" | undefined;
+                    validationType?: "number" | "email" | "text" | "phone" | "options" | "date" | undefined;
                     conditionType?: "tag" | "variable" | "contact_field" | "time" | undefined;
                     conditionVariable?: string | undefined;
                     conditionOperator?: "contains" | "equals" | "not_equals" | "starts_with" | "ends_with" | "greater_than" | "less_than" | "is_empty" | "is_not_empty" | undefined;
@@ -2710,6 +2709,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                 } & {
                     [k: string]: unknown;
                 };
+                id: string;
                 position: {
                     y: number;
                     x: number;
