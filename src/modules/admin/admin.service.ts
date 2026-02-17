@@ -424,31 +424,70 @@ export class AdminService {
   }
 
   async deleteUser(id: string) {
-    const user = await prisma.user.findUnique({ where: { id } });
+    const user = await prisma.user.findUnique({
+      where: { id },
+      include: {
+        ownedOrganizations: true,
+        createdCampaigns: true,
+        createdChatbots: true,
+      },
+    });
 
     if (!user) {
       throw new AppError('User not found', 404);
     }
 
+    // Check if user owns any organizations
+    if (user.ownedOrganizations && user.ownedOrganizations.length > 0) {
+      throw new AppError(
+        `Cannot delete user who owns ${user.ownedOrganizations.length} organization(s). Transfer ownership first.`,
+        400
+      );
+    }
+
+    // Check if user created campaigns
+    if (user.createdCampaigns && user.createdCampaigns.length > 0) {
+      throw new AppError(
+        `Cannot delete user who created ${user.createdCampaigns.length} campaign(s). Reassign or delete campaigns first.`,
+        400
+      );
+    }
+
+    // Check if user created chatbots
+    if (user.createdChatbots && user.createdChatbots.length > 0) {
+      throw new AppError(
+        `Cannot delete user who created ${user.createdChatbots.length} chatbot(s). Reassign or delete chatbots first.`,
+        400
+      );
+    }
+
     // Delete in transaction
-    await prisma.$transaction(async (tx) => {
-      // Delete refresh tokens
-      await tx.refreshToken.deleteMany({ where: { userId: id } });
+    try {
+      await prisma.$transaction(async (tx) => {
+        // Delete refresh tokens
+        await tx.refreshToken.deleteMany({ where: { userId: id } });
 
-      // Delete notifications
-      await tx.notification.deleteMany({ where: { userId: id } });
+        // Delete notifications
+        await tx.notification.deleteMany({ where: { userId: id } });
 
-      // Delete activity logs
-      await tx.activityLog.deleteMany({ where: { userId: id } });
+        // Delete activity logs
+        await tx.activityLog.deleteMany({ where: { userId: id } });
 
-      // Delete organization memberships
-      await tx.organizationMember.deleteMany({ where: { userId: id } });
+        // Delete organization memberships (not ownership)
+        await tx.organizationMember.deleteMany({ where: { userId: id } });
 
-      // Delete user
-      await tx.user.delete({ where: { id } });
-    });
+        // Finally, delete the user
+        await tx.user.delete({ where: { id } });
+      });
 
-    return { message: 'User deleted successfully' };
+      return { message: 'User deleted successfully' };
+    } catch (error: any) {
+      console.error('Error deleting user:', error);
+      throw new AppError(
+        `Failed to delete user: ${error.message || 'Unknown error'}`,
+        500
+      );
+    }
   }
 
   // ==========================================
