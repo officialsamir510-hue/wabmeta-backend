@@ -921,7 +921,7 @@ export class CampaignsService {
   }
 
   // ==========================================
-  // PROCESS CAMPAIGN SENDING - ✅ WITH DECRYPTED TOKEN
+  // PROCESS CAMPAIGN SENDING - ✅ WITH DECRYPTED TOKEN & CONTACT SAFETY
   // ==========================================
   private async processCampaignSending(organizationId: string, campaignId: string): Promise<void> {
     console.log(`📤 Starting send process for campaign: ${campaignId}`);
@@ -1042,24 +1042,45 @@ export class CampaignsService {
 
       console.log(`📤 Processing batch ${batchCount}: ${pending.length} contacts`);
 
-      // Process each contact
+      // ✅ FIXED: Process each contact with safety checks
       for (const cc of pending) {
-        const to = (cc as any).Contact?.phone;
+        // ✅ Support both Prisma shapes safely
+        const c = (cc as any).contact || (cc as any).Contact;
+        const to = c?.phone;
 
-        if (!to) {
+        // ✅ Validate phone exists and is not empty
+        if (!to || String(to).trim().length === 0) {
           await this.updateContactStatus(
             campaignId,
             cc.contactId,
             'FAILED',
             undefined,
-            'Contact phone missing'
+            'Contact phone missing or empty'
+          );
+          totalFailed++;
+          continue;
+        }
+
+        // ✅ Prevent sending to same number as business account
+        const toDigits = digitsOnly(to);
+        const fromDigits = digitsOnly(account.phoneNumber);
+
+        if (toDigits && fromDigits && toDigits === fromDigits) {
+          console.warn(`⚠️ Skipping self-send to ${to}`);
+          await this.updateContactStatus(
+            campaignId,
+            cc.contactId,
+            'FAILED',
+            undefined,
+            'Cannot send to business number (sender = recipient)'
           );
           totalFailed++;
           continue;
         }
 
         try {
-          const params = buildParamsFromContact((cc as any).Contact || (cc as any).contact, varCount);
+          // ✅ Build params from contact data
+          const params = buildParamsFromContact(c, varCount);
 
           const payload = buildTemplateSendPayload({
             to,
@@ -1068,7 +1089,7 @@ export class CampaignsService {
             params,
           });
 
-          // ✅ Use DECRYPTED token
+          // ✅ Send with DECRYPTED token
           const res = await whatsappApi.sendMessage(account.phoneNumberId, accessToken, payload);
 
           const waMessageId = res?.messages?.[0]?.id;

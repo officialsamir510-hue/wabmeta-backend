@@ -95,7 +95,7 @@ app.get('/api/v1/health', (req, res) => {
 // WEBHOOK ROUTES (MUST BE BEFORE API ROUTES)
 // ============================================
 // Meta webhooks need to be at /webhook for easy configuration
-app.use('/webhook', webhookRoutes);
+app.use('/webhooks/meta', webhookRoutes);
 
 // ============================================
 // API ROUTES
