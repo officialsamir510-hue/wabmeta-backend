@@ -1041,9 +1041,9 @@ export class CampaignsService {
 
     const template = campaign.template;
     const templateName = template?.name;
-    const templateLang = toMetaLang(template?.language); // ✅ FIX: Use exact language
+    const templateLang = toMetaLang(template?.language);
 
-    console.log(`📝 Using template: ${templateName} (${templateLang})`); // ✅ FIX: Correct log
+    console.log(`📝 Using template: ${templateName} (${templateLang})`);
 
     if (!templateName) {
       console.error('❌ Campaign template missing');
@@ -1081,7 +1081,7 @@ export class CampaignsService {
         break;
       }
 
-      // ✅ FIX: Get pending contacts with countryCode
+      // Get pending contacts with countryCode
       const pending = await prisma.campaignContact.findMany({
         where: { campaignId, status: 'PENDING' },
         take: 25,
@@ -1091,7 +1091,7 @@ export class CampaignsService {
             select: {
               id: true,
               phone: true,
-              countryCode: true, // ✅ Added for proper phone formatting
+              countryCode: true,
               firstName: true,
               lastName: true,
               email: true,
@@ -1107,15 +1107,15 @@ export class CampaignsService {
 
       console.log(`📤 Processing batch ${batchCount}: ${pending.length} contacts`);
 
-      // ✅ Process each contact with safety checks
+      // Process each contact with safety checks
       for (const cc of pending) {
-        // ✅ Support both Prisma shapes safely
+        // Support both Prisma shapes safely
         const c = (cc as any).contact || (cc as any).Contact;
 
-        // ✅ FIX: Use toRecipient for proper phone formatting
+        // Use toRecipient for proper phone formatting
         const to = toRecipient(c);
 
-        // ✅ Validate phone exists and is not empty
+        // Validate phone exists and is not empty
         if (!to || to.length < 10) {
           await this.updateContactStatus(
             campaignId,
@@ -1128,7 +1128,7 @@ export class CampaignsService {
           continue;
         }
 
-        // ✅ Prevent sending to same number as business account
+        // Prevent sending to same number as business account
         const toDigits = digitsOnly(to);
         const fromDigits = digitsOnly(account.phoneNumber);
 
@@ -1146,19 +1146,19 @@ export class CampaignsService {
         }
 
         try {
-          // ✅ Build params from contact data
+          // Build params from contact data
           const params = buildParamsFromContact(c, varCount);
 
           const payload = buildTemplateSendPayload({
             to,
             templateName,
-            language: templateLang, // ✅ FIX: Send exact template language
+            language: templateLang,
             params,
           });
 
           console.log(`📤 Sending to ${to} with template ${templateName} (${templateLang})`);
 
-          // ✅ Send with DECRYPTED token
+          // Send with DECRYPTED token
           const res = await whatsappApi.sendMessage(account.phoneNumberId, accessToken, payload);
 
           const waMessageId = res?.messages?.[0]?.id;
@@ -1169,32 +1169,55 @@ export class CampaignsService {
 
           await this.updateContactStatus(campaignId, cc.contactId, 'SENT', waMessageId);
 
-          // ✅ FIX: Save campaign message to database for status tracking
+          // ✅ FIX: Save campaign message WITH conversation
           try {
-            // 1. Get or Create Conversation (required for Message)
-            const conversation = await prisma.conversation.upsert({
+            // Find or create conversation
+            let conversation = await prisma.conversation.findFirst({
               where: {
-                organizationId_contactId: {
-                  organizationId,
-                  contactId: c.id,
-                },
-              },
-              create: {
                 organizationId,
                 contactId: c.id,
-                // phoneNumberId: account.phoneNumberId, // Omitted to avoid FK issues if PhoneNumber model is not synced
-                lastMessageAt: new Date(),
-                isRead: true, // Outbound messages are read by default
-              },
-              update: {
-                lastMessageAt: new Date(),
               },
             });
 
-            // 2. Create Message linked to Conversation
+            const now = new Date();
+            const windowExpiry = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours
+
+            if (!conversation) {
+              // Create new conversation for this contact
+              conversation = await prisma.conversation.create({
+                data: {
+                  organizationId,
+                  contactId: c.id,
+                  lastMessageAt: now,
+                  lastMessagePreview: `Template: ${templateName}`,
+                  lastCustomerMessageAt: null, // Outbound message
+                  windowExpiresAt: windowExpiry,
+                  isWindowOpen: true,
+                  unreadCount: 0, // Outbound messages don't increase unread
+                  isRead: true,
+                },
+              });
+              console.log(`✅ New conversation created: ${conversation.id}`);
+            } else {
+              // Update existing conversation
+              await prisma.conversation.update({
+                where: { id: conversation.id },
+                data: {
+                  lastMessageAt: now,
+                  lastMessagePreview: `Template: ${templateName}`,
+                  windowExpiresAt: windowExpiry,
+                  isWindowOpen: true,
+                  // Don't update unreadCount for outbound messages
+                },
+              });
+            }
+
+            // Save message with conversationId
             await prisma.message.create({
               data: {
-                conversationId: conversation.id, // ✅ Linked to conversation
+                conversationId: conversation.id, // ✅ KEY FIX: Link to conversation
+                // organizationId, // REMOVED: Not in Message model
+                // contactId: c.id, // REMOVED: Not in Message model
                 whatsappAccountId: account.id,
                 waMessageId: waMessageId,
                 wamId: waMessageId,
@@ -1207,13 +1230,15 @@ export class CampaignsService {
                 }),
                 status: 'SENT',
                 templateId: template.id,
+                sentAt: now,
                 metadata: {
                   campaignId,
                   campaignName: campaign.name,
                 },
               },
             });
-            console.log(`💾 Campaign message saved: ${waMessageId}`);
+
+            console.log(`💾 Campaign message saved with conversation: ${waMessageId}`);
           } catch (saveErr: any) {
             console.error('⚠️ Failed to save campaign message:', saveErr.message);
             // Don't fail the send if message save fails
@@ -1225,7 +1250,7 @@ export class CampaignsService {
           // Rate limiting
           await new Promise((r) => setTimeout(r, 80));
         } catch (e: any) {
-          // ✅ FIX: Enhanced Meta error logging
+          // Enhanced Meta error logging
           const metaErr = e?.response?.data?.error;
           console.error(`❌ Failed to send to ${to}:`, {
             code: metaErr?.code,
