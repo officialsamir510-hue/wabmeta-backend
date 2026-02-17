@@ -13,7 +13,12 @@ class AppError extends Error {
   }
 }
 
-const generateAdminToken = (payload: any): string => {
+const generateAdminToken = (payload: {
+  adminId: string;
+  email: string;
+  role: string;
+  type: 'admin'
+}): string => {
   const jwt = require('jsonwebtoken');
   return jwt.sign(payload, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
 };
@@ -40,9 +45,17 @@ export class AdminService {
 
     await prisma.adminUser.update({ where: { id: admin.id }, data: { lastLoginAt: new Date() } });
 
+    // ✅ Fixed: Use correct payload structure matching admin.middleware.ts
+    const token = generateAdminToken({
+      adminId: admin.id,  // Changed from 'id' to 'adminId'
+      email: admin.email,
+      role: admin.role,
+      type: 'admin' as const  // Added type field
+    });
+
     return {
       admin: { id: admin.id, email: admin.email, name: admin.name, role: admin.role },
-      token: generateAdminToken({ id: admin.id, email: admin.email, role: admin.role }),
+      token,
     };
   }
 
