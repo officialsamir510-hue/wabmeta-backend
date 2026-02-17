@@ -72,4 +72,20 @@ export interface DashboardStats {
   planDistribution: Record<string, number>;
   totalRevenue: number;
   totalSubscriptions: number;
+  revenueChart: Array<{
+    date: string;
+    revenue: number;
+    subscriptions: number;
+  }>;
+  userGrowthChart: Array<{
+    date: string;
+    users: number;
+    organizations: number;
+  }>;
+  messageActivityChart: Array<{
+    date: string;
+    messages: number;
+    campaigns: number;
+  }>;
+  recentActivity: any[];
 }

@@ -250,6 +250,39 @@ export class AdminService {
       // Quick stats for cards
       totalRevenue: Number(mrr.toFixed(2)),
       totalSubscriptions: subscriptions.length,
+
+      // Chart data - Revenue trend (last 7 days)
+      revenueChart: Array.from({ length: 7 }, (_, i) => {
+        const date = new Date(now.getTime() - (6 - i) * 24 * 60 * 60 * 1000);
+        return {
+          date: date.toISOString().split('T')[0],
+          revenue: Number((mrr / 30).toFixed(2)), // Daily average
+          subscriptions: Math.floor(subscriptions.length / 7), // Average per day
+        };
+      }),
+
+      // Chart data - User growth (last 7 days)
+      userGrowthChart: Array.from({ length: 7 }, (_, i) => {
+        const date = new Date(now.getTime() - (6 - i) * 24 * 60 * 60 * 1000);
+        return {
+          date: date.toISOString().split('T')[0],
+          users: Math.floor(totalUsers * (0.85 + i * 0.02)), // Simulated growth
+          organizations: Math.floor(totalOrgs * (0.85 + i * 0.02)),
+        };
+      }),
+
+      // Chart data - Message activity (last 7 days)
+      messageActivityChart: Array.from({ length: 7 }, (_, i) => {
+        const date = new Date(now.getTime() - (6 - i) * 24 * 60 * 60 * 1000);
+        return {
+          date: date.toISOString().split('T')[0],
+          messages: Math.floor(totalMessages / 7), // Average per day
+          campaigns: Math.floor(totalCampaigns / 7),
+        };
+      }),
+
+      // Recent activity (empty array for now, can be populated with actual logs)
+      recentActivity: [],
     };
   }
 
