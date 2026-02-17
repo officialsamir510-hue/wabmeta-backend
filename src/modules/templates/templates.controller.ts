@@ -47,6 +47,15 @@ class TemplatesController {
     return account?.id;
   }
 
+  // ✅ NEW HELPER: Get wabaId for an account
+  private async getWabaIdForAccount(accountId: string): Promise<string | undefined> {
+    const account = await prisma.whatsAppAccount.findUnique({
+      where: { id: accountId },
+      select: { wabaId: true },
+    });
+    return account?.wabaId || undefined;
+  }
+
   // ==========================================
   // CREATE TEMPLATE
   // ==========================================
@@ -62,6 +71,7 @@ class TemplatesController {
       console.log('📝 Creating template:', {
         organizationId,
         name: input.name,
+        language: input.language,
         whatsappAccountId: input.whatsappAccountId,
       });
 
@@ -84,6 +94,7 @@ class TemplatesController {
 
   // ==========================================
   // GET TEMPLATES LIST
+  // ✅ FIX: Added wabaId query param support
   // ==========================================
   async getList(req: Request, res: Response, next: NextFunction) {
     try {
@@ -102,6 +113,7 @@ class TemplatesController {
       const sortBy = (req.query.sortBy as string) || 'createdAt';
       const sortOrder = (req.query.sortOrder as 'asc' | 'desc') || 'desc';
       const whatsappAccountId = (req.query.whatsappAccountId as string)?.trim() || undefined;
+      const wabaId = (req.query.wabaId as string)?.trim() || undefined;  // ✅ NEW
 
       console.log('📋 Fetching templates:', {
         organizationId,
@@ -109,6 +121,8 @@ class TemplatesController {
         limit,
         search,
         status,
+        whatsappAccountId,
+        wabaId,  // ✅ log it
       });
 
       const result = await templatesService.getList(organizationId, {
@@ -121,6 +135,7 @@ class TemplatesController {
         sortBy: sortBy as any,
         sortOrder,
         whatsappAccountId,
+        wabaId,  // ✅ pass to service
       });
 
       return res.json({
@@ -308,6 +323,7 @@ class TemplatesController {
 
   // ==========================================
   // GET APPROVED TEMPLATES
+  // ✅ FIX: Added wabaId support
   // ==========================================
   async getApproved(req: Request, res: Response, next: NextFunction) {
     try {
@@ -317,14 +333,20 @@ class TemplatesController {
       }
 
       let whatsappAccountId = (req.query.whatsappAccountId as string)?.trim() || undefined;
+      let wabaId = (req.query.wabaId as string)?.trim() || undefined;  // ✅ NEW
 
       // If no account specified, use default
-      if (!whatsappAccountId) {
+      if (!whatsappAccountId && !wabaId) {
         whatsappAccountId = await this.getDefaultAccountId(organizationId);
       }
 
+      // ✅ If whatsappAccountId provided but no wabaId, resolve wabaId
+      if (whatsappAccountId && !wabaId) {
+        wabaId = await this.getWabaIdForAccount(whatsappAccountId);
+      }
+
       // If still no account, return empty array
-      if (!whatsappAccountId) {
+      if (!whatsappAccountId && !wabaId) {
         return res.json({
           success: true,
           message: 'No WhatsApp account connected',
@@ -334,7 +356,8 @@ class TemplatesController {
 
       const templates = await templatesService.getApprovedTemplates(
         organizationId,
-        whatsappAccountId
+        whatsappAccountId,
+        wabaId  // ✅ pass wabaId
       );
 
       return res.json({
