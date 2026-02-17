@@ -87,16 +87,40 @@ export const config = {
     callbackUrl: process.env.FACEBOOK_CALLBACK_URL || 'http://localhost:5000/api/auth/facebook/callback',
   },
 
-  // Email
+  // ✅ Email Configuration (Updated)
   email: {
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: parseInt(process.env.SMTP_PORT || '587', 10),
-    secure: process.env.SMTP_SECURE === 'true',
-    auth: {
-      user: process.env.SMTP_USER || '',
-      pass: process.env.SMTP_PASS || '',
+    // Resend.com configuration (modern, recommended)
+    enabled: process.env.EMAIL_ENABLED === 'true',
+    resendApiKey: process.env.RESEND_API_KEY || '',
+    from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
+    fromName: process.env.EMAIL_FROM_NAME || 'WabMeta',
+
+    // Legacy SMTP configuration (backward compatibility)
+    smtp: {
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: parseInt(process.env.SMTP_PORT || '587', 10),
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: {
+        user: process.env.SMTP_USER || '',
+        pass: process.env.SMTP_PASS || '',
+      },
     },
-    from: process.env.SMTP_FROM || 'WabMeta <noreply@wabmeta.com>',
+
+    // Email templates
+    templates: {
+      welcome: {
+        subject: 'Welcome to WabMeta! 🎉',
+      },
+      resetPassword: {
+        subject: 'Reset Your Password - WabMeta',
+      },
+      verifyEmail: {
+        subject: 'Verify Your Email - WabMeta',
+      },
+      invitation: {
+        subject: 'You\'ve been invited to join WabMeta',
+      },
+    },
   },
 
   // Razorpay

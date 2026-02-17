@@ -9,7 +9,7 @@ import {
   verifyRefreshToken,
   parseExpiryTime,
 } from '../../utils/jwt';
-import { sendEmail, emailTemplates } from '../../utils/email';
+import { sendEmail, emailTemplates } from '../../utils/email.resend';
 import { generateOTP, generateToken, generateSlug } from '../../utils/otp';
 import { AppError } from '../../middleware/errorHandler';
 import {
@@ -238,11 +238,11 @@ export class AuthService {
       tokens,
       organization: result.organization
         ? {
-            id: result.organization.id,
-            name: result.organization.name,
-            slug: result.organization.slug,
-            planType: result.organization.planType,
-          }
+          id: result.organization.id,
+          name: result.organization.name,
+          slug: result.organization.slug,
+          planType: result.organization.planType,
+        }
         : undefined,
     };
   }
