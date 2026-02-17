@@ -3,9 +3,23 @@
 import { PrismaClient, PlanType } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
-const prisma = new PrismaClient();
+// Use DIRECT_URL for seeding to avoid PgBouncer prepared statement issues
+// PgBouncer in transaction mode doesn't support prepared statements
+const databaseUrl = process.env.DIRECT_URL || process.env.DATABASE_URL;
+
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: databaseUrl,
+    },
+  },
+  log: ['error', 'warn'],
+});
 
 async function main() {
+  // Ensure database connection is established
+  await prisma.$connect();
+
   console.log('🌱 Starting database seeding...');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
@@ -17,6 +31,7 @@ async function main() {
   const plans = [
     {
       name: 'Free',
+      slug: 'free',
       type: PlanType.FREE,
       description: 'Perfect for getting started',
       monthlyPrice: 0,
@@ -27,6 +42,11 @@ async function main() {
       maxCampaigns: 5,
       maxChatbots: 1,
       maxTemplates: 5,
+      maxWhatsAppAccounts: 1,
+      maxMessagesPerMonth: 1000,
+      maxCampaignsPerMonth: 5,
+      maxAutomations: 1,
+      maxApiCalls: 1000,
       features: [
         'Basic messaging',
         'Contact management',
@@ -37,6 +57,7 @@ async function main() {
     },
     {
       name: 'Starter',
+      slug: 'starter',
       type: PlanType.STARTER,
       description: 'For small businesses',
       monthlyPrice: 29,
@@ -47,6 +68,11 @@ async function main() {
       maxCampaigns: 20,
       maxChatbots: 3,
       maxTemplates: 20,
+      maxWhatsAppAccounts: 2,
+      maxMessagesPerMonth: 10000,
+      maxCampaignsPerMonth: 20,
+      maxAutomations: 5,
+      maxApiCalls: 10000,
       features: [
         'Everything in Free',
         'Campaign scheduling',
@@ -58,6 +84,7 @@ async function main() {
     },
     {
       name: 'Pro',
+      slug: 'pro',
       type: PlanType.PRO,
       description: 'For growing teams',
       monthlyPrice: 79,
@@ -68,6 +95,11 @@ async function main() {
       maxCampaigns: 100,
       maxChatbots: 10,
       maxTemplates: 50,
+      maxWhatsAppAccounts: 5,
+      maxMessagesPerMonth: 50000,
+      maxCampaignsPerMonth: 100,
+      maxAutomations: 20,
+      maxApiCalls: 50000,
       features: [
         'Everything in Starter',
         'Advanced chatbot builder',
@@ -81,6 +113,7 @@ async function main() {
     },
     {
       name: 'Enterprise',
+      slug: 'enterprise',
       type: PlanType.ENTERPRISE,
       description: 'For large organizations',
       monthlyPrice: 199,
@@ -91,6 +124,11 @@ async function main() {
       maxCampaigns: 500,
       maxChatbots: 50,
       maxTemplates: 200,
+      maxWhatsAppAccounts: 999999,
+      maxMessagesPerMonth: 500000,
+      maxCampaignsPerMonth: 500,
+      maxAutomations: 100,
+      maxApiCalls: 999999,
       features: [
         'Everything in Pro',
         'Unlimited team members',
@@ -106,18 +144,23 @@ async function main() {
   ];
 
   for (const plan of plans) {
-    const result = await prisma.plan.upsert({
-      where: { type: plan.type },
-      update: {
-        ...plan,
-        features: plan.features,
-      },
-      create: {
-        ...plan,
-        features: plan.features,
-      },
-    });
-    console.log(`   ✅ Plan "${result.name}" (${result.type})`);
+    try {
+      const result = await prisma.plan.upsert({
+        where: { type: plan.type },
+        update: {
+          ...plan,
+          features: plan.features,
+        },
+        create: {
+          ...plan,
+          features: plan.features,
+        },
+      });
+      console.log(`   ✅ Plan "${result.name}" (${result.type})`);
+    } catch (error: any) {
+      console.error(`   ❌ Failed to seed plan "${plan.name}":`, error.message);
+      // Continue with other plans even if one fails
+    }
   }
 
   console.log('   📦 All plans seeded successfully!');
@@ -130,26 +173,30 @@ async function main() {
   const adminPassword = 'SuperAdmin@123';
   const hashedPassword = await bcrypt.hash(adminPassword, 12);
 
-  const superAdmin = await prisma.adminUser.upsert({
-    where: { email: 'admin@wabmeta.com' },
-    update: {
-      password: hashedPassword,
-      name: 'Super Admin',
-      role: 'super_admin',
-      isActive: true,
-    },
-    create: {
-      email: 'admin@wabmeta.com',
-      password: hashedPassword,
-      name: 'Super Admin',
-      role: 'super_admin',
-      isActive: true,
-    },
-  });
+  try {
+    const superAdmin = await prisma.adminUser.upsert({
+      where: { email: 'admin@wabmeta.com' },
+      update: {
+        password: hashedPassword,
+        name: 'Super Admin',
+        role: 'super_admin',
+        isActive: true,
+      },
+      create: {
+        email: 'admin@wabmeta.com',
+        password: hashedPassword,
+        name: 'Super Admin',
+        role: 'super_admin',
+        isActive: true,
+      },
+    });
 
-  console.log(`   ✅ Super Admin created: ${superAdmin.email}`);
-  console.log(`   📧 Email: admin@wabmeta.com`);
-  console.log(`   🔑 Password: ${adminPassword}`);
+    console.log(`   ✅ Super Admin created: ${superAdmin.email}`);
+    console.log(`   📧 Email: admin@wabmeta.com`);
+    console.log(`   🔑 Password: ${adminPassword}`);
+  } catch (error: any) {
+    console.error(`   ❌ Failed to seed Super Admin:`, error.message);
+  }
 
   // ============================================
   // 3. SEED ADDITIONAL ADMIN (Optional)
@@ -159,26 +206,30 @@ async function main() {
   const supportPassword = 'Support@123';
   const supportHashedPassword = await bcrypt.hash(supportPassword, 12);
 
-  const supportAdmin = await prisma.adminUser.upsert({
-    where: { email: 'support@wabmeta.com' },
-    update: {
-      password: supportHashedPassword,
-      name: 'Support Admin',
-      role: 'admin',
-      isActive: true,
-    },
-    create: {
-      email: 'support@wabmeta.com',
-      password: supportHashedPassword,
-      name: 'Support Admin',
-      role: 'admin',
-      isActive: true,
-    },
-  });
+  try {
+    const supportAdmin = await prisma.adminUser.upsert({
+      where: { email: 'support@wabmeta.com' },
+      update: {
+        password: supportHashedPassword,
+        name: 'Support Admin',
+        role: 'admin',
+        isActive: true,
+      },
+      create: {
+        email: 'support@wabmeta.com',
+        password: supportHashedPassword,
+        name: 'Support Admin',
+        role: 'admin',
+        isActive: true,
+      },
+    });
 
-  console.log(`   ✅ Support Admin created: ${supportAdmin.email}`);
-  console.log(`   📧 Email: support@wabmeta.com`);
-  console.log(`   🔑 Password: ${supportPassword}`);
+    console.log(`   ✅ Support Admin created: ${supportAdmin.email}`);
+    console.log(`   📧 Email: support@wabmeta.com`);
+    console.log(`   🔑 Password: ${supportPassword}`);
+  } catch (error: any) {
+    console.error(`   ❌ Failed to seed Support Admin:`, error.message);
+  }
 
   // ============================================
   // 4. SUMMARY
