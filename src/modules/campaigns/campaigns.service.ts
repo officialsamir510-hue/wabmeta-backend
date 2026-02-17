@@ -1,4 +1,4 @@
-// 📁 src/modules/campaigns/campaigns.service.ts - COMPLETE WITH QUEUE & TOKEN VALIDATION
+// 📁 src/modules/campaigns/campaigns.service.ts - COMPLETE WITH ALL FIXES
 
 import { PrismaClient, CampaignStatus, MessageStatus, Prisma } from '@prisma/client';
 import { AppError } from '../../middleware/errorHandler';
@@ -27,9 +27,47 @@ const prisma = new PrismaClient();
 
 const digitsOnly = (p: string): string => String(p || '').replace(/\D/g, '');
 
-const toMetaLang = (lang: string): string => {
-  if (lang?.includes('_')) return lang;
-  return lang === 'en' ? 'en_US' : 'en_US';
+// ✅ FIX-1: Safe toMetaLang function
+const toMetaLang = (lang?: string): string => {
+  const l = String(lang || '').trim();
+  if (!l) return 'en_US'; // fallback if empty
+  if (l.includes('_')) return l; // already in correct format like en_US
+  // Common mappings
+  const langMap: Record<string, string> = {
+    en: 'en_US',
+    hi: 'hi_IN',
+    es: 'es_ES',
+    pt: 'pt_BR',
+    ar: 'ar_AR',
+    fr: 'fr_FR',
+    de: 'de_DE',
+    id: 'id_ID',
+    it: 'it_IT',
+    ja: 'ja_JP',
+    ko: 'ko_KR',
+    ru: 'ru_RU',
+    zh: 'zh_CN',
+  };
+  return langMap[l.toLowerCase()] || 'en_US';
+};
+
+// ✅ FIX-4: Recipient formatting with country code
+const toRecipient = (c: any): string | null => {
+  const phone = String(c?.phone || '').trim();
+  if (!phone) return null;
+
+  // If starts with +, just strip to digits
+  if (phone.startsWith('+')) return digitsOnly(phone);
+
+  const digits = digitsOnly(phone);
+  if (!digits) return null;
+
+  // If already has country code (more than 10 digits), use as-is
+  if (digits.length > 10) return digits;
+
+  // Add country code
+  const cc = digitsOnly(c?.countryCode || '91'); // Default to India
+  return `${cc}${digits}`;
 };
 
 const buildTemplateSendPayload = (args: {
@@ -93,9 +131,13 @@ const formatCampaign = (campaign: any): CampaignResponse => {
     templateId: campaign.templateId,
     templateName: (campaign as any).template?.name || (campaign as any).Template?.name || '',
     whatsappAccountId: campaign.whatsappAccountId,
-    whatsappAccountPhone: (campaign as any).whatsappAccount?.phoneNumber || (campaign as any).WhatsAppAccount?.phoneNumber || '',
+    whatsappAccountPhone:
+      (campaign as any).whatsappAccount?.phoneNumber ||
+      (campaign as any).WhatsAppAccount?.phoneNumber ||
+      '',
     contactGroupId: campaign.contactGroupId,
-    contactGroupName: (campaign as any).contactGroup?.name || (campaign as any).ContactGroup?.name || null,
+    contactGroupName:
+      (campaign as any).contactGroup?.name || (campaign as any).ContactGroup?.name || null,
     audienceFilter: campaign.audienceFilter as AudienceFilter | null,
     variableMapping: null,
     status: campaign.status,
@@ -120,8 +162,14 @@ const formatCampaignContact = (cc: any): CampaignContactResponse => ({
   contactId: cc.contactId,
   phone: (cc as any).contact?.phone || (cc as any).Contact?.phone || '',
   fullName:
-    [(cc as any).contact?.firstName || (cc as any).Contact?.firstName, (cc as any).contact?.lastName || (cc as any).Contact?.lastName].filter(Boolean).join(' ') ||
-    (cc as any).contact?.phone || (cc as any).Contact?.phone ||
+    [
+      (cc as any).contact?.firstName || (cc as any).Contact?.firstName,
+      (cc as any).contact?.lastName || (cc as any).Contact?.lastName,
+    ]
+      .filter(Boolean)
+      .join(' ') ||
+    (cc as any).contact?.phone ||
+    (cc as any).Contact?.phone ||
     '',
   status: cc.status,
   waMessageId: cc.waMessageId,
@@ -261,6 +309,25 @@ export class CampaignsService {
       );
     }
 
+    // ✅ FIX-3: Ensure template belongs to same WhatsApp account
+    if (
+      (template as any).whatsappAccountId &&
+      (template as any).whatsappAccountId !== waAccount.id
+    ) {
+      throw new AppError(
+        'Selected template belongs to a different WhatsApp account. Please select a template for the connected number.',
+        400
+      );
+    }
+
+    // ✅ FIX-3: Ensure WABA match (extra safety)
+    if ((template as any).wabaId && (template as any).wabaId !== waAccount.wabaId) {
+      throw new AppError(
+        'Selected template belongs to a different WABA. Please sync templates for this number and select again.',
+        400
+      );
+    }
+
     // Validate contact group if provided
     if (contactGroupId) {
       const group = await prisma.contactGroup.findFirst({
@@ -382,7 +449,14 @@ export class CampaignsService {
     organizationId: string,
     query: CampaignsQueryInput
   ): Promise<CampaignsListResponse> {
-    const { page = 1, limit = 20, search, status, sortBy = 'createdAt', sortOrder = 'desc' } = query;
+    const {
+      page = 1,
+      limit = 20,
+      search,
+      status,
+      sortBy = 'createdAt',
+      sortOrder = 'desc',
+    } = query;
 
     const skip = (page - 1) * limit;
 
@@ -444,6 +518,7 @@ export class CampaignsService {
             bodyText: true,
             headerType: true,
             headerContent: true,
+            language: true,
           },
         },
         whatsappAccount: {
@@ -769,6 +844,7 @@ export class CampaignsService {
           contact: {
             select: {
               phone: true,
+              countryCode: true,
               firstName: true,
               lastName: true,
             },
@@ -887,7 +963,8 @@ export class CampaignsService {
           templateId: original.templateId,
           whatsappAccountId: original.whatsappAccountId,
           contactGroupId: original.contactGroupId,
-          audienceFilter: original.audienceFilter === null ? undefined : toJsonValue(original.audienceFilter),
+          audienceFilter:
+            original.audienceFilter === null ? undefined : toJsonValue(original.audienceFilter),
           status: 'DRAFT',
           totalContacts: originalContacts.length,
           createdById: (original as any).createdById,
@@ -921,7 +998,7 @@ export class CampaignsService {
   }
 
   // ==========================================
-  // PROCESS CAMPAIGN SENDING - ✅ WITH DECRYPTED TOKEN & CONTACT SAFETY
+  // PROCESS CAMPAIGN SENDING - ✅ WITH ALL FIXES
   // ==========================================
   private async processCampaignSending(organizationId: string, campaignId: string): Promise<void> {
     console.log(`📤 Starting send process for campaign: ${campaignId}`);
@@ -995,6 +1072,8 @@ export class CampaignsService {
       return;
     }
 
+    console.log(`📝 Using template: ${templateName} (${templateLang})`);
+
     const vars = (template.variables as any[]) || [];
     const varCount = Array.isArray(vars) ? vars.length : 0;
 
@@ -1017,7 +1096,7 @@ export class CampaignsService {
         break;
       }
 
-      // Get pending contacts
+      // ✅ FIX-4: Get pending contacts with countryCode
       const pending = await prisma.campaignContact.findMany({
         where: { campaignId, status: 'PENDING' },
         take: 25,
@@ -1027,6 +1106,7 @@ export class CampaignsService {
             select: {
               id: true,
               phone: true,
+              countryCode: true, // ✅ Added for proper phone formatting
               firstName: true,
               lastName: true,
               email: true,
@@ -1042,20 +1122,22 @@ export class CampaignsService {
 
       console.log(`📤 Processing batch ${batchCount}: ${pending.length} contacts`);
 
-      // ✅ FIXED: Process each contact with safety checks
+      // ✅ Process each contact with safety checks
       for (const cc of pending) {
         // ✅ Support both Prisma shapes safely
         const c = (cc as any).contact || (cc as any).Contact;
-        const to = c?.phone;
+
+        // ✅ FIX-4: Use toRecipient for proper phone formatting
+        const to = toRecipient(c);
 
         // ✅ Validate phone exists and is not empty
-        if (!to || String(to).trim().length === 0) {
+        if (!to || to.length < 10) {
           await this.updateContactStatus(
             campaignId,
             cc.contactId,
             'FAILED',
             undefined,
-            'Contact phone missing or empty'
+            'Contact phone missing, empty, or invalid format'
           );
           totalFailed++;
           continue;
@@ -1088,6 +1170,8 @@ export class CampaignsService {
             language: templateLang,
             params,
           });
+
+          console.log(`📤 Sending to ${to} with template ${templateName} (${toMetaLang(templateLang)})`);
 
           // ✅ Send with DECRYPTED token
           const res = await whatsappApi.sendMessage(account.phoneNumberId, accessToken, payload);
