@@ -27,28 +27,11 @@ const prisma = new PrismaClient();
 
 const digitsOnly = (p: string): string => String(p || '').replace(/\D/g, '');
 
-// ✅ FIX-1: Safe toMetaLang function
+// ✅ FIX: Do NOT force en -> en_US. Return exact template language.
 const toMetaLang = (lang?: string): string => {
   const l = String(lang || '').trim();
-  if (!l) return 'en_US'; // fallback if empty
-  if (l.includes('_')) return l; // already in correct format like en_US
-  // Common mappings
-  const langMap: Record<string, string> = {
-    en: 'en_US',
-    hi: 'hi_IN',
-    es: 'es_ES',
-    pt: 'pt_BR',
-    ar: 'ar_AR',
-    fr: 'fr_FR',
-    de: 'de_DE',
-    id: 'id_ID',
-    it: 'it_IT',
-    ja: 'ja_JP',
-    ko: 'ko_KR',
-    ru: 'ru_RU',
-    zh: 'zh_CN',
-  };
-  return langMap[l.toLowerCase()] || 'en_US';
+  // ✅ Return as-is if not empty — Meta templates can have "en", "hi", "es" etc
+  return l || 'en_US';
 };
 
 // ✅ FIX-4: Recipient formatting with country code
@@ -81,7 +64,7 @@ const buildTemplateSendPayload = (args: {
   type: 'template',
   template: {
     name: args.templateName,
-    language: { code: toMetaLang(args.language) },
+    language: { code: toMetaLang(args.language) }, // ✅ Uses exact language
     components: args.params.length
       ? [
         {
@@ -295,6 +278,19 @@ export class CampaignsService {
       throw new AppError('Template not found', 404);
     }
 
+    // ✅ FIX: Validate template status
+    if (template.status !== 'APPROVED') {
+      throw new AppError(
+        `Template is not approved yet (status: ${template.status}). Please wait for Meta approval.`,
+        400
+      );
+    }
+
+    // ✅ FIX: Ensure template is synced from Meta
+    if (!(template as any).metaTemplateId) {
+      throw new AppError('Template is not synced from Meta. Please sync templates first.', 400);
+    }
+
     // Find WhatsApp Account
     const waAccount = await this.findWhatsAppAccount(
       organizationId,
@@ -309,21 +305,10 @@ export class CampaignsService {
       );
     }
 
-    // ✅ FIX-3: Ensure template belongs to same WhatsApp account
-    if (
-      (template as any).whatsappAccountId &&
-      (template as any).whatsappAccountId !== waAccount.id
-    ) {
+    // ✅ FIX: Validate template belongs to same WABA (not necessarily same accountId)
+    if ((template as any).wabaId && waAccount?.wabaId && (template as any).wabaId !== waAccount.wabaId) {
       throw new AppError(
-        'Selected template belongs to a different WhatsApp account. Please select a template for the connected number.',
-        400
-      );
-    }
-
-    // ✅ FIX-3: Ensure WABA match (extra safety)
-    if ((template as any).wabaId && (template as any).wabaId !== waAccount.wabaId) {
-      throw new AppError(
-        'Selected template belongs to a different WABA. Please sync templates for this number and select again.',
+        'Selected template belongs to a different WABA. Please select a template for the connected number.',
         400
       );
     }
@@ -1056,7 +1041,9 @@ export class CampaignsService {
 
     const template = campaign.template;
     const templateName = template?.name;
-    const templateLang = template?.language || 'en_US';
+    const templateLang = toMetaLang(template?.language); // ✅ FIX: Use exact language
+
+    console.log(`📝 Using template: ${templateName} (${templateLang})`); // ✅ FIX: Correct log
 
     if (!templateName) {
       console.error('❌ Campaign template missing');
@@ -1071,8 +1058,6 @@ export class CampaignsService {
 
       return;
     }
-
-    console.log(`📝 Using template: ${templateName} (${templateLang})`);
 
     const vars = (template.variables as any[]) || [];
     const varCount = Array.isArray(vars) ? vars.length : 0;
@@ -1096,7 +1081,7 @@ export class CampaignsService {
         break;
       }
 
-      // ✅ FIX-4: Get pending contacts with countryCode
+      // ✅ FIX: Get pending contacts with countryCode
       const pending = await prisma.campaignContact.findMany({
         where: { campaignId, status: 'PENDING' },
         take: 25,
@@ -1127,7 +1112,7 @@ export class CampaignsService {
         // ✅ Support both Prisma shapes safely
         const c = (cc as any).contact || (cc as any).Contact;
 
-        // ✅ FIX-4: Use toRecipient for proper phone formatting
+        // ✅ FIX: Use toRecipient for proper phone formatting
         const to = toRecipient(c);
 
         // ✅ Validate phone exists and is not empty
@@ -1167,11 +1152,11 @@ export class CampaignsService {
           const payload = buildTemplateSendPayload({
             to,
             templateName,
-            language: templateLang,
+            language: templateLang, // ✅ FIX: Send exact template language
             params,
           });
 
-          console.log(`📤 Sending to ${to} with template ${templateName} (${toMetaLang(templateLang)})`);
+          console.log(`📤 Sending to ${to} with template ${templateName} (${templateLang})`);
 
           // ✅ Send with DECRYPTED token
           const res = await whatsappApi.sendMessage(account.phoneNumberId, accessToken, payload);
@@ -1184,16 +1169,74 @@ export class CampaignsService {
 
           await this.updateContactStatus(campaignId, cc.contactId, 'SENT', waMessageId);
 
+          // ✅ FIX: Save campaign message to database for status tracking
+          try {
+            // 1. Get or Create Conversation (required for Message)
+            const conversation = await prisma.conversation.upsert({
+              where: {
+                organizationId_contactId: {
+                  organizationId,
+                  contactId: c.id,
+                },
+              },
+              create: {
+                organizationId,
+                contactId: c.id,
+                // phoneNumberId: account.phoneNumberId, // Omitted to avoid FK issues if PhoneNumber model is not synced
+                lastMessageAt: new Date(),
+                isRead: true, // Outbound messages are read by default
+              },
+              update: {
+                lastMessageAt: new Date(),
+              },
+            });
+
+            // 2. Create Message linked to Conversation
+            await prisma.message.create({
+              data: {
+                conversationId: conversation.id, // ✅ Linked to conversation
+                whatsappAccountId: account.id,
+                waMessageId: waMessageId,
+                wamId: waMessageId,
+                direction: 'OUTBOUND',
+                type: 'TEMPLATE',
+                content: JSON.stringify({
+                  templateName,
+                  language: templateLang,
+                  params,
+                }),
+                status: 'SENT',
+                templateId: template.id,
+                metadata: {
+                  campaignId,
+                  campaignName: campaign.name,
+                },
+              },
+            });
+            console.log(`💾 Campaign message saved: ${waMessageId}`);
+          } catch (saveErr: any) {
+            console.error('⚠️ Failed to save campaign message:', saveErr.message);
+            // Don't fail the send if message save fails
+          }
+
           totalSent++;
           console.log(`✅ Message sent to ${to} (${waMessageId})`);
 
           // Rate limiting
           await new Promise((r) => setTimeout(r, 80));
         } catch (e: any) {
-          console.error(`❌ Failed to send to ${to}:`, e.message);
+          // ✅ FIX: Enhanced Meta error logging
+          const metaErr = e?.response?.data?.error;
+          console.error(`❌ Failed to send to ${to}:`, {
+            code: metaErr?.code,
+            message: metaErr?.message,
+            error_subcode: metaErr?.error_subcode,
+            error_data: metaErr?.error_data,
+            fbtrace_id: metaErr?.fbtrace_id,
+          });
 
           // Check for token error
-          if (e?.response?.data?.error?.code === 190) {
+          if (metaErr?.code === 190) {
             console.error('❌ OAuth token invalid - stopping campaign');
 
             await prisma.whatsAppAccount.update({
@@ -1217,12 +1260,12 @@ export class CampaignsService {
           }
 
           // Rate limit handling
-          if (e?.response?.data?.error?.code === 130429) {
+          if (metaErr?.code === 130429) {
             console.warn('⚠️ Rate limit hit, waiting 60 seconds...');
             await new Promise((r) => setTimeout(r, 60000));
           }
 
-          const reason = e?.response?.data?.error?.message || e?.message || 'Send failed';
+          const reason = metaErr?.message || e?.message || 'Send failed';
 
           await this.updateContactStatus(campaignId, cc.contactId, 'FAILED', undefined, reason);
 
