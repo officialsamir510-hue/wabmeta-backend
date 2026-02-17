@@ -2,24 +2,111 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { adminService } from './admin.service';
+import { AppError } from '../../middleware/errorHandler';
 
-// Response helper
-const sendSuccess = (res: Response, data: any, message: string, statusCode: number = 200) => {
-  return res.status(statusCode).json({ success: true, message, data });
-};
+// ============================================
+// TYPES
+// ============================================
 
 interface AdminRequest extends Request {
-  admin?: { id: string; email: string; role: string };
+  admin?: {
+    id: string;
+    email: string;
+    role: string;
+    name?: string;
+  };
 }
+
+interface PaginationMeta {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+// ============================================
+// RESPONSE HELPERS
+// ============================================
+
+const sendSuccess = (
+  res: Response,
+  data: any,
+  message: string,
+  statusCode: number = 200,
+  meta?: PaginationMeta
+) => {
+  const response: any = {
+    success: true,
+    message,
+    data,
+  };
+
+  if (meta) {
+    response.meta = meta;
+  }
+
+  return res.status(statusCode).json(response);
+};
+
+const sendError = (
+  res: Response,
+  message: string,
+  statusCode: number = 400
+) => {
+  return res.status(statusCode).json({
+    success: false,
+    message,
+  });
+};
+
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+const parseQueryString = (value: any): string | undefined => {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+};
+
+const parseQueryNumber = (value: any, defaultValue: number): number => {
+  const parsed = Number(value);
+  return !isNaN(parsed) && parsed > 0 ? parsed : defaultValue;
+};
+
+const getParamId = (id: string | string[] | undefined): string => {
+  if (Array.isArray(id)) {
+    return id[0];
+  }
+  return id || '';
+};
+
+// ============================================
+// ADMIN CONTROLLER CLASS
+// ============================================
 
 export class AdminController {
   // ==========================================
   // ADMIN AUTH
   // ==========================================
+
   async login(req: Request, res: Response, next: NextFunction) {
     try {
-      const result = await adminService.login(req.body);
-      return sendSuccess(res, result, 'Login successful');
+      const { email, password } = req.body;
+
+      if (!email || !password) {
+        throw new AppError('Email and password are required', 400);
+      }
+
+      const result = await adminService.login({ email, password });
+
+      // Store admin user info for frontend
+      return res.json({
+        success: true,
+        message: 'Login successful',
+        data: {
+          token: result.token,
+          admin: result.admin,
+        },
+      });
     } catch (error) {
       next(error);
     }
@@ -27,45 +114,17 @@ export class AdminController {
 
   async getProfile(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const admins = await adminService.getAdmins();
-      const admin = admins.find((a) => a.id === req.admin?.id);
-      return sendSuccess(res, admin, 'Profile fetched');
-    } catch (error) {
-      next(error);
-    }
-  }
+      if (!req.admin?.id) {
+        throw new AppError('Admin not authenticated', 401);
+      }
 
-  async createAdmin(req: AdminRequest, res: Response, next: NextFunction) {
-    try {
-      const admin = await adminService.createAdmin(req.body);
-      return sendSuccess(res, admin, 'Admin created successfully', 201);
-    } catch (error) {
-      next(error);
-    }
-  }
+      const admin = await adminService.getAdminById(req.admin.id);
 
-  async updateAdmin(req: AdminRequest, res: Response, next: NextFunction) {
-    try {
-      const admin = await adminService.updateAdmin(req.params.id as string, req.body);
-      return sendSuccess(res, admin, 'Admin updated successfully');
-    } catch (error) {
-      next(error);
-    }
-  }
+      if (!admin) {
+        throw new AppError('Admin not found', 404);
+      }
 
-  async getAdmins(req: AdminRequest, res: Response, next: NextFunction) {
-    try {
-      const admins = await adminService.getAdmins();
-      return sendSuccess(res, admins, 'Admins fetched successfully');
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async deleteAdmin(req: AdminRequest, res: Response, next: NextFunction) {
-    try {
-      const result = await adminService.deleteAdmin(req.params.id as string);
-      return sendSuccess(res, result, result.message);
+      return sendSuccess(res, admin, 'Profile fetched successfully');
     } catch (error) {
       next(error);
     }
@@ -74,10 +133,11 @@ export class AdminController {
   // ==========================================
   // DASHBOARD
   // ==========================================
+
   async getDashboardStats(req: AdminRequest, res: Response, next: NextFunction) {
     try {
       const stats = await adminService.getDashboardStats();
-      return sendSuccess(res, stats, 'Dashboard stats fetched');
+      return sendSuccess(res, stats, 'Dashboard stats fetched successfully');
     } catch (error) {
       next(error);
     }
@@ -86,25 +146,37 @@ export class AdminController {
   // ==========================================
   // USER MANAGEMENT
   // ==========================================
+
   async getUsers(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      // ✅ Fix: Access query params safely
-      const q = req.query;
-      const page = Number(q.page) || 1;
-      const limit = Number(q.limit) || 20;
-      const search = typeof q.search === 'string' ? q.search : undefined;
-      const status = typeof q.status === 'string' ? q.status : undefined;
-      const sortBy = typeof q.sortBy === 'string' ? q.sortBy : 'createdAt';
-      const sortOrder = typeof q.sortOrder === 'string' ? q.sortOrder : 'desc';
+      const page = parseQueryNumber(req.query.page, 1);
+      const limit = parseQueryNumber(req.query.limit, 20);
+      const search = parseQueryString(req.query.search);
+      const status = parseQueryString(req.query.status);
+      const sortBy = parseQueryString(req.query.sortBy) || 'createdAt';
+      const sortOrder = parseQueryString(req.query.sortOrder) || 'desc';
 
-      const result = await adminService.getUsers({ page, limit, search, status, sortBy, sortOrder });
-
-      return res.json({
-        success: true,
-        message: 'Users fetched successfully',
-        data: result.users,
-        meta: { total: result.total, page, limit, totalPages: Math.ceil(result.total / limit) },
+      const result = await adminService.getUsers({
+        page,
+        limit,
+        search,
+        status,
+        sortBy,
+        sortOrder,
       });
+
+      return sendSuccess(
+        res,
+        result.users,
+        'Users fetched successfully',
+        200,
+        {
+          total: result.total,
+          page,
+          limit,
+          totalPages: Math.ceil(result.total / limit),
+        }
+      );
     } catch (error) {
       next(error);
     }
@@ -112,7 +184,18 @@ export class AdminController {
 
   async getUserById(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const user = await adminService.getUserById(req.params.id as string);
+      const id = getParamId(req.params.id);
+
+      if (!id) {
+        throw new AppError('User ID is required', 400);
+      }
+
+      const user = await adminService.getUserById(id);
+
+      if (!user) {
+        throw new AppError('User not found', 404);
+      }
+
       return sendSuccess(res, user, 'User fetched successfully');
     } catch (error) {
       next(error);
@@ -121,17 +204,39 @@ export class AdminController {
 
   async updateUser(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const user = await adminService.updateUser(req.params.id as string, req.body);
+      const id = getParamId(req.params.id);
+
+      if (!id) {
+        throw new AppError('User ID is required', 400);
+      }
+
+      const user = await adminService.updateUser(id, req.body);
       return sendSuccess(res, user, 'User updated successfully');
     } catch (error) {
       next(error);
     }
   }
 
-  async deleteUser(req: AdminRequest, res: Response, next: NextFunction) {
+  async updateUserStatus(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const result = await adminService.deleteUser(req.params.id as string);
-      return sendSuccess(res, result, result.message);
+      const id = getParamId(req.params.id);
+      const { status } = req.body;
+
+      if (!id) {
+        throw new AppError('User ID is required', 400);
+      }
+
+      if (!status) {
+        throw new AppError('Status is required', 400);
+      }
+
+      const validStatuses = ['ACTIVE', 'SUSPENDED', 'INACTIVE', 'PENDING_VERIFICATION'];
+      if (!validStatuses.includes(status.toUpperCase())) {
+        throw new AppError(`Invalid status. Must be one of: ${validStatuses.join(', ')}`, 400);
+      }
+
+      const user = await adminService.updateUserStatus(id, status.toUpperCase());
+      return sendSuccess(res, user, `User status updated to ${status}`);
     } catch (error) {
       next(error);
     }
@@ -139,7 +244,13 @@ export class AdminController {
 
   async suspendUser(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const user = await adminService.suspendUser(req.params.id as string);
+      const id = getParamId(req.params.id);
+
+      if (!id) {
+        throw new AppError('User ID is required', 400);
+      }
+
+      const user = await adminService.suspendUser(id);
       return sendSuccess(res, user, 'User suspended successfully');
     } catch (error) {
       next(error);
@@ -148,8 +259,29 @@ export class AdminController {
 
   async activateUser(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const user = await adminService.activateUser(req.params.id as string);
+      const id = getParamId(req.params.id);
+
+      if (!id) {
+        throw new AppError('User ID is required', 400);
+      }
+
+      const user = await adminService.activateUser(id);
       return sendSuccess(res, user, 'User activated successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async deleteUser(req: AdminRequest, res: Response, next: NextFunction) {
+    try {
+      const id = getParamId(req.params.id);
+
+      if (!id) {
+        throw new AppError('User ID is required', 400);
+      }
+
+      const result = await adminService.deleteUser(id);
+      return sendSuccess(res, null, result.message);
     } catch (error) {
       next(error);
     }
@@ -158,25 +290,37 @@ export class AdminController {
   // ==========================================
   // ORGANIZATION MANAGEMENT
   // ==========================================
+
   async getOrganizations(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      // ✅ Fix: Access query params safely
-      const q = req.query;
-      const page = Number(q.page) || 1;
-      const limit = Number(q.limit) || 20;
-      const search = typeof q.search === 'string' ? q.search : undefined;
-      const planType = typeof q.planType === 'string' ? q.planType : undefined;
-      const sortBy = typeof q.sortBy === 'string' ? q.sortBy : 'createdAt';
-      const sortOrder = typeof q.sortOrder === 'string' ? q.sortOrder : 'desc';
+      const page = parseQueryNumber(req.query.page, 1);
+      const limit = parseQueryNumber(req.query.limit, 20);
+      const search = parseQueryString(req.query.search);
+      const planType = parseQueryString(req.query.planType);
+      const sortBy = parseQueryString(req.query.sortBy) || 'createdAt';
+      const sortOrder = parseQueryString(req.query.sortOrder) || 'desc';
 
-      const result = await adminService.getOrganizations({ page, limit, search, planType, sortBy, sortOrder });
-
-      return res.json({
-        success: true,
-        message: 'Organizations fetched successfully',
-        data: result.organizations,
-        meta: { total: result.total, page, limit, totalPages: Math.ceil(result.total / limit) },
+      const result = await adminService.getOrganizations({
+        page,
+        limit,
+        search,
+        planType,
+        sortBy,
+        sortOrder,
       });
+
+      return sendSuccess(
+        res,
+        result.organizations,
+        'Organizations fetched successfully',
+        200,
+        {
+          total: result.total,
+          page,
+          limit,
+          totalPages: Math.ceil(result.total / limit),
+        }
+      );
     } catch (error) {
       next(error);
     }
@@ -184,7 +328,18 @@ export class AdminController {
 
   async getOrganizationById(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const org = await adminService.getOrganizationById(req.params.id as string);
+      const id = getParamId(req.params.id);
+
+      if (!id) {
+        throw new AppError('Organization ID is required', 400);
+      }
+
+      const org = await adminService.getOrganizationById(id);
+
+      if (!org) {
+        throw new AppError('Organization not found', 404);
+      }
+
       return sendSuccess(res, org, 'Organization fetched successfully');
     } catch (error) {
       next(error);
@@ -193,7 +348,13 @@ export class AdminController {
 
   async updateOrganization(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const org = await adminService.updateOrganization(req.params.id as string, req.body);
+      const id = getParamId(req.params.id);
+
+      if (!id) {
+        throw new AppError('Organization ID is required', 400);
+      }
+
+      const org = await adminService.updateOrganization(id, req.body);
       return sendSuccess(res, org, 'Organization updated successfully');
     } catch (error) {
       next(error);
@@ -202,8 +363,14 @@ export class AdminController {
 
   async deleteOrganization(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const result = await adminService.deleteOrganization(req.params.id as string);
-      return sendSuccess(res, result, result.message);
+      const id = getParamId(req.params.id);
+
+      if (!id) {
+        throw new AppError('Organization ID is required', 400);
+      }
+
+      const result = await adminService.deleteOrganization(id);
+      return sendSuccess(res, null, result.message);
     } catch (error) {
       next(error);
     }
@@ -211,8 +378,14 @@ export class AdminController {
 
   async updateSubscription(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const org = await adminService.updateSubscription(req.params.id as string, req.body);
-      return sendSuccess(res, org, 'Subscription updated successfully');
+      const id = getParamId(req.params.id);
+
+      if (!id) {
+        throw new AppError('Organization ID is required', 400);
+      }
+
+      const result = await adminService.updateSubscription(id, req.body);
+      return sendSuccess(res, result, 'Subscription updated successfully');
     } catch (error) {
       next(error);
     }
@@ -221,6 +394,7 @@ export class AdminController {
   // ==========================================
   // PLAN MANAGEMENT
   // ==========================================
+
   async getPlans(req: AdminRequest, res: Response, next: NextFunction) {
     try {
       const plans = await adminService.getPlans();
@@ -241,8 +415,86 @@ export class AdminController {
 
   async updatePlan(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      const plan = await adminService.updatePlan(req.params.id as string, req.body);
+      const id = getParamId(req.params.id);
+
+      if (!id) {
+        throw new AppError('Plan ID is required', 400);
+      }
+
+      const plan = await adminService.updatePlan(id, req.body);
       return sendSuccess(res, plan, 'Plan updated successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async deletePlan(req: AdminRequest, res: Response, next: NextFunction) {
+    try {
+      const id = getParamId(req.params.id);
+
+      if (!id) {
+        throw new AppError('Plan ID is required', 400);
+      }
+
+      const result = await adminService.deletePlan(id);
+      return sendSuccess(res, null, result.message);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ==========================================
+  // ADMIN MANAGEMENT
+  // ==========================================
+
+  async getAdmins(req: AdminRequest, res: Response, next: NextFunction) {
+    try {
+      const admins = await adminService.getAdmins();
+      return sendSuccess(res, admins, 'Admins fetched successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async createAdmin(req: AdminRequest, res: Response, next: NextFunction) {
+    try {
+      const admin = await adminService.createAdmin(req.body);
+      return sendSuccess(res, admin, 'Admin created successfully', 201);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async updateAdmin(req: AdminRequest, res: Response, next: NextFunction) {
+    try {
+      const id = getParamId(req.params.id);
+
+      if (!id) {
+        throw new AppError('Admin ID is required', 400);
+      }
+
+      const admin = await adminService.updateAdmin(id, req.body);
+      return sendSuccess(res, admin, 'Admin updated successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async deleteAdmin(req: AdminRequest, res: Response, next: NextFunction) {
+    try {
+      const id = getParamId(req.params.id);
+
+      if (!id) {
+        throw new AppError('Admin ID is required', 400);
+      }
+
+      // Prevent self-deletion
+      if (req.admin?.id === id) {
+        throw new AppError('Cannot delete your own admin account', 400);
+      }
+
+      const result = await adminService.deleteAdmin(id);
+      return sendSuccess(res, null, result.message);
     } catch (error) {
       next(error);
     }
@@ -251,26 +503,39 @@ export class AdminController {
   // ==========================================
   // ACTIVITY LOGS
   // ==========================================
+
   async getActivityLogs(req: AdminRequest, res: Response, next: NextFunction) {
     try {
-      // ✅ Fix: Access query params safely
-      const q = req.query;
-      const page = Number(q.page) || 1;
-      const limit = Number(q.limit) || 50;
-      const action = typeof q.action === 'string' ? q.action : undefined;
-      const userId = typeof q.userId === 'string' ? q.userId : undefined;
-      const organizationId = typeof q.organizationId === 'string' ? q.organizationId : undefined;
-      const startDate = typeof q.startDate === 'string' ? q.startDate : undefined;
-      const endDate = typeof q.endDate === 'string' ? q.endDate : undefined;
+      const page = parseQueryNumber(req.query.page, 1);
+      const limit = parseQueryNumber(req.query.limit, 50);
+      const action = parseQueryString(req.query.action);
+      const userId = parseQueryString(req.query.userId);
+      const organizationId = parseQueryString(req.query.organizationId);
+      const startDate = parseQueryString(req.query.startDate);
+      const endDate = parseQueryString(req.query.endDate);
 
-      const result = await adminService.getActivityLogs({ page, limit, action, userId, organizationId, startDate, endDate });
-
-      return res.json({
-        success: true,
-        message: 'Activity logs fetched',
-        data: result.logs,
-        meta: { total: result.total, page, limit, totalPages: Math.ceil(result.total / limit) },
+      const result = await adminService.getActivityLogs({
+        page,
+        limit,
+        action,
+        userId,
+        organizationId,
+        startDate,
+        endDate,
       });
+
+      return sendSuccess(
+        res,
+        result.logs,
+        'Activity logs fetched successfully',
+        200,
+        {
+          total: result.total,
+          page,
+          limit,
+          totalPages: Math.ceil(result.total / limit),
+        }
+      );
     } catch (error) {
       next(error);
     }
@@ -279,6 +544,7 @@ export class AdminController {
   // ==========================================
   // SYSTEM SETTINGS
   // ==========================================
+
   async getSystemSettings(req: AdminRequest, res: Response, next: NextFunction) {
     try {
       const settings = adminService.getSystemSettings();

@@ -11,6 +11,7 @@ import {
   getUsersSchema,
   getUserByIdSchema,
   updateUserSchema,
+  updateUserStatusSchema,
   deleteUserSchema,
   getOrganizationsSchema,
   getOrganizationByIdSchema,
@@ -66,7 +67,7 @@ router.get('/dashboard', adminController.getDashboardStats.bind(adminController)
 
 /**
  * @route   GET /api/v1/admin/users
- * @desc    Get all users
+ * @desc    Get all users with pagination
  * @access  Admin
  */
 router.get(
@@ -98,15 +99,14 @@ router.put(
 );
 
 /**
- * @route   DELETE /api/v1/admin/users/:id
- * @desc    Delete user
- * @access  Super Admin
+ * @route   PATCH /api/v1/admin/users/:id/status
+ * @desc    Update user status (ACTIVE, SUSPENDED, etc.)
+ * @access  Admin
  */
-router.delete(
-  '/users/:id',
-  requireSuperAdmin,
-  validate(deleteUserSchema),
-  adminController.deleteUser.bind(adminController)
+router.patch(
+  '/users/:id/status',
+  validate(updateUserStatusSchema),
+  adminController.updateUserStatus.bind(adminController)
 );
 
 /**
@@ -129,6 +129,18 @@ router.post(
   '/users/:id/activate',
   validate(getUserByIdSchema),
   adminController.activateUser.bind(adminController)
+);
+
+/**
+ * @route   DELETE /api/v1/admin/users/:id
+ * @desc    Delete user
+ * @access  Super Admin
+ */
+router.delete(
+  '/users/:id',
+  requireSuperAdmin,
+  validate(deleteUserSchema),
+  adminController.deleteUser.bind(adminController)
 );
 
 // ============================================
@@ -224,6 +236,17 @@ router.put(
   requireSuperAdmin,
   validate(updatePlanSchema),
   adminController.updatePlan.bind(adminController)
+);
+
+/**
+ * @route   DELETE /api/v1/admin/plans/:id
+ * @desc    Delete plan
+ * @access  Super Admin
+ */
+router.delete(
+  '/plans/:id',
+  requireSuperAdmin,
+  adminController.deletePlan.bind(adminController)
 );
 
 // ============================================

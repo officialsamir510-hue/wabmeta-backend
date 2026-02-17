@@ -1,56 +1,86 @@
 // src/modules/admin/admin.middleware.ts
 
-import { Response, NextFunction } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../../config';
-import { AppError } from '../../middleware/errorHandler';
 import prisma from '../../config/database';
-import { AuthRequest } from '../../types/express';
+import { AppError } from '../../middleware/errorHandler';
 
-interface AdminTokenPayload {
+// ============================================
+// TYPES
+// ============================================
+
+interface AdminJWTPayload {
   adminId: string;
   email: string;
   role: string;
-  type: 'admin';
+  iat?: number;
+  exp?: number;
 }
 
-// Extend AuthRequest for admin
-export interface AdminRequest extends AuthRequest {
+interface AdminRequest extends Request {
   admin?: {
     id: string;
     email: string;
     role: string;
+    name?: string;
   };
 }
 
-// Authenticate admin
+// ============================================
+// AUTHENTICATE ADMIN MIDDLEWARE
+// ============================================
+
 export const authenticateAdmin = async (
   req: AdminRequest,
   res: Response,
   next: NextFunction
-): Promise<void> => {
+) => {
   try {
+    // Get token from header
     const authHeader = req.headers.authorization;
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new AppError('Admin access token required', 401);
+    if (!authHeader) {
+      throw new AppError('Admin authentication required', 401);
     }
 
-    const token = authHeader.split(' ')[1];
+    if (!authHeader.startsWith('Bearer ')) {
+      throw new AppError('Invalid authorization format', 401);
+    }
 
-    // Verify token using config.jwt.secret
-    const decoded = jwt.verify(token, config.jwt.secret) as AdminTokenPayload;
+    const token = authHeader.substring(7);
 
-    if (decoded.type !== 'admin') {
+    if (!token) {
+      throw new AppError('Admin token required', 401);
+    }
+
+    // Verify token
+    let decoded: AdminJWTPayload;
+
+    try {
+      decoded = jwt.verify(token, config.jwt.secret) as AdminJWTPayload;
+    } catch (jwtError: any) {
+      if (jwtError.name === 'TokenExpiredError') {
+        throw new AppError('Admin token expired', 401);
+      }
+      if (jwtError.name === 'JsonWebTokenError') {
+        throw new AppError('Invalid admin token', 401);
+      }
+      throw new AppError('Token verification failed', 401);
+    }
+
+    // Check if it's an admin token (has adminId, not userId)
+    if (!decoded.adminId) {
       throw new AppError('Invalid admin token', 401);
     }
 
-    // Check if admin exists
+    // Get admin from database
     const admin = await prisma.adminUser.findUnique({
       where: { id: decoded.adminId },
       select: {
         id: true,
         email: true,
+        name: true,
         role: true,
         isActive: true,
       },
@@ -61,7 +91,7 @@ export const authenticateAdmin = async (
     }
 
     if (!admin.isActive) {
-      throw new AppError('Admin account is disabled', 403);
+      throw new AppError('Admin account is inactive', 403);
     }
 
     // Attach admin to request
@@ -69,34 +99,8 @@ export const authenticateAdmin = async (
       id: admin.id,
       email: admin.email,
       role: admin.role,
+      name: admin.name,
     };
-
-    next();
-  } catch (error) {
-    if (error instanceof jwt.JsonWebTokenError) {
-      next(new AppError('Invalid admin token', 401));
-    } else if (error instanceof jwt.TokenExpiredError) {
-      next(new AppError('Admin token expired', 401));
-    } else {
-      next(error);
-    }
-  }
-};
-
-// Require super admin role
-export const requireSuperAdmin = async (
-  req: AdminRequest,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    if (!req.admin) {
-      throw new AppError('Admin authentication required', 401);
-    }
-
-    if (req.admin.role !== 'super_admin') {
-      throw new AppError('Super admin access required', 403);
-    }
 
     next();
   } catch (error) {
@@ -104,20 +108,42 @@ export const requireSuperAdmin = async (
   }
 };
 
-// Generate admin token
-export const generateAdminToken = (admin: {
-  id: string;
-  email: string;
-  role: string;
-}): string => {
-  return jwt.sign(
-    {
-      adminId: admin.id,
-      email: admin.email,
-      role: admin.role,
-      type: 'admin',
-    },
-    config.jwt.secret,
-    { expiresIn: '24h' }
-  );
+// ============================================
+// REQUIRE SUPER ADMIN MIDDLEWARE
+// ============================================
+
+export const requireSuperAdmin = (
+  req: AdminRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  if (!req.admin) {
+    return next(new AppError('Admin authentication required', 401));
+  }
+
+  if (req.admin.role !== 'super_admin') {
+    return next(new AppError('Super admin access required', 403));
+  }
+
+  next();
+};
+
+// ============================================
+// REQUIRE SPECIFIC ROLE MIDDLEWARE
+// ============================================
+
+export const requireRole = (...roles: string[]) => {
+  return (req: AdminRequest, res: Response, next: NextFunction) => {
+    if (!req.admin) {
+      return next(new AppError('Admin authentication required', 401));
+    }
+
+    if (!roles.includes(req.admin.role)) {
+      return next(
+        new AppError(`Access denied. Required roles: ${roles.join(', ')}`, 403)
+      );
+    }
+
+    next();
+  };
 };
