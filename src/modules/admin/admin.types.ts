@@ -35,3 +35,41 @@ export interface CreatePlanInput {
   features?: string[];
   isActive?: boolean;
 }
+
+export interface DashboardStats {
+  users: {
+    total: number;
+    active: number;
+    recent: number;
+    growthRate: string;
+  };
+  organizations: {
+    total: number;
+    active: number;
+    recent: number;
+    growthRate: string;
+  };
+  contacts: {
+    total: number;
+  };
+  messages: {
+    total: number;
+    recent: number;
+  };
+  campaigns: {
+    total: number;
+    active: number;
+  };
+  templates: {
+    total: number;
+    approved: number;
+  };
+  revenue: {
+    mrr: number;
+    arr: number;
+    activeSubscriptions: number;
+  };
+  planDistribution: Record<string, number>;
+  totalRevenue: number;
+  totalSubscriptions: number;
+}

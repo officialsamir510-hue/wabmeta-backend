@@ -2,6 +2,7 @@
 
 import { PrismaClient, Prisma, PlanType, ActivityAction } from '@prisma/client';
 import { hashPassword, comparePassword } from '../../utils/password';
+import { DashboardStats } from './admin.types';
 
 const prisma = new PrismaClient();
 
@@ -120,20 +121,135 @@ export class AdminService {
   // ==========================================
   // DASHBOARD
   // ==========================================
-  async getDashboardStats() {
-    const [totalUsers, activeUsers, totalOrgs, totalContacts, totalMessages] = await Promise.all([
+  async getDashboardStats(): Promise<DashboardStats> {
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    const [
+      totalUsers,
+      activeUsers,
+      recentUsers,
+      totalOrgs,
+      activeOrgs,
+      recentOrgs,
+      totalContacts,
+      totalMessages,
+      recentMessages,
+      totalCampaigns,
+      activeCampaigns,
+      totalTemplates,
+      approvedTemplates,
+      subscriptions,
+      plans,
+    ] = await Promise.all([
+      // Users
       prisma.user.count(),
       prisma.user.count({ where: { status: 'ACTIVE' } }),
+      prisma.user.count({ where: { createdAt: { gte: sevenDaysAgo } } }),
+
+      // Organizations
       prisma.organization.count(),
+      prisma.organization.count(), // All orgs are considered active for now
+      prisma.organization.count({ where: { createdAt: { gte: sevenDaysAgo } } }),
+
+      // Contacts & Messages
       prisma.contact.count(),
       prisma.message.count(),
+      prisma.message.count({ where: { createdAt: { gte: sevenDaysAgo } } }),
+
+      // Campaigns
+      prisma.campaign.count(),
+      prisma.campaign.count({ where: { status: { in: ['RUNNING', 'SCHEDULED'] } } }),
+
+      // Templates
+      prisma.template.count(),
+      prisma.template.count({ where: { status: 'APPROVED' } }),
+
+      // Subscriptions
+      prisma.subscription.findMany({
+        where: { status: 'ACTIVE' },
+        include: { plan: true },
+      }),
+
+      // Plans
+      prisma.plan.findMany(),
     ]);
 
+    // Calculate revenue metrics
+    let mrr = 0; // Monthly Recurring Revenue
+    let arr = 0; // Annual Recurring Revenue
+    const planDistribution: Record<string, number> = {};
+
+    subscriptions.forEach((sub) => {
+      const monthlyRevenue = sub.billingCycle === 'monthly'
+        ? Number(sub.plan.monthlyPrice)
+        : Number(sub.plan.yearlyPrice) / 12;
+
+      mrr += monthlyRevenue;
+
+      // Count plan distribution
+      const planType = sub.plan.type;
+      planDistribution[planType] = (planDistribution[planType] || 0) + 1;
+    });
+
+    arr = mrr * 12;
+
+    // Calculate growth rates (simplified - comparing to 30 days ago)
+    const userGrowthRate = totalUsers > 0 ? ((recentUsers / totalUsers) * 100).toFixed(1) : '0';
+    const orgGrowthRate = totalOrgs > 0 ? ((recentOrgs / totalOrgs) * 100).toFixed(1) : '0';
+
     return {
-      users: { total: totalUsers, active: activeUsers },
-      organizations: { total: totalOrgs },
-      contacts: { total: totalContacts },
-      messages: { total: totalMessages },
+      // User metrics
+      users: {
+        total: totalUsers,
+        active: activeUsers,
+        recent: recentUsers,
+        growthRate: `${userGrowthRate}%`,
+      },
+
+      // Organization metrics
+      organizations: {
+        total: totalOrgs,
+        active: activeOrgs,
+        recent: recentOrgs,
+        growthRate: `${orgGrowthRate}%`,
+      },
+
+      // Contact & Message metrics
+      contacts: {
+        total: totalContacts,
+      },
+      messages: {
+        total: totalMessages,
+        recent: recentMessages,
+      },
+
+      // Campaign metrics
+      campaigns: {
+        total: totalCampaigns,
+        active: activeCampaigns,
+      },
+
+      // Template metrics
+      templates: {
+        total: totalTemplates,
+        approved: approvedTemplates,
+      },
+
+      // Revenue metrics
+      revenue: {
+        mrr: Number(mrr.toFixed(2)),
+        arr: Number(arr.toFixed(2)),
+        activeSubscriptions: subscriptions.length,
+      },
+
+      // Plan distribution
+      planDistribution,
+
+      // Quick stats for cards
+      totalRevenue: Number(mrr.toFixed(2)),
+      totalSubscriptions: subscriptions.length,
     };
   }
 
