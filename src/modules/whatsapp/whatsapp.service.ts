@@ -63,6 +63,66 @@ class WhatsAppService {
   }
 
   /**
+   * ✅ NEW: Extract plain text content from message payload
+   */
+  private extractMessageContent(type: string, content: any): string {
+    if (typeof content === 'string') {
+      return content;
+    }
+
+    // Extract text from different message types
+    switch (type.toLowerCase()) {
+      case 'text':
+        // Handle nested structure: { text: { body: "message" } }
+        if (content?.text?.body) {
+          return content.text.body;
+        }
+        // Handle direct body
+        if (content?.body) {
+          return content.body;
+        }
+        // Fallback to stringified content
+        return JSON.stringify(content);
+
+      case 'template':
+        const templateName = content?.template?.name || 'Unknown Template';
+        return `📋 Template: ${templateName}`;
+
+      case 'image':
+        const imageCaption = content?.image?.caption || '';
+        return imageCaption || '📷 Image';
+
+      case 'video':
+        const videoCaption = content?.video?.caption || '';
+        return videoCaption || '🎥 Video';
+
+      case 'document':
+        const docCaption = content?.document?.caption || '';
+        const fileName = content?.document?.filename || '';
+        return docCaption || fileName || '📄 Document';
+
+      case 'audio':
+        return '🎵 Audio';
+
+      case 'location':
+        const locationName = content?.location?.name || '';
+        return locationName || '📍 Location';
+
+      case 'sticker':
+        return '🎭 Sticker';
+
+      case 'contacts':
+        return '👤 Contact';
+
+      case 'interactive':
+        return content?.interactive?.body?.text || 'Interactive message';
+
+      default:
+        return JSON.stringify(content);
+    }
+  }
+
+  /**
    * Get account with safe token decryption - ✅ FIXED VERSION
    */
   private async getAccountWithToken(accountId: string): Promise<{
@@ -318,7 +378,7 @@ class WhatsAppService {
   }
 
   /**
-   * Core send message function - ✅ FIXED VERSION
+   * Core send message function - ✅ FIXED VERSION WITH CONTENT EXTRACTION
    */
   async sendMessage(options: SendMessageOptions) {
     const { accountId, to, type, content, conversationId } = options;
@@ -367,8 +427,11 @@ class WhatsAppService {
       // Get or create contact
       const contact = await this.getOrCreateContact(organizationId, to);
 
-      // Get message preview
-      const messagePreview = this.getMessagePreview(type, content);
+      // ✅ Extract clean content for preview and storage
+      const messageContent = this.extractMessageContent(type, content);
+      const messagePreview = messageContent.substring(0, 100);
+
+      console.log(`   Message Content: ${messageContent.substring(0, 50)}...`);
 
       // Get or create conversation
       const conversation = await this.getOrCreateConversation(
@@ -379,7 +442,7 @@ class WhatsAppService {
         conversationId
       );
 
-      // Save message to database
+      // ✅ Save message to database with clean content
       const message = await prisma.message.create({
         data: {
           conversationId: conversation.id,
@@ -388,7 +451,7 @@ class WhatsAppService {
           waMessageId: result.messageId, // Duplicate for backward compatibility
           direction: MessageDirection.OUTBOUND,
           type: this.mapMessageType(type),
-          content: typeof content === 'string' ? content : JSON.stringify(content),
+          content: messageContent, // ✅ Now saves clean text instead of JSON
           status: MessageStatus.SENT,
           sentAt: new Date(),
         },
@@ -399,6 +462,11 @@ class WhatsAppService {
             },
           },
         },
+      });
+
+      console.log(`💾 Message saved to DB:`, {
+        id: message.id,
+        content: messageContent.substring(0, 50) + '...',
       });
 
       console.log(`📤 ========== SEND MESSAGE END ==========\n`);
@@ -414,16 +482,18 @@ class WhatsAppService {
         response: error.response?.data,
       });
 
-      // Save failed message for tracking
+      // ✅ Save failed message with clean content
       if (conversationId) {
         try {
+          const failedContent = this.extractMessageContent(type, content);
+
           await prisma.message.create({
             data: {
               conversationId,
               whatsappAccountId: accountId,
               direction: MessageDirection.OUTBOUND,
               type: this.mapMessageType(type),
-              content: typeof content === 'string' ? content : JSON.stringify(content),
+              content: failedContent, // ✅ Clean content for failed messages too
               status: MessageStatus.FAILED,
               failureReason: error.response?.data?.error?.message || error.message,
               sentAt: new Date(),
