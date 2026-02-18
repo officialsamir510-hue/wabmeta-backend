@@ -2,221 +2,144 @@
 
 import { Router } from 'express';
 import { authenticate } from '../../middleware/auth';
-import { inboxService } from './inbox.service';
+import { inboxController } from './inbox.controller';
 
 const router = Router();
 
+// ==========================================
 // Apply authentication to all routes
+// ==========================================
 router.use(authenticate);
 
-// Get conversations
-router.get('/conversations', async (req: any, res, next) => {
-  try {
-    const organizationId = req.user?.organizationId;
-    if (!organizationId) {
-      return res.status(400).json({ success: false, message: 'Organization context required' });
-    }
+// ==========================================
+// CONVERSATIONS
+// ==========================================
 
-    const { accountId, filter, search, page, limit } = req.query;
+// GET /inbox/conversations - List all conversations
+router.get('/conversations', (req, res, next) =>
+  inboxController.getConversations(req as any, res, next)
+);
 
-    const result = await inboxService.getConversations(organizationId, accountId as string, {
-      filter: filter as 'all' | 'unread' | 'archived' | 'open' | undefined,
-      search: search as string | undefined,
-      page: page ? parseInt(page as string) : undefined,
-      limit: limit ? parseInt(limit as string) : undefined,
-    });
+// POST /inbox/conversations/start - Start new conversation
+router.post('/conversations/start', (req, res, next) =>
+  inboxController.startConversation(req as any, res, next)
+);
 
-    return res.json({ success: true, data: result });
-  } catch (error) {
-    next(error);
-  }
-});
+// GET /inbox/conversations/:id - Get single conversation
+router.get('/conversations/:id', (req, res, next) =>
+  inboxController.getConversationById(req as any, res, next)
+);
 
-// Get messages for a conversation
-router.get('/conversations/:conversationId/messages', async (req: any, res, next) => {
-  try {
-    const { conversationId } = req.params;
-    const { before, limit } = req.query;
+// PUT /inbox/conversations/:id - Update conversation
+router.put('/conversations/:id', (req, res, next) =>
+  inboxController.updateConversation(req as any, res, next)
+);
 
-    const result = await inboxService.getMessages(conversationId, {
-      before: before as string | undefined,
-      limit: limit ? parseInt(limit as string) : undefined,
-    });
+// DELETE /inbox/conversations/:id - Delete conversation
+router.delete('/conversations/:id', (req, res, next) =>
+  inboxController.deleteConversation(req as any, res, next)
+);
 
-    return res.json({ success: true, data: result });
-  } catch (error) {
-    next(error);
-  }
-});
+// ==========================================
+// MARK AS READ - ✅ FIXED
+// ==========================================
 
-// Mark as read
-router.post('/conversations/:conversationId/read', async (req: any, res, next) => {
-  try {
-    const { conversationId } = req.params;
-    const userId = req.user?.id;
+// POST /inbox/conversations/:id/read - Mark as read
+router.post('/conversations/:id/read', (req, res, next) =>
+  inboxController.markAsRead(req as any, res, next)
+);
 
-    const result = await inboxService.markAsRead(conversationId, userId);
+// Also support PUT and PATCH
+router.put('/conversations/:id/read', (req, res, next) =>
+  inboxController.markAsRead(req as any, res, next)
+);
 
-    return res.json({ success: true, data: result });
-  } catch (error) {
-    next(error);
-  }
-});
+router.patch('/conversations/:id/read', (req, res, next) =>
+  inboxController.markAsRead(req as any, res, next)
+);
 
-// Archive conversation
-router.post('/conversations/:conversationId/archive', async (req: any, res, next) => {
-  try {
-    const { conversationId } = req.params;
-    const { isArchived } = req.body;
+// ==========================================
+// MESSAGES
+// ==========================================
 
-    const result = await inboxService.updateArchiveStatus(
-      conversationId,
-      isArchived !== undefined ? isArchived : true
-    );
+// GET /inbox/conversations/:id/messages - Get messages
+router.get('/conversations/:id/messages', (req, res, next) =>
+  inboxController.getMessages(req as any, res, next)
+);
 
-    return res.json({ success: true, data: result });
-  } catch (error) {
-    next(error);
-  }
-});
+// POST /inbox/conversations/:id/messages - Send message
+router.post('/conversations/:id/messages', (req, res, next) =>
+  inboxController.sendMessage(req as any, res, next)
+);
 
-// Archive conversation (dedicated endpoint)
-router.put('/conversations/:conversationId/archive', async (req: any, res, next) => {
-  try {
-    const { conversationId } = req.params;
+// ==========================================
+// ARCHIVE
+// ==========================================
 
-    const result = await inboxService.updateArchiveStatus(conversationId, true);
+// POST /inbox/conversations/:id/archive - Archive
+router.post('/conversations/:id/archive', (req, res, next) =>
+  inboxController.archiveConversation(req as any, res, next)
+);
 
-    return res.json({ success: true, data: result, message: 'Conversation archived' });
-  } catch (error) {
-    next(error);
-  }
-});
+// POST /inbox/conversations/:id/unarchive - Unarchive
+router.post('/conversations/:id/unarchive', (req, res, next) =>
+  inboxController.unarchiveConversation(req as any, res, next)
+);
 
-// Unarchive conversation
-router.put('/conversations/:conversationId/unarchive', async (req: any, res, next) => {
-  try {
-    const { conversationId } = req.params;
+// DELETE /inbox/conversations/:id/archive - Unarchive (alternative)
+router.delete('/conversations/:id/archive', (req, res, next) =>
+  inboxController.unarchiveConversation(req as any, res, next)
+);
 
-    const result = await inboxService.updateArchiveStatus(conversationId, false);
+// ==========================================
+// ASSIGNMENT
+// ==========================================
 
-    return res.json({ success: true, data: result, message: 'Conversation unarchived' });
-  } catch (error) {
-    next(error);
-  }
-});
+// POST /inbox/conversations/:id/assign - Assign to user
+router.post('/conversations/:id/assign', (req, res, next) =>
+  inboxController.assignConversation(req as any, res, next)
+);
 
-// Update labels
-router.put('/conversations/:conversationId/labels', async (req: any, res, next) => {
-  try {
-    const { conversationId } = req.params;
-    const { labels } = req.body;
+// ==========================================
+// LABELS
+// ==========================================
 
-    const result = await inboxService.updateLabels(conversationId, labels || []);
+// GET /inbox/labels - Get all labels
+router.get('/labels', (req, res, next) =>
+  inboxController.getLabels(req as any, res, next)
+);
 
-    return res.json({ success: true, data: result });
-  } catch (error) {
-    next(error);
-  }
-});
+// POST /inbox/conversations/:id/labels - Add labels
+router.post('/conversations/:id/labels', (req, res, next) =>
+  inboxController.addLabels(req as any, res, next)
+);
 
-// Assign conversation
-router.put('/conversations/:conversationId/assign', async (req: any, res, next) => {
-  try {
-    const { conversationId } = req.params;
-    const { userId } = req.body;
+// DELETE /inbox/conversations/:id/labels/:label - Remove label
+router.delete('/conversations/:id/labels/:label', (req, res, next) =>
+  inboxController.removeLabel(req as any, res, next)
+);
 
-    const result = await inboxService.assignConversation(conversationId, userId || null);
+// ==========================================
+// BULK OPERATIONS
+// ==========================================
 
-    return res.json({ success: true, data: result });
-  } catch (error) {
-    next(error);
-  }
-});
+// POST /inbox/bulk - Bulk update
+router.post('/bulk', (req, res, next) =>
+  inboxController.bulkUpdate(req as any, res, next)
+);
 
-// Get single conversation
-router.get('/conversations/:conversationId', async (req: any, res, next) => {
-  try {
-    const organizationId = req.user?.organizationId;
-    const { conversationId } = req.params;
+// ==========================================
+// SEARCH & STATS
+// ==========================================
 
-    const conversation = await inboxService.getConversation(conversationId, organizationId);
+// GET /inbox/search - Search messages
+router.get('/search', (req, res, next) =>
+  inboxController.searchMessages(req as any, res, next)
+);
 
-    return res.json({ success: true, data: conversation });
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Get stats
-router.get('/stats', async (req: any, res, next) => {
-  try {
-    const organizationId = req.user?.organizationId;
-    if (!organizationId) {
-      return res.status(400).json({ success: false, message: 'Organization context required' });
-    }
-
-    const { accountId } = req.query;
-
-    const stats = await inboxService.getStats(organizationId, accountId as string);
-
-    return res.json({ success: true, data: stats });
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Get all labels
-router.get('/labels', async (req: any, res, next) => {
-  try {
-    const organizationId = req.user?.organizationId;
-    if (!organizationId) {
-      return res.status(400).json({ success: false, message: 'Organization context required' });
-    }
-
-    const labels = await inboxService.getAllLabels(organizationId);
-
-    return res.json({ success: true, data: labels });
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Send message
-router.post('/conversations/:conversationId/messages', async (req: any, res, next) => {
-  try {
-    const organizationId = req.user?.organizationId;
-    const userId = req.user?.id;
-    const { conversationId } = req.params;
-
-    if (!organizationId) {
-      return res.status(400).json({ success: false, message: 'Organization context required' });
-    }
-
-    const message = await inboxService.sendMessage(organizationId, userId, conversationId, req.body);
-
-    return res.json({ success: true, data: message, message: 'Message sent' });
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Start conversation with contact
-router.post('/start', async (req: any, res, next) => {
-  try {
-    const organizationId = req.user?.organizationId;
-    if (!organizationId) {
-      return res.status(400).json({ success: false, message: 'Organization context required' });
-    }
-
-    const { contactId } = req.body;
-
-    const conversation = await inboxService.getOrCreateConversation(organizationId, contactId);
-
-    return res.json({ success: true, data: conversation });
-  } catch (error) {
-    next(error);
-  }
-});
+// GET /inbox/stats - Get inbox stats
+router.get('/stats', (req, res, next) =>
+  inboxController.getStats(req as any, res, next)
+);
 
 export default router;
