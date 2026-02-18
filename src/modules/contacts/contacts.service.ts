@@ -19,6 +19,8 @@ import {
   ContactGroupResponse,
 } from './contacts.types';
 
+import { buildINPhoneVariants, formatFullPhone, normalizeINNational10 } from '../../utils/phone';
+
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
@@ -27,7 +29,7 @@ const formatContact = (contact: any): ContactResponse => ({
   id: contact.id,
   phone: contact.phone,
   countryCode: contact.countryCode,
-  fullPhone: `${contact.countryCode}${contact.phone}`,
+  fullPhone: formatFullPhone(contact.countryCode, contact.phone),
   firstName: contact.firstName,
   lastName: contact.lastName,
   fullName: [contact.firstName, contact.lastName].filter(Boolean).join(' ') || contact.phone,
@@ -45,11 +47,12 @@ const formatContact = (contact: any): ContactResponse => ({
 
 const formatContactWithGroups = (contact: any): ContactWithGroups => ({
   ...formatContact(contact),
-  groups: contact.groupMemberships?.map((gm: any) => ({
-    id: gm.group.id,
-    name: gm.group.name,
-    color: gm.group.color,
-  })) || [],
+  groups:
+    contact.groupMemberships?.map((gm: any) => ({
+      id: gm.group.id,
+      name: gm.group.name,
+      color: gm.group.color,
+    })) || [],
 });
 
 const formatContactGroup = (group: any): ContactGroupResponse => ({
@@ -62,29 +65,28 @@ const formatContactGroup = (group: any): ContactGroupResponse => ({
   updatedAt: group.updatedAt,
 });
 
-// Normalize phone number
-const normalizePhone = (phone: string): string => {
-  return phone.replace(/\D/g, '').replace(/^0+/, '');
-};
-
 // ============================================
 // CONTACTS SERVICE CLASS
 // ============================================
 
 export class ContactsService {
   // ==========================================
-  // CREATE CONTACT
+  // CREATE CONTACT (✅ FIXED normalization + duplicate check)
   // ==========================================
   async create(organizationId: string, input: CreateContactInput): Promise<ContactResponse> {
-    const normalizedPhone = normalizePhone(input.phone);
+    const national10 = normalizeINNational10(input.phone);
 
-    // Check for duplicate
-    const existing = await prisma.contact.findUnique({
+    if (!national10) {
+      throw new AppError('Invalid phone number. Please enter a valid 10-digit Indian number.', 400);
+    }
+
+    const variants = buildINPhoneVariants(input.phone);
+
+    // ✅ Duplicate check across legacy formats
+    const existing = await prisma.contact.findFirst({
       where: {
-        organizationId_phone: {
-          organizationId,
-          phone: normalizedPhone,
-        },
+        organizationId,
+        OR: variants.map((p) => ({ phone: p })),
       },
     });
 
@@ -96,12 +98,8 @@ export class ContactsService {
     const org = await prisma.organization.findUnique({
       where: { id: organizationId },
       include: {
-        subscription: {
-          include: { plan: true },
-        },
-        _count: {
-          select: { contacts: true },
-        },
+        subscription: { include: { plan: true } },
+        _count: { select: { contacts: true } },
       },
     });
 
@@ -111,11 +109,11 @@ export class ContactsService {
       }
     }
 
-    // Create contact
+    // ✅ Store canonical: phone = national 10 digits, countryCode = +91
     const contact = await prisma.contact.create({
       data: {
         organizationId,
-        phone: normalizedPhone,
+        phone: national10,
         countryCode: input.countryCode || '+91',
         firstName: input.firstName,
         lastName: input.lastName,
@@ -165,10 +163,7 @@ export class ContactsService {
 
     const skip = (page - 1) * limit;
 
-    // Build where clause
-    const where: Prisma.ContactWhereInput = {
-      organizationId,
-    };
+    const where: Prisma.ContactWhereInput = { organizationId };
 
     if (search) {
       where.OR = [
@@ -179,22 +174,13 @@ export class ContactsService {
       ];
     }
 
-    if (status) {
-      where.status = status;
-    }
+    if (status) where.status = status;
+    if (tags && tags.length > 0) where.tags = { hasSome: tags };
 
-    if (tags && tags.length > 0) {
-      where.tags = { hasSome: tags };
-    }
-
-    // ✅ Fixed: Use groupMemberships instead of groups
     if (groupId) {
-      where.groupMemberships = {
-        some: { groupId },
-      };
+      where.groupMemberships = { some: { groupId } };
     }
 
-    // Execute query
     const [contacts, total] = await Promise.all([
       prisma.contact.findMany({
         where,
@@ -207,12 +193,7 @@ export class ContactsService {
 
     return {
       contacts: contacts.map(formatContact),
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
   }
 
@@ -221,61 +202,47 @@ export class ContactsService {
   // ==========================================
   async getById(organizationId: string, contactId: string): Promise<ContactWithGroups> {
     const contact = await prisma.contact.findFirst({
-      where: {
-        id: contactId,
-        organizationId,
-      },
+      where: { id: contactId, organizationId },
       include: {
-        // ✅ Fixed: Use groupMemberships instead of groups
         groupMemberships: {
           include: {
-            group: {
-              select: {
-                id: true,
-                name: true,
-                color: true,
-              },
-            },
+            group: { select: { id: true, name: true, color: true } },
           },
         },
       },
     });
 
-    if (!contact) {
-      throw new AppError('Contact not found', 404);
-    }
-
+    if (!contact) throw new AppError('Contact not found', 404);
     return formatContactWithGroups(contact);
   }
 
   // ==========================================
-  // UPDATE CONTACT
+  // UPDATE CONTACT (✅ FIXED normalization + duplicate check)
   // ==========================================
   async update(
     organizationId: string,
     contactId: string,
     input: UpdateContactInput
   ): Promise<ContactResponse> {
-    // Check contact exists
     const existing = await prisma.contact.findFirst({
-      where: {
-        id: contactId,
-        organizationId,
-      },
+      where: { id: contactId, organizationId },
     });
 
-    if (!existing) {
-      throw new AppError('Contact not found', 404);
-    }
+    if (!existing) throw new AppError('Contact not found', 404);
 
-    // If phone is being updated, check for duplicates
     if (input.phone) {
-      const normalizedPhone = normalizePhone(input.phone);
+      const national10 = normalizeINNational10(input.phone);
+      if (!national10) {
+        throw new AppError('Invalid phone number. Please enter a valid 10-digit Indian number.', 400);
+      }
+
+      const variants = buildINPhoneVariants(input.phone);
+
       const duplicate = await prisma.contact.findFirst({
         where: {
           organizationId,
-          phone: normalizedPhone,
           id: { not: contactId },
+          OR: variants.map((p) => ({ phone: p })),
         },
       });
 
@@ -284,11 +251,10 @@ export class ContactsService {
       }
     }
 
-    // Update contact
-    const contact = await prisma.contact.update({
+    const updated = await prisma.contact.update({
       where: { id: contactId },
       data: {
-        phone: input.phone ? normalizePhone(input.phone) : undefined,
+        phone: input.phone ? (normalizeINNational10(input.phone) as string) : undefined,
         countryCode: input.countryCode,
         firstName: input.firstName,
         lastName: input.lastName,
@@ -299,7 +265,7 @@ export class ContactsService {
       },
     });
 
-    return formatContact(contact);
+    return formatContact(updated);
   }
 
   // ==========================================
@@ -307,25 +273,14 @@ export class ContactsService {
   // ==========================================
   async delete(organizationId: string, contactId: string): Promise<{ message: string }> {
     const contact = await prisma.contact.findFirst({
-      where: {
-        id: contactId,
-        organizationId,
-      },
+      where: { id: contactId, organizationId },
     });
 
-    if (!contact) {
-      throw new AppError('Contact not found', 404);
-    }
+    if (!contact) throw new AppError('Contact not found', 404);
 
-    await prisma.contact.delete({
-      where: { id: contactId },
-    });
+    await prisma.contact.delete({ where: { id: contactId } });
 
-    // Update subscription usage
-    const subscription = await prisma.subscription.findFirst({
-      where: { organizationId },
-    });
-
+    const subscription = await prisma.subscription.findFirst({ where: { organizationId } });
     if (subscription && subscription.contactsUsed > 0) {
       await prisma.subscription.update({
         where: { id: subscription.id },
@@ -337,48 +292,28 @@ export class ContactsService {
   }
 
   // ==========================================
-  // ✅ OPTIMIZED IMPORT CONTACTS
+  // IMPORT CONTACTS (✅ FIXED normalization + duplicate prevention)
   // ==========================================
-  /**
-   * Import contacts in bulk (single DB query + optional group add)
-   * Prevents Prisma pool timeout with efficient batch processing
-   */
-  async import(
-    organizationId: string,
-    input: ImportContactsInput
-  ): Promise<ImportContactsResponse> {
-    const {
-      contacts,
-      groupId,
-      tags = [],
-      skipDuplicates = true,
-    } = input;
+  async import(organizationId: string, input: ImportContactsInput): Promise<ImportContactsResponse> {
+    const { contacts, groupId, tags = [], skipDuplicates = true } = input;
 
     if (!contacts || contacts.length === 0) {
       throw new AppError('At least one contact is required', 400);
     }
 
-    // ✅ Optional group validation
     if (groupId) {
       const group = await prisma.contactGroup.findFirst({
         where: { id: groupId, organizationId },
         select: { id: true },
       });
-      if (!group) {
-        throw new AppError('Contact group not found', 404);
-      }
+      if (!group) throw new AppError('Contact group not found', 404);
     }
 
-    // Check organization limits
     const org = await prisma.organization.findUnique({
       where: { id: organizationId },
       include: {
-        subscription: {
-          include: { plan: true },
-        },
-        _count: {
-          select: { contacts: true },
-        },
+        subscription: { include: { plan: true } },
+        _count: { select: { contacts: true } },
       },
     });
 
@@ -390,24 +325,23 @@ export class ContactsService {
       throw new AppError('Contact limit reached. Please upgrade your plan.', 400);
     }
 
-    // Normalize + merge root tags
-    const normalized = contacts.slice(0, availableSlots).map((c) => {
-      const phone = normalizePhone(c.phone);
+    const sliced = contacts.slice(0, availableSlots);
+
+    // Normalize all to national10
+    const normalized = sliced.map((c) => {
+      const phone10 = normalizeINNational10(c.phone);
       const countryCode = c.countryCode || '+91';
 
-      // Email: avoid empty string in DB
       const email = c.email ? String(c.email).trim() : null;
       const safeEmail = email && email.length > 0 ? email : null;
 
       const mergedTags = Array.from(
-        new Set([...(c.tags || []), ...(tags || [])]
-          .map((t) => String(t).trim())
-          .filter(Boolean))
+        new Set([...(c.tags || []), ...(tags || [])].map((t) => String(t).trim()).filter(Boolean))
       );
 
       return {
         organizationId,
-        phone,
+        phone: phone10,
         countryCode,
         firstName: c.firstName || null,
         lastName: c.lastName || null,
@@ -419,69 +353,84 @@ export class ContactsService {
       };
     });
 
-    // Filter invalid phones (should already be validated by zod, but extra safety)
-    const valid = normalized.filter((c) => 
-      c.phone && /^\d+$/.test(c.phone) && c.phone.length >= 10
-    );
-
+    const valid = normalized.filter((c) => c.phone && /^\d{10}$/.test(String(c.phone)));
     const invalidCount = normalized.length - valid.length;
+
     if (valid.length === 0) {
       throw new AppError('No valid contacts found after normalization', 400);
     }
 
-    // Remove duplicates inside same upload (reduces DB load)
+    // Deduplicate within upload
     const seen = new Set<string>();
     const unique = valid.filter((c) => {
-      const key = `${c.organizationId}:${c.phone}`;
+      const key = `${organizationId}:${c.phone}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
+    }) as Array<Exclude<(typeof valid)[number], { phone: null }>>;
+
+    // ✅ Prevent duplicates against legacy DB formats
+    const candidatePhones = new Set<string>();
+    for (const u of unique) {
+      const n10 = u.phone as string;
+      candidatePhones.add(n10);
+      candidatePhones.add(`91${n10}`);
+      candidatePhones.add(`9191${n10}`);
+      candidatePhones.add(`+${n10}`);
+      candidatePhones.add(`+91${n10}`);
+      candidatePhones.add(`+9191${n10}`);
+    }
+
+    const existing = await prisma.contact.findMany({
+      where: {
+        organizationId,
+        phone: { in: Array.from(candidatePhones) },
+      },
+      select: { phone: true },
     });
 
-    // ✅ ONE QUERY bulk insert
+    const existingCanon = new Set<string>();
+    for (const e of existing) {
+      const canon = normalizeINNational10(e.phone) || e.phone;
+      if (canon) existingCanon.add(canon);
+    }
+
+    const toInsert = unique.filter((u) => !existingCanon.has(u.phone as string));
+
     const createdRes = await prisma.contact.createMany({
-      data: unique,
-      skipDuplicates, // uses @@unique([organizationId, phone])
+      data: toInsert.map((u) => ({
+        ...u,
+        phone: u.phone as string, // 10-digit canonical
+      })),
+      skipDuplicates,
     });
 
     const imported = createdRes.count;
-    const skipped = unique.length - imported;
+    const skipped = unique.length - imported; // includes legacy duplicates + db duplicates
     const errors: any[] = [];
 
-    // ✅ Optionally add to group (2 small queries)
     let addedToGroup = 0;
     if (groupId && imported > 0) {
       try {
-        const phones = unique.map((c) => c.phone);
+        const phones = toInsert.map((c) => c.phone as string);
         const createdContacts = await prisma.contact.findMany({
-          where: { 
-            organizationId, 
-            phone: { in: phones },
-            source: 'import' // Only get recently imported
-          },
+          where: { organizationId, phone: { in: phones }, source: 'import' },
           select: { id: true },
         });
 
         if (createdContacts.length > 0) {
           const groupMembers = await prisma.contactGroupMember.createMany({
-            data: createdContacts.map((ct) => ({
-              groupId,
-              contactId: ct.id,
-            })),
+            data: createdContacts.map((ct) => ({ groupId, contactId: ct.id })),
             skipDuplicates: true,
           });
           addedToGroup = groupMembers.count;
         }
       } catch (err: any) {
         console.error('Failed to add contacts to group:', err);
-        errors.push({
-          row: 0,
-          error: `Failed to add contacts to group: ${err.message}`,
-        });
+        errors.push({ row: 0, error: `Failed to add contacts to group: ${err.message}` });
       }
     }
 
-    // Update subscription usage if imported
     if (org?.subscription && imported > 0) {
       await prisma.subscription.update({
         where: { id: org.subscription.id },
@@ -489,7 +438,6 @@ export class ContactsService {
       });
     }
 
-    // Log import stats
     console.log(`✅ Import complete:`, {
       organizationId,
       total: contacts.length,
@@ -503,7 +451,7 @@ export class ContactsService {
       imported,
       skipped,
       failed: invalidCount,
-      errors: errors.slice(0, 50), // Return max 50 errors
+      errors: errors.slice(0, 50),
     };
   }
 
@@ -516,19 +464,14 @@ export class ContactsService {
   ): Promise<{ message: string; updated: number }> {
     const { contactIds, tags, groupIds, status } = input;
 
-    // Verify all contacts belong to organization
     const contacts = await prisma.contact.findMany({
-      where: {
-        id: { in: contactIds },
-        organizationId,
-      },
+      where: { id: { in: contactIds }, organizationId },
     });
 
     if (contacts.length !== contactIds.length) {
       throw new AppError('Some contacts not found or access denied', 400);
     }
 
-    // Update tags if provided
     if (tags && tags.length > 0) {
       for (const contact of contacts) {
         const newTags = [...new Set([...(contact.tags || []), ...tags])];
@@ -539,7 +482,6 @@ export class ContactsService {
       }
     }
 
-    // Update status if provided
     if (status) {
       await prisma.contact.updateMany({
         where: { id: { in: contactIds } },
@@ -547,13 +489,9 @@ export class ContactsService {
       });
     }
 
-    // Add to groups if provided
     if (groupIds && groupIds.length > 0) {
       const memberData = contactIds.flatMap((contactId) =>
-        groupIds.map((groupId) => ({
-          contactId,
-          groupId,
-        }))
+        groupIds.map((groupId) => ({ contactId, groupId }))
       );
 
       await prisma.contactGroupMember.createMany({
@@ -562,10 +500,7 @@ export class ContactsService {
       });
     }
 
-    return {
-      message: 'Contacts updated successfully',
-      updated: contacts.length,
-    };
+    return { message: 'Contacts updated successfully', updated: contacts.length };
   }
 
   // ==========================================
@@ -575,34 +510,22 @@ export class ContactsService {
     organizationId: string,
     contactIds: string[]
   ): Promise<{ message: string; deleted: number }> {
-    // Delete only contacts belonging to organization
     const result = await prisma.contact.deleteMany({
-      where: {
-        id: { in: contactIds },
-        organizationId,
-      },
+      where: { id: { in: contactIds }, organizationId },
     });
 
-    // Update subscription usage
-    const subscription = await prisma.subscription.findFirst({
-      where: { organizationId },
-    });
+    const subscription = await prisma.subscription.findFirst({ where: { organizationId } });
 
     if (subscription && result.count > 0) {
       await prisma.subscription.update({
         where: { id: subscription.id },
         data: {
-          contactsUsed: {
-            decrement: Math.min(result.count, subscription.contactsUsed),
-          },
+          contactsUsed: { decrement: Math.min(result.count, subscription.contactsUsed) },
         },
       });
     }
 
-    return {
-      message: 'Contacts deleted successfully',
-      deleted: result.count,
-    };
+    return { message: 'Contacts deleted successfully', deleted: result.count };
   }
 
   // ==========================================
@@ -616,28 +539,11 @@ export class ContactsService {
       prisma.contact.count({ where: { organizationId, status: 'ACTIVE' } }),
       prisma.contact.count({ where: { organizationId, status: 'BLOCKED' } }),
       prisma.contact.count({ where: { organizationId, status: 'UNSUBSCRIBED' } }),
-      prisma.contact.count({
-        where: {
-          organizationId,
-          createdAt: { gte: sevenDaysAgo },
-        },
-      }),
-      prisma.contact.count({
-        where: {
-          organizationId,
-          messageCount: { gt: 0 },
-        },
-      }),
+      prisma.contact.count({ where: { organizationId, createdAt: { gte: sevenDaysAgo } } }),
+      prisma.contact.count({ where: { organizationId, messageCount: { gt: 0 } } }),
     ]);
 
-    return {
-      total,
-      active,
-      blocked,
-      unsubscribed,
-      recentlyAdded,
-      withMessages,
-    };
+    return { total, active, blocked, unsubscribed, recentlyAdded, withMessages };
   }
 
   // ==========================================
@@ -649,7 +555,6 @@ export class ContactsService {
       select: { tags: true },
     });
 
-    // Count tag occurrences
     const tagCounts = new Map<string, number>();
     for (const contact of contacts) {
       for (const tag of contact.tags) {
@@ -657,7 +562,6 @@ export class ContactsService {
       }
     }
 
-    // Convert to array and sort
     return Array.from(tagCounts.entries())
       .map(([tag, count]) => ({ tag, count }))
       .sort((a, b) => b.count - a.count);
@@ -668,11 +572,7 @@ export class ContactsService {
   // ==========================================
   async export(organizationId: string, groupId?: string): Promise<any[]> {
     const where: Prisma.ContactWhereInput = { organizationId };
-
-    // ✅ Fixed: Use groupMemberships instead of groups
-    if (groupId) {
-      where.groupMemberships = { some: { groupId } };
-    }
+    if (groupId) where.groupMemberships = { some: { groupId } };
 
     const contacts = await prisma.contact.findMany({
       where,
@@ -682,7 +582,7 @@ export class ContactsService {
     return contacts.map((contact) => ({
       phone: contact.phone,
       countryCode: contact.countryCode,
-      fullPhone: `${contact.countryCode}${contact.phone}`,
+      fullPhone: formatFullPhone(contact.countryCode, contact.phone),
       firstName: contact.firstName || '',
       lastName: contact.lastName || '',
       email: contact.email || '',
@@ -694,27 +594,18 @@ export class ContactsService {
   }
 
   // ==========================================
-  // CONTACT GROUPS (Remaining methods unchanged)
+  // CONTACT GROUPS (same as your existing code)
   // ==========================================
 
-  // Create Group
   async createGroup(
     organizationId: string,
     input: CreateContactGroupInput
   ): Promise<ContactGroupResponse> {
-    // Check for duplicate name
     const existing = await prisma.contactGroup.findUnique({
-      where: {
-        organizationId_name: {
-          organizationId,
-          name: input.name,
-        },
-      },
+      where: { organizationId_name: { organizationId, name: input.name } },
     });
 
-    if (existing) {
-      throw new AppError('Group with this name already exists', 409);
-    }
+    if (existing) throw new AppError('Group with this name already exists', 409);
 
     const group = await prisma.contactGroup.create({
       data: {
@@ -723,49 +614,35 @@ export class ContactsService {
         description: input.description,
         color: input.color || '#25D366',
       },
-      include: {
-        _count: { select: { members: true } },
-      },
+      include: { _count: { select: { members: true } } },
     });
 
     return formatContactGroup(group);
   }
 
-  // Get All Groups
   async getGroups(organizationId: string): Promise<ContactGroupResponse[]> {
     const groups = await prisma.contactGroup.findMany({
       where: { organizationId },
-      include: {
-        _count: { select: { members: true } },
-      },
+      include: { _count: { select: { members: true } } },
       orderBy: { name: 'asc' },
     });
 
     return groups.map(formatContactGroup);
   }
 
-  // Get Group By ID
   async getGroupById(
     organizationId: string,
     groupId: string
   ): Promise<ContactGroupResponse & { contacts: ContactResponse[] }> {
     const group = await prisma.contactGroup.findFirst({
-      where: {
-        id: groupId,
-        organizationId,
-      },
+      where: { id: groupId, organizationId },
       include: {
         _count: { select: { members: true } },
-        members: {
-          include: { contact: true },
-          take: 100,
-        },
+        members: { include: { contact: true }, take: 100 },
       },
     });
 
-    if (!group) {
-      throw new AppError('Group not found', 404);
-    }
+    if (!group) throw new AppError('Group not found', 404);
 
     return {
       ...formatContactGroup(group),
@@ -773,37 +650,22 @@ export class ContactsService {
     };
   }
 
-  // Update Group
   async updateGroup(
     organizationId: string,
     groupId: string,
     input: UpdateContactGroupInput
   ): Promise<ContactGroupResponse> {
     const group = await prisma.contactGroup.findFirst({
-      where: {
-        id: groupId,
-        organizationId,
-      },
+      where: { id: groupId, organizationId },
     });
 
-    if (!group) {
-      throw new AppError('Group not found', 404);
-    }
+    if (!group) throw new AppError('Group not found', 404);
 
-    // Check for duplicate name
     if (input.name && input.name !== group.name) {
       const existing = await prisma.contactGroup.findUnique({
-        where: {
-          organizationId_name: {
-            organizationId,
-            name: input.name,
-          },
-        },
+        where: { organizationId_name: { organizationId, name: input.name } },
       });
-
-      if (existing) {
-        throw new AppError('Group with this name already exists', 409);
-      }
+      if (existing) throw new AppError('Group with this name already exists', 409);
     }
 
     const updated = await prisma.contactGroup.update({
@@ -813,111 +675,66 @@ export class ContactsService {
         description: input.description,
         color: input.color,
       },
-      include: {
-        _count: { select: { members: true } },
-      },
+      include: { _count: { select: { members: true } } },
     });
 
     return formatContactGroup(updated);
   }
 
-  // Delete Group
   async deleteGroup(organizationId: string, groupId: string): Promise<{ message: string }> {
     const group = await prisma.contactGroup.findFirst({
-      where: {
-        id: groupId,
-        organizationId,
-      },
+      where: { id: groupId, organizationId },
     });
 
-    if (!group) {
-      throw new AppError('Group not found', 404);
-    }
+    if (!group) throw new AppError('Group not found', 404);
 
-    await prisma.contactGroup.delete({
-      where: { id: groupId },
-    });
-
+    await prisma.contactGroup.delete({ where: { id: groupId } });
     return { message: 'Group deleted successfully' };
   }
 
-  // Add Contacts to Group
   async addContactsToGroup(
     organizationId: string,
     groupId: string,
     contactIds: string[]
   ): Promise<{ message: string; added: number }> {
-    // Verify group exists
     const group = await prisma.contactGroup.findFirst({
-      where: {
-        id: groupId,
-        organizationId,
-      },
+      where: { id: groupId, organizationId },
     });
 
-    if (!group) {
-      throw new AppError('Group not found', 404);
-    }
+    if (!group) throw new AppError('Group not found', 404);
 
-    // Verify contacts exist
     const contacts = await prisma.contact.findMany({
-      where: {
-        id: { in: contactIds },
-        organizationId,
-      },
+      where: { id: { in: contactIds }, organizationId },
     });
 
-    if (contacts.length === 0) {
-      throw new AppError('No valid contacts found', 400);
-    }
+    if (contacts.length === 0) throw new AppError('No valid contacts found', 400);
 
-    // Add to group
     const result = await prisma.contactGroupMember.createMany({
-      data: contacts.map((contact) => ({
-        groupId,
-        contactId: contact.id,
-      })),
+      data: contacts.map((contact) => ({ groupId, contactId: contact.id })),
       skipDuplicates: true,
     });
 
-    return {
-      message: 'Contacts added to group successfully',
-      added: result.count,
-    };
+    return { message: 'Contacts added to group successfully', added: result.count };
   }
 
-  // Remove Contacts from Group
   async removeContactsFromGroup(
     organizationId: string,
     groupId: string,
     contactIds: string[]
   ): Promise<{ message: string; removed: number }> {
-    // Verify group exists
     const group = await prisma.contactGroup.findFirst({
-      where: {
-        id: groupId,
-        organizationId,
-      },
+      where: { id: groupId, organizationId },
     });
 
-    if (!group) {
-      throw new AppError('Group not found', 404);
-    }
+    if (!group) throw new AppError('Group not found', 404);
 
     const result = await prisma.contactGroupMember.deleteMany({
-      where: {
-        groupId,
-        contactId: { in: contactIds },
-      },
+      where: { groupId, contactId: { in: contactIds } },
     });
 
-    return {
-      message: 'Contacts removed from group successfully',
-      removed: result.count,
-    };
+    return { message: 'Contacts removed from group successfully', removed: result.count };
   }
 
-  // Get Group Contacts
   async getGroupContacts(
     organizationId: string,
     groupId: string,
@@ -926,21 +743,14 @@ export class ContactsService {
     const { page = 1, limit = 20, search, sortBy = 'createdAt', sortOrder = 'desc' } = query;
     const skip = (page - 1) * limit;
 
-    // Verify group exists
     const group = await prisma.contactGroup.findFirst({
-      where: {
-        id: groupId,
-        organizationId,
-      },
+      where: { id: groupId, organizationId },
     });
 
-    if (!group) {
-      throw new AppError('Group not found', 404);
-    }
+    if (!group) throw new AppError('Group not found', 404);
 
     const where: Prisma.ContactWhereInput = {
       organizationId,
-      // ✅ Fixed: Use groupMemberships instead of groups
       groupMemberships: { some: { groupId } },
     };
 
@@ -954,26 +764,15 @@ export class ContactsService {
     }
 
     const [contacts, total] = await Promise.all([
-      prisma.contact.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { [sortBy]: sortOrder },
-      }),
+      prisma.contact.findMany({ where, skip, take: limit, orderBy: { [sortBy]: sortOrder } }),
       prisma.contact.count({ where }),
     ]);
 
     return {
       contacts: contacts.map(formatContact),
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
   }
 }
 
-// Export singleton instance
 export const contactsService = new ContactsService();
