@@ -37,7 +37,7 @@ router.get('/dashboard', admin_controller_1.adminController.getDashboardStats.bi
 // ============================================
 /**
  * @route   GET /api/v1/admin/users
- * @desc    Get all users
+ * @desc    Get all users with pagination
  * @access  Admin
  */
 router.get('/users', (0, validate_1.validate)(admin_schema_1.getUsersSchema), admin_controller_1.adminController.getUsers.bind(admin_controller_1.adminController));
@@ -54,11 +54,11 @@ router.get('/users/:id', (0, validate_1.validate)(admin_schema_1.getUserByIdSche
  */
 router.put('/users/:id', (0, validate_1.validate)(admin_schema_1.updateUserSchema), admin_controller_1.adminController.updateUser.bind(admin_controller_1.adminController));
 /**
- * @route   DELETE /api/v1/admin/users/:id
- * @desc    Delete user
- * @access  Super Admin
+ * @route   PATCH /api/v1/admin/users/:id/status
+ * @desc    Update user status (ACTIVE, SUSPENDED, etc.)
+ * @access  Admin
  */
-router.delete('/users/:id', admin_middleware_1.requireSuperAdmin, (0, validate_1.validate)(admin_schema_1.deleteUserSchema), admin_controller_1.adminController.deleteUser.bind(admin_controller_1.adminController));
+router.patch('/users/:id/status', (0, validate_1.validate)(admin_schema_1.updateUserStatusSchema), admin_controller_1.adminController.updateUserStatus.bind(admin_controller_1.adminController));
 /**
  * @route   POST /api/v1/admin/users/:id/suspend
  * @desc    Suspend user
@@ -71,6 +71,12 @@ router.post('/users/:id/suspend', (0, validate_1.validate)(admin_schema_1.getUse
  * @access  Admin
  */
 router.post('/users/:id/activate', (0, validate_1.validate)(admin_schema_1.getUserByIdSchema), admin_controller_1.adminController.activateUser.bind(admin_controller_1.adminController));
+/**
+ * @route   DELETE /api/v1/admin/users/:id
+ * @desc    Delete user
+ * @access  Super Admin
+ */
+router.delete('/users/:id', admin_middleware_1.requireSuperAdmin, (0, validate_1.validate)(admin_schema_1.deleteUserSchema), admin_controller_1.adminController.deleteUser.bind(admin_controller_1.adminController));
 // ============================================
 // ORGANIZATION MANAGEMENT
 // ============================================
@@ -125,6 +131,12 @@ router.post('/plans', admin_middleware_1.requireSuperAdmin, (0, validate_1.valid
  * @access  Super Admin
  */
 router.put('/plans/:id', admin_middleware_1.requireSuperAdmin, (0, validate_1.validate)(admin_schema_1.updatePlanSchema), admin_controller_1.adminController.updatePlan.bind(admin_controller_1.adminController));
+/**
+ * @route   DELETE /api/v1/admin/plans/:id
+ * @desc    Delete plan
+ * @access  Super Admin
+ */
+router.delete('/plans/:id', admin_middleware_1.requireSuperAdmin, admin_controller_1.adminController.deletePlan.bind(admin_controller_1.adminController));
 // ============================================
 // ADMIN MANAGEMENT (Super Admin Only)
 // ============================================

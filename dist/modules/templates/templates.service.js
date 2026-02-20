@@ -29,8 +29,8 @@ const formatTemplate = (template) => ({
     createdAt: template.createdAt,
     updatedAt: template.updatedAt,
     whatsappAccount: undefined,
-    wabaId: null,
-    whatsappAccountId: null,
+    wabaId: template.wabaId || null, // ✅ NEW: pass wabaId through
+    whatsappAccountId: template.whatsappAccountId || null, // ✅ NEW: pass whatsappAccountId through
 });
 const extractVariables = (text) => {
     const regex = /\{\{(\d+)\}\}/g;
@@ -45,17 +45,15 @@ const replaceVariables = (text, values) => {
     return text.replace(/\{\{(\d+)\}\}/g, (match, index) => values[index] || match);
 };
 const toJsonValue = (value) => JSON.parse(JSON.stringify(value));
+// ✅ FIX: Do NOT force en -> en_US. Meta needs the EXACT template language.
 const toMetaLanguage = (lang) => {
-    if (!lang)
-        return 'en_US';
-    if (lang.includes('_'))
-        return lang;
-    const languageMap = {
-        'en': 'en_US', 'hi': 'hi_IN', 'es': 'es_ES', 'pt': 'pt_BR',
-        'ar': 'ar_SA', 'fr': 'fr_FR', 'de': 'de_DE', 'it': 'it_IT',
-        'ru': 'ru_RU', 'zh': 'zh_CN',
-    };
-    return languageMap[lang] || 'en_US';
+    const l = String(lang || '').trim();
+    // If it already has underscore (en_US, hi_IN etc), return as-is
+    if (l.includes('_'))
+        return l;
+    // If it's a valid short code, return as-is — Meta templates can be "en", "hi", "es" etc
+    // Only fallback to en_US if completely empty
+    return l || 'en_US';
 };
 const normalizeHeaderType = (t) => {
     const headerType = String(t || 'NONE').toUpperCase();
@@ -113,7 +111,7 @@ const buildMetaTemplatePayload = (t) => {
     }
     return {
         name: t.name,
-        language: toMetaLanguage(t.language),
+        language: toMetaLanguage(t.language), // ✅ uses fixed toMetaLanguage
         category: String(t.category || 'UTILITY').toUpperCase(),
         components,
     };
@@ -263,25 +261,33 @@ class TemplatesService {
         const finalVariables = variables && variables.length > 0
             ? variables
             : extractedVars.map((index) => ({ index, type: 'text' }));
-        // Create template
+        // ✅ Create template — store wabaId + whatsappAccountId for filtering
+        const templateData = {
+            organizationId,
+            name,
+            language,
+            category,
+            headerType: headerType || null,
+            headerContent: headerContent || null,
+            bodyText,
+            footerText: footerText || null,
+            buttons: toJsonValue(buttons || []),
+            variables: toJsonValue(finalVariables),
+            status: 'PENDING',
+            metaTemplateId: null,
+            rejectionReason: null,
+        };
+        // ✅ Store wabaId if the schema supports it
+        if (waData.wabaId) {
+            templateData.wabaId = waData.wabaId;
+        }
+        if (waData.account?.id) {
+            templateData.whatsappAccountId = waData.account.id;
+        }
         const template = await database_1.default.template.create({
-            data: {
-                organizationId,
-                name,
-                language,
-                category,
-                headerType: headerType || null,
-                headerContent: headerContent || null,
-                bodyText,
-                footerText: footerText || null,
-                buttons: toJsonValue(buttons || []),
-                variables: toJsonValue(finalVariables),
-                status: 'PENDING',
-                metaTemplateId: null,
-                rejectionReason: null,
-            },
+            data: templateData,
         });
-        console.log(`✅ Template created: ${template.id}`);
+        console.log(`✅ Template created: ${template.id} (wabaId: ${waData.wabaId})`);
         // Submit to Meta
         try {
             const metaPayload = buildMetaTemplatePayload({
@@ -292,6 +298,7 @@ class TemplatesService {
                 buttons: (buttons || []),
             });
             console.log('📤 Submitting template to Meta WABA:', waData.wabaId);
+            console.log('📝 Template language being sent to Meta:', toMetaLanguage(language));
             const metaRes = await whatsapp_api_1.whatsappApi.createMessageTemplate(waData.wabaId, waData.accessToken, metaPayload);
             const metaTemplateId = metaRes?.id || metaRes?.template_id;
             if (metaTemplateId) {
@@ -306,8 +313,18 @@ class TemplatesService {
             }
         }
         catch (e) {
-            const msg = String(e?.response?.data?.error?.message || e?.message || 'Meta submission failed');
-            console.error('❌ Meta template create failed:', e?.response?.data || e.message);
+            const metaErr = e?.response?.data?.error;
+            const msg = String(metaErr?.message || e?.message || 'Meta submission failed');
+            // ✅ Enhanced error logging
+            console.error('❌ Meta template create failed:', {
+                code: metaErr?.code,
+                message: metaErr?.message,
+                error_subcode: metaErr?.error_subcode,
+                error_data: metaErr?.error_data,
+                fbtrace_id: metaErr?.fbtrace_id,
+                templateName: name,
+                language: toMetaLanguage(language),
+            });
             await database_1.default.template.update({
                 where: { id: template.id },
                 data: {
@@ -321,8 +338,9 @@ class TemplatesService {
         });
         return formatTemplate(latest);
     }
+    // ✅ FIX: Added wabaId filter support
     async getList(organizationId, query) {
-        const { page = 1, limit = 20, search, status, category, language, sortBy = 'createdAt', sortOrder = 'desc', } = query;
+        const { page = 1, limit = 20, search, status, category, language, sortBy = 'createdAt', sortOrder = 'desc', whatsappAccountId, wabaId, } = query;
         const skip = (page - 1) * limit;
         const where = { organizationId };
         if (search && search.trim()) {
@@ -337,6 +355,14 @@ class TemplatesService {
             where.category = category;
         if (language)
             where.language = language;
+        // ✅ NEW: Filter by whatsappAccountId if provided
+        if (whatsappAccountId) {
+            where.whatsappAccountId = whatsappAccountId;
+        }
+        // ✅ NEW: Filter by wabaId if provided
+        if (wabaId) {
+            where.wabaId = wabaId;
+        }
         const [templates, total] = await Promise.all([
             database_1.default.template.findMany({
                 where,
@@ -346,7 +372,7 @@ class TemplatesService {
             }),
             database_1.default.template.count({ where }),
         ]);
-        console.log(`📋 Found ${templates.length} templates (total: ${total})`);
+        console.log(`📋 Found ${templates.length} templates (total: ${total}, wabaId filter: ${wabaId || 'none'})`);
         return {
             templates: templates.map(formatTemplate),
             meta: {
@@ -357,15 +383,24 @@ class TemplatesService {
             },
         };
     }
-    async getApprovedTemplates(organizationId, whatsappAccountId) {
+    // ✅ FIX: Added wabaId filter support for approved templates
+    async getApprovedTemplates(organizationId, whatsappAccountId, wabaId) {
         const where = {
             organizationId,
             status: 'APPROVED',
         };
+        // ✅ Filter by wabaId if provided
+        if (wabaId) {
+            where.wabaId = wabaId;
+        }
+        else if (whatsappAccountId) {
+            where.whatsappAccountId = whatsappAccountId;
+        }
         const templates = await database_1.default.template.findMany({
             where,
             orderBy: { name: 'asc' },
         });
+        console.log(`📋 Found ${templates.length} approved templates (wabaId: ${wabaId || 'any'})`);
         return templates.map(formatTemplate);
     }
     async syncFromMeta(organizationId, whatsappAccountId) {
@@ -395,34 +430,45 @@ class TemplatesService {
                     }
                 });
                 if (existing) {
+                    // ✅ Update existing + set wabaId/whatsappAccountId
+                    const updateData = {
+                        metaTemplateId: metaId,
+                        status: mappedStatus,
+                        rejectionReason,
+                        category: (String(mt.category || 'UTILITY').toUpperCase()),
+                    };
+                    // ✅ Always update wabaId + whatsappAccountId on sync
+                    if (waData.wabaId)
+                        updateData.wabaId = waData.wabaId;
+                    if (waData.account?.id)
+                        updateData.whatsappAccountId = waData.account.id;
                     await database_1.default.template.update({
                         where: { id: existing.id },
-                        data: {
-                            metaTemplateId: metaId,
-                            status: mappedStatus,
-                            rejectionReason,
-                            category: (String(mt.category || 'UTILITY').toUpperCase()),
-                        }
+                        data: updateData,
                     });
                 }
                 else {
-                    await database_1.default.template.create({
-                        data: {
-                            organizationId,
-                            name: metaName,
-                            language: metaLang,
-                            category: (String(mt.category || 'UTILITY').toUpperCase()),
-                            bodyText: bodyComponent?.text || 'Imported from Meta',
-                            headerType: headerComponent?.format || null,
-                            headerContent: headerComponent?.text || null,
-                            footerText: footerComponent?.text || null,
-                            status: mappedStatus,
-                            metaTemplateId: metaId,
-                            buttons: toJsonValue(buttonsComponent?.buttons || []),
-                            variables: toJsonValue([]),
-                            rejectionReason,
-                        },
-                    });
+                    // ✅ Create new + store wabaId/whatsappAccountId
+                    const createData = {
+                        organizationId,
+                        name: metaName,
+                        language: metaLang,
+                        category: (String(mt.category || 'UTILITY').toUpperCase()),
+                        bodyText: bodyComponent?.text || 'Imported from Meta',
+                        headerType: headerComponent?.format || null,
+                        headerContent: headerComponent?.text || null,
+                        footerText: footerComponent?.text || null,
+                        status: mappedStatus,
+                        metaTemplateId: metaId,
+                        buttons: toJsonValue(buttonsComponent?.buttons || []),
+                        variables: toJsonValue([]),
+                        rejectionReason,
+                    };
+                    if (waData.wabaId)
+                        createData.wabaId = waData.wabaId;
+                    if (waData.account?.id)
+                        createData.whatsappAccountId = waData.account.id;
+                    await database_1.default.template.create({ data: createData });
                 }
                 synced++;
             }
@@ -430,7 +476,7 @@ class TemplatesService {
                 console.error(`Failed to sync template ${mt.name}:`, err.message);
             }
         }
-        console.log(`✅ Synced ${synced} templates from Meta`);
+        console.log(`✅ Synced ${synced} templates from Meta (wabaId: ${waData.wabaId})`);
         return { message: 'Templates synced from Meta', synced };
     }
     async getById(organizationId, templateId) {
@@ -496,6 +542,10 @@ class TemplatesService {
     async getStats(organizationId, whatsappAccountId) {
         try {
             const where = { organizationId };
+            // ✅ If whatsappAccountId provided, filter stats too
+            if (whatsappAccountId) {
+                where.whatsappAccountId = whatsappAccountId;
+            }
             const [total, pending, approved, rejected, marketing, utility, authentication] = await Promise.all([
                 database_1.default.template.count({ where }),
                 database_1.default.template.count({ where: { ...where, status: 'PENDING' } }),
@@ -541,23 +591,27 @@ class TemplatesService {
         if (dup) {
             throw new errorHandler_1.AppError('Template with this name already exists', 409);
         }
-        const created = await database_1.default.template.create({
-            data: {
-                organizationId,
-                name: newName,
-                language: original.language,
-                category: original.category,
-                headerType: original.headerType,
-                headerContent: original.headerContent,
-                bodyText: original.bodyText,
-                footerText: original.footerText,
-                buttons: original.buttons || toJsonValue([]),
-                variables: original.variables || toJsonValue([]),
-                status: 'PENDING',
-                metaTemplateId: null,
-                rejectionReason: null,
-            },
-        });
+        const createData = {
+            organizationId,
+            name: newName,
+            language: original.language,
+            category: original.category,
+            headerType: original.headerType,
+            headerContent: original.headerContent,
+            bodyText: original.bodyText,
+            footerText: original.footerText,
+            buttons: original.buttons || toJsonValue([]),
+            variables: original.variables || toJsonValue([]),
+            status: 'PENDING',
+            metaTemplateId: null,
+            rejectionReason: null,
+        };
+        // ✅ Preserve wabaId from original or use target account
+        if (original.wabaId)
+            createData.wabaId = original.wabaId;
+        if (original.whatsappAccountId)
+            createData.whatsappAccountId = original.whatsappAccountId;
+        const created = await database_1.default.template.create({ data: createData });
         console.log(`📋 Template duplicated: ${templateId} -> ${created.id}`);
         return formatTemplate(created);
     }
@@ -601,16 +655,26 @@ class TemplatesService {
             footerText: template.footerText,
             buttons: template.buttons || [],
         });
-        console.log('📤 Submitting template to Meta:', { templateId, name: template.name });
+        console.log('📤 Submitting template to Meta:', {
+            templateId,
+            name: template.name,
+            language: toMetaLanguage(template.language), // ✅ log actual language being sent
+        });
         const metaRes = await whatsapp_api_1.whatsappApi.createMessageTemplate(waData.wabaId, waData.accessToken, metaPayload);
         const metaTemplateId = metaRes?.id || metaRes?.template_id;
+        // ✅ Also update wabaId when submitting
+        const updateData = {
+            metaTemplateId: metaTemplateId ? String(metaTemplateId) : template.metaTemplateId,
+            status: 'PENDING',
+            rejectionReason: null,
+        };
+        if (waData.wabaId)
+            updateData.wabaId = waData.wabaId;
+        if (waData.account?.id)
+            updateData.whatsappAccountId = waData.account.id;
         await database_1.default.template.update({
             where: { id: template.id },
-            data: {
-                metaTemplateId: metaTemplateId ? String(metaTemplateId) : template.metaTemplateId,
-                status: 'PENDING',
-                rejectionReason: null,
-            },
+            data: updateData,
         });
         console.log('✅ Template submitted to Meta:', metaTemplateId);
         return {
@@ -620,6 +684,10 @@ class TemplatesService {
     }
     async getLanguages(organizationId, whatsappAccountId) {
         const where = { organizationId };
+        // ✅ Filter by account if provided
+        if (whatsappAccountId) {
+            where.whatsappAccountId = whatsappAccountId;
+        }
         const templates = await database_1.default.template.groupBy({
             by: ['language'],
             where,

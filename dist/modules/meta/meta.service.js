@@ -1,5 +1,8 @@
 "use strict";
 // 📁 src/modules/meta/meta.service.ts - COMPLETE FIXED VERSION
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.metaService = exports.MetaService = void 0;
 const client_1 = require("@prisma/client");
@@ -8,7 +11,7 @@ const config_1 = require("../../config");
 const encryption_1 = require("../../utils/encryption");
 const uuid_1 = require("uuid");
 const errorHandler_1 = require("../../middleware/errorHandler");
-const prisma = new client_1.PrismaClient();
+const database_1 = __importDefault(require("../../config/database"));
 class MetaService {
     // ============================================
     // HELPER METHODS
@@ -216,7 +219,7 @@ class MetaService {
                 message: 'Saving account...',
             });
             // ✅ Check existing by phoneNumberId ONLY
-            const existingAccount = await prisma.whatsAppAccount.findFirst({
+            const existingAccount = await database_1.default.whatsAppAccount.findFirst({
                 where: {
                     phoneNumberId: primaryPhone.id,
                 },
@@ -238,14 +241,14 @@ class MetaService {
                     // ✅ Same organization - REACTIVATE/UPDATE existing account
                     console.log('🔄 Reactivating existing account for same organization');
                     // Check if there's a default account already
-                    const hasDefault = await prisma.whatsAppAccount.findFirst({
+                    const hasDefault = await database_1.default.whatsAppAccount.findFirst({
                         where: {
                             organizationId,
                             isDefault: true,
                             id: { not: existingAccount.id },
                         },
                     });
-                    savedAccount = await prisma.whatsAppAccount.update({
+                    savedAccount = await database_1.default.whatsAppAccount.update({
                         where: { id: existingAccount.id },
                         data: {
                             accessToken: encryptedToken,
@@ -269,7 +272,7 @@ class MetaService {
                     console.log(`   Old org: ${existingAccount.organizationId}`);
                     console.log(`   New org: ${organizationId}`);
                     // Soft disconnect old account (preserves data for old org)
-                    await prisma.whatsAppAccount.update({
+                    await database_1.default.whatsAppAccount.update({
                         where: { id: existingAccount.id },
                         data: {
                             status: client_1.WhatsAppAccountStatus.DISCONNECTED,
@@ -280,13 +283,13 @@ class MetaService {
                     });
                     console.log('✅ Old account soft-disconnected (data preserved)');
                     // Check if new org already has accounts
-                    const accountCount = await prisma.whatsAppAccount.count({
+                    const accountCount = await database_1.default.whatsAppAccount.count({
                         where: { organizationId },
                     });
                     const webhookVerifyToken = (0, uuid_1.v4)();
                     const encryptedWebhookSecret = (0, encryption_1.encrypt)(webhookVerifyToken);
                     // Create new account for current organization
-                    savedAccount = await prisma.whatsAppAccount.create({
+                    savedAccount = await database_1.default.whatsAppAccount.create({
                         data: {
                             organizationId,
                             wabaId,
@@ -311,12 +314,12 @@ class MetaService {
             else {
                 // ✅ No existing account - CREATE new
                 console.log('🔄 Creating completely new account');
-                const accountCount = await prisma.whatsAppAccount.count({
+                const accountCount = await database_1.default.whatsAppAccount.count({
                     where: { organizationId },
                 });
                 const webhookVerifyToken = (0, uuid_1.v4)();
                 const encryptedWebhookSecret = (0, encryption_1.encrypt)(webhookVerifyToken);
-                savedAccount = await prisma.whatsAppAccount.create({
+                savedAccount = await database_1.default.whatsAppAccount.create({
                     data: {
                         organizationId,
                         wabaId,
@@ -369,14 +372,14 @@ class MetaService {
     // ACCOUNT MANAGEMENT
     // ============================================
     async getAccounts(organizationId) {
-        const accounts = await prisma.whatsAppAccount.findMany({
+        const accounts = await database_1.default.whatsAppAccount.findMany({
             where: { organizationId },
             orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
         });
         return accounts.map((account) => this.sanitizeAccount(account));
     }
     async getAccount(accountId, organizationId) {
-        const account = await prisma.whatsAppAccount.findFirst({
+        const account = await database_1.default.whatsAppAccount.findFirst({
             where: {
                 id: accountId,
                 organizationId,
@@ -388,7 +391,7 @@ class MetaService {
         return this.sanitizeAccount(account);
     }
     async getAccountWithToken(accountId) {
-        const account = await prisma.whatsAppAccount.findUnique({
+        const account = await database_1.default.whatsAppAccount.findUnique({
             where: { id: accountId },
         });
         if (!account) {
@@ -411,7 +414,7 @@ class MetaService {
             console.error(`   2. ENCRYPTION_KEY changed in .env`);
             console.error(`   3. Database corruption`);
             console.error(`\n   ✅ SOLUTION: Reconnect WhatsApp account`);
-            await prisma.whatsAppAccount.update({
+            await database_1.default.whatsAppAccount.update({
                 where: { id: accountId },
                 data: {
                     status: client_1.WhatsAppAccountStatus.DISCONNECTED,
@@ -436,7 +439,7 @@ class MetaService {
     async disconnectAccount(accountId, organizationId) {
         console.log(`🔌 Disconnecting account: ${accountId}`);
         // Find account (safe - checks organization ownership)
-        const account = await prisma.whatsAppAccount.findFirst({
+        const account = await database_1.default.whatsAppAccount.findFirst({
             where: {
                 id: accountId,
                 organizationId,
@@ -460,7 +463,7 @@ class MetaService {
         }
         // ✅ Soft disconnect: Mark as disconnected, clear token
         // This preserves campaign history, templates, and other relations
-        await prisma.whatsAppAccount.update({
+        await database_1.default.whatsAppAccount.update({
             where: { id: accountId },
             data: {
                 status: client_1.WhatsAppAccountStatus.DISCONNECTED,
@@ -472,7 +475,7 @@ class MetaService {
         console.log(`✅ Account disconnected: ${accountId}`);
         // ✅ If it was default, set another CONNECTED account as default
         if (account.isDefault) {
-            const anotherAccount = await prisma.whatsAppAccount.findFirst({
+            const anotherAccount = await database_1.default.whatsAppAccount.findFirst({
                 where: {
                     organizationId,
                     status: client_1.WhatsAppAccountStatus.CONNECTED,
@@ -481,7 +484,7 @@ class MetaService {
                 orderBy: { createdAt: 'asc' },
             });
             if (anotherAccount) {
-                await prisma.whatsAppAccount.update({
+                await database_1.default.whatsAppAccount.update({
                     where: { id: anotherAccount.id },
                     data: { isDefault: true },
                 });
@@ -497,7 +500,7 @@ class MetaService {
         };
     }
     async setDefaultAccount(accountId, organizationId) {
-        const account = await prisma.whatsAppAccount.findFirst({
+        const account = await database_1.default.whatsAppAccount.findFirst({
             where: {
                 id: accountId,
                 organizationId,
@@ -507,11 +510,11 @@ class MetaService {
         if (!account) {
             throw new errorHandler_1.AppError('Account not found or not connected', 404);
         }
-        await prisma.whatsAppAccount.updateMany({
+        await database_1.default.whatsAppAccount.updateMany({
             where: { organizationId },
             data: { isDefault: false },
         });
-        await prisma.whatsAppAccount.update({
+        await database_1.default.whatsAppAccount.update({
             where: { id: accountId },
             data: { isDefault: true },
         });
@@ -530,7 +533,7 @@ class MetaService {
         try {
             const debugInfo = await meta_api_1.metaApi.debugToken(accessToken);
             if (!debugInfo.data.is_valid) {
-                await prisma.whatsAppAccount.update({
+                await database_1.default.whatsAppAccount.update({
                     where: { id: accountId },
                     data: {
                         status: client_1.WhatsAppAccountStatus.DISCONNECTED,
@@ -547,7 +550,7 @@ class MetaService {
             const phoneNumbers = await meta_api_1.metaApi.getPhoneNumbers(account.wabaId, accessToken);
             const phone = phoneNumbers.find((p) => p.id === account.phoneNumberId);
             if (!phone) {
-                await prisma.whatsAppAccount.update({
+                await database_1.default.whatsAppAccount.update({
                     where: { id: accountId },
                     data: { status: client_1.WhatsAppAccountStatus.DISCONNECTED },
                 });
@@ -557,7 +560,7 @@ class MetaService {
                     action: 'Phone may have been removed',
                 };
             }
-            await prisma.whatsAppAccount.update({
+            await database_1.default.whatsAppAccount.update({
                 where: { id: accountId },
                 data: {
                     qualityRating: phone.qualityRating,
@@ -583,7 +586,7 @@ class MetaService {
         }
         catch (error) {
             console.error(`❌ Health check failed: ${accountId}`, error);
-            await prisma.whatsAppAccount.update({
+            await database_1.default.whatsAppAccount.update({
                 where: { id: accountId },
                 data: {
                     status: client_1.WhatsAppAccountStatus.DISCONNECTED,
@@ -612,7 +615,7 @@ class MetaService {
         console.log(`🔄 Syncing templates for account ${accountId} (WABA: ${account.wabaId})`);
         const metaTemplates = await meta_api_1.metaApi.getTemplates(account.wabaId, accessToken);
         console.log(`📥 Fetched ${metaTemplates.length} templates from Meta`);
-        const existingTemplates = await prisma.template.findMany({
+        const existingTemplates = await database_1.default.template.findMany({
             where: {
                 whatsappAccountId: accountId,
             },
@@ -656,14 +659,14 @@ class MetaService {
                     qualityScore: metaTemplate.quality_score?.score || null,
                 };
                 if (existing) {
-                    await prisma.template.update({
+                    await database_1.default.template.update({
                         where: { id: existing.id },
                         data: templateData,
                     });
                     updated++;
                 }
                 else {
-                    await prisma.template.create({ data: templateData });
+                    await database_1.default.template.create({ data: templateData });
                     created++;
                 }
             }
@@ -675,7 +678,7 @@ class MetaService {
         const toRemove = existingTemplates.filter((t) => !metaKeys.has(`${t.name}_${t.language}`));
         let removed = 0;
         if (toRemove.length > 0) {
-            const deleteResult = await prisma.template.deleteMany({
+            const deleteResult = await database_1.default.template.deleteMany({
                 where: { id: { in: toRemove.map((t) => t.id) } },
             });
             removed = deleteResult.count;
@@ -697,7 +700,7 @@ class MetaService {
         try {
             console.log(`🔄 Background template sync for account ${accountId}...`);
             const templates = await meta_api_1.metaApi.getTemplates(wabaId, accessToken);
-            const account = await prisma.whatsAppAccount.findUnique({
+            const account = await database_1.default.whatsAppAccount.findUnique({
                 where: { id: accountId },
                 select: { organizationId: true, id: true },
             });
@@ -711,7 +714,7 @@ class MetaService {
                     const status = this.mapTemplateStatus(template.status);
                     if (status === 'DRAFT' || status === 'REJECTED')
                         continue;
-                    const existing = await prisma.template.findFirst({
+                    const existing = await database_1.default.template.findFirst({
                         where: {
                             whatsappAccountId: accountId,
                             name: template.name,
@@ -736,13 +739,13 @@ class MetaService {
                         qualityScore: template.quality_score?.score || null,
                     };
                     if (existing) {
-                        await prisma.template.update({
+                        await database_1.default.template.update({
                             where: { id: existing.id },
                             data: templateData,
                         });
                     }
                     else {
-                        await prisma.template.create({ data: templateData });
+                        await database_1.default.template.create({ data: templateData });
                     }
                     synced++;
                 }

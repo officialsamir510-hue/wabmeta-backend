@@ -8,7 +8,7 @@ import {
   UpdateConversationInput,
 } from './inbox.types';
 
-const prisma = new PrismaClient();
+import prisma from '../../config/database';
 
 class AppError extends Error {
   statusCode: number;

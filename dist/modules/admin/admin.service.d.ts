@@ -1,101 +1,182 @@
-import { Prisma } from '@prisma/client';
+interface LoginInput {
+    email: string;
+    password: string;
+}
+interface GetUsersInput {
+    page: number;
+    limit: number;
+    search?: string;
+    status?: string;
+    sortBy?: string;
+    sortOrder?: string;
+}
+interface GetOrganizationsInput {
+    page: number;
+    limit: number;
+    search?: string;
+    planType?: string;
+    sortBy?: string;
+    sortOrder?: string;
+}
+interface GetActivityLogsInput {
+    page: number;
+    limit: number;
+    action?: string;
+    userId?: string;
+    organizationId?: string;
+    startDate?: string;
+    endDate?: string;
+}
 export declare class AdminService {
-    login(input: {
-        email: string;
-        password: string;
-    }): Promise<{
+    login(input: LoginInput): Promise<{
+        token: string;
         admin: {
             id: string;
             email: string;
             name: string;
             role: string;
         };
-        token: string;
     }>;
-    createAdmin(input: {
-        email: string;
-        password: string;
+    getAdminById(id: string): Promise<{
         name: string;
-        role?: string;
-    }): Promise<{
+        email: string;
         id: string;
-        email: string;
-        name: string;
-        role: string;
-        isActive: boolean;
-    }>;
-    updateAdmin(id: string, input: any): Promise<{
-        id: string;
-        email: string;
-        name: string;
-        role: string;
-        isActive: boolean;
-    }>;
-    getAdmins(): Promise<{
-        id: string;
-        email: string;
-        name: string;
-        role: string;
-        isActive: boolean;
         lastLoginAt: Date | null;
-    }[]>;
-    deleteAdmin(id: string): Promise<{
-        message: string;
-    }>;
+        createdAt: Date;
+        role: string;
+        isActive: boolean;
+    } | null>;
     getDashboardStats(): Promise<{
         users: {
             total: number;
             active: number;
+            pending: number;
+            suspended: number;
+            newThisMonth: number;
         };
         organizations: {
             total: number;
-        };
-        contacts: {
-            total: number;
+            byPlan: Record<string, number>;
+            newThisMonth: number;
         };
         messages: {
-            total: number;
+            totalSent: number;
+            todaySent: number;
+            thisMonthSent: number;
+        };
+        revenue: {
+            mrr: number;
+            arr: number;
+        };
+        whatsapp: {
+            connectedAccounts: number;
+            totalContacts: number;
+            totalCampaigns: number;
         };
     }>;
-    getUsers(query: {
-        page?: number;
-        limit?: number;
-        search?: string;
-        status?: string;
-        sortBy?: string;
-        sortOrder?: string;
-    }): Promise<{
+    getUsers(input: GetUsersInput): Promise<{
         users: {
-            id: string;
-            email: string;
-            firstName: string;
-            lastName: string | null;
-            status: import(".prisma/client").$Enums.UserStatus;
-            emailVerified: boolean;
-            createdAt: Date;
             organizations: {
                 id: string;
                 name: string;
                 role: import(".prisma/client").$Enums.UserRole;
             }[];
+            memberships: undefined;
+            email: string;
+            id: string;
+            firstName: string;
+            lastName: string | null;
+            phone: string | null;
+            avatar: string | null;
+            status: import(".prisma/client").$Enums.UserStatus;
+            emailVerified: boolean;
+            lastLoginAt: Date | null;
+            createdAt: Date;
         }[];
         total: number;
     }>;
     getUserById(id: string): Promise<{
-        id: string;
+        password: undefined;
+        organizations: {
+            role: import(".prisma/client").$Enums.UserRole;
+            name: string;
+            id: string;
+            slug: string;
+            planType: import(".prisma/client").$Enums.PlanType;
+        }[];
+        ownedOrganizations: {
+            name: string;
+            id: string;
+            slug: string;
+            planType: import(".prisma/client").$Enums.PlanType;
+        }[];
+        memberships: ({
+            organization: {
+                name: string;
+                id: string;
+                slug: string;
+                planType: import(".prisma/client").$Enums.PlanType;
+            };
+        } & {
+            userId: string;
+            organizationId: string;
+            id: string;
+            updatedAt: Date;
+            role: import(".prisma/client").$Enums.UserRole;
+            invitedAt: Date;
+            joinedAt: Date | null;
+        })[];
+        _count: {
+            activityLogs: number;
+            notifications: number;
+            refreshTokens: number;
+        };
         email: string;
+        id: string;
+        firstName: string;
+        lastName: string | null;
+        phone: string | null;
+        googleId: string | null;
+        avatar: string | null;
+        status: import(".prisma/client").$Enums.UserStatus;
+        emailVerified: boolean;
+        emailVerifyToken: string | null;
+        emailVerifyExpires: Date | null;
+        passwordResetToken: string | null;
+        passwordResetExpires: Date | null;
+        otpSecret: string | null;
+        otpEnabled: boolean;
+        lastLoginAt: Date | null;
+        lastLoginIp: string | null;
+        createdAt: Date;
+        updatedAt: Date;
+    }>;
+    updateUser(id: string, data: any): Promise<{
+        email: string;
+        id: string;
+        firstName: string;
+        lastName: string | null;
+        phone: string | null;
+        status: import(".prisma/client").$Enums.UserStatus;
+        emailVerified: boolean;
+    }>;
+    updateUserStatus(id: string, status: string): Promise<{
+        email: string;
+        id: string;
         firstName: string;
         lastName: string | null;
         status: import(".prisma/client").$Enums.UserStatus;
-        organizations: {
-            id: string;
-            name: string;
-            role: import(".prisma/client").$Enums.UserRole;
-        }[];
     }>;
-    updateUser(id: string, input: any): Promise<{
-        id: string;
+    suspendUser(id: string): Promise<{
         email: string;
+        id: string;
+        firstName: string;
+        lastName: string | null;
+        status: import(".prisma/client").$Enums.UserStatus;
+    }>;
+    activateUser(id: string): Promise<{
+        email: string;
+        id: string;
         firstName: string;
         lastName: string | null;
         status: import(".prisma/client").$Enums.UserStatus;
@@ -103,146 +184,402 @@ export declare class AdminService {
     deleteUser(id: string): Promise<{
         message: string;
     }>;
-    suspendUser(id: string): Promise<{
-        id: string;
-        email: string;
-        firstName: string;
-        lastName: string | null;
-        status: import(".prisma/client").$Enums.UserStatus;
-    }>;
-    activateUser(id: string): Promise<{
-        id: string;
-        email: string;
-        firstName: string;
-        lastName: string | null;
-        status: import(".prisma/client").$Enums.UserStatus;
-    }>;
-    getOrganizations(query: {
-        page?: number;
-        limit?: number;
-        search?: string;
-        planType?: string;
-        sortBy?: string;
-        sortOrder?: string;
-    }): Promise<{
-        organizations: {
-            id: string;
-            name: string;
-            slug: string;
-            planType: import(".prisma/client").$Enums.PlanType;
+    getOrganizations(input: GetOrganizationsInput): Promise<{
+        organizations: ({
+            subscription: ({
+                plan: {
+                    name: string;
+                    type: import(".prisma/client").$Enums.PlanType;
+                };
+            } & {
+                organizationId: string;
+                id: string;
+                status: import(".prisma/client").$Enums.SubscriptionStatus;
+                createdAt: Date;
+                updatedAt: Date;
+                billingCycle: string;
+                currentPeriodStart: Date;
+                currentPeriodEnd: Date;
+                messagesUsed: number;
+                contactsUsed: number;
+                paymentMethod: string | null;
+                lastPaymentAt: Date | null;
+                nextPaymentAt: Date | null;
+                cancelledAt: Date | null;
+                planId: string;
+            }) | null;
             owner: {
                 email: string;
                 id: string;
                 firstName: string;
+                lastName: string | null;
             };
-            memberCount: number;
-            contactCount: number;
+            _count: {
+                members: number;
+                whatsappAccounts: number;
+                contacts: number;
+                campaigns: number;
+            };
+        } & {
+            name: string;
+            id: string;
             createdAt: Date;
-        }[];
+            updatedAt: Date;
+            slug: string;
+            logo: string | null;
+            website: string | null;
+            industry: string | null;
+            timezone: string;
+            planType: import(".prisma/client").$Enums.PlanType;
+            ownerId: string;
+        })[];
         total: number;
     }>;
     getOrganizationById(id: string): Promise<{
-        id: string;
-        name: string;
-        slug: string;
-        planType: import(".prisma/client").$Enums.PlanType;
+        subscription: ({
+            plan: {
+                name: string;
+                type: import(".prisma/client").$Enums.PlanType;
+                id: string;
+                createdAt: Date;
+                updatedAt: Date;
+                slug: string;
+                description: string | null;
+                monthlyPrice: import("@prisma/client/runtime/library").Decimal;
+                yearlyPrice: import("@prisma/client/runtime/library").Decimal;
+                maxContacts: number;
+                maxMessages: number;
+                maxTeamMembers: number;
+                maxCampaigns: number;
+                maxChatbots: number;
+                maxTemplates: number;
+                maxWhatsAppAccounts: number;
+                maxMessagesPerMonth: number;
+                maxCampaignsPerMonth: number;
+                maxAutomations: number;
+                maxApiCalls: number;
+                features: import("@prisma/client/runtime/library").JsonValue;
+                isActive: boolean;
+            };
+        } & {
+            organizationId: string;
+            id: string;
+            status: import(".prisma/client").$Enums.SubscriptionStatus;
+            createdAt: Date;
+            updatedAt: Date;
+            billingCycle: string;
+            currentPeriodStart: Date;
+            currentPeriodEnd: Date;
+            messagesUsed: number;
+            contactsUsed: number;
+            paymentMethod: string | null;
+            lastPaymentAt: Date | null;
+            nextPaymentAt: Date | null;
+            cancelledAt: Date | null;
+            planId: string;
+        }) | null;
         owner: {
             email: string;
             id: string;
             firstName: string;
+            lastName: string | null;
         };
-        memberCount: number;
-        contactCount: number;
-    }>;
-    updateOrganization(id: string, input: any): Promise<{
-        id: string;
+        members: ({
+            user: {
+                email: string;
+                id: string;
+                firstName: string;
+                lastName: string | null;
+                avatar: string | null;
+            };
+        } & {
+            userId: string;
+            organizationId: string;
+            id: string;
+            updatedAt: Date;
+            role: import(".prisma/client").$Enums.UserRole;
+            invitedAt: Date;
+            joinedAt: Date | null;
+        })[];
+        whatsappAccounts: {
+            phoneNumber: string;
+            id: string;
+            status: import(".prisma/client").$Enums.WhatsAppAccountStatus;
+            displayName: string;
+        }[];
+        _count: {
+            contacts: number;
+            templates: number;
+            campaigns: number;
+            chatbots: number;
+        };
+    } & {
         name: string;
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
         slug: string;
+        logo: string | null;
+        website: string | null;
+        industry: string | null;
+        timezone: string;
         planType: import(".prisma/client").$Enums.PlanType;
+        ownerId: string;
+    }>;
+    updateOrganization(id: string, data: any): Promise<{
+        name: string;
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        slug: string;
+        logo: string | null;
+        website: string | null;
+        industry: string | null;
+        timezone: string;
+        planType: import(".prisma/client").$Enums.PlanType;
+        ownerId: string;
     }>;
     deleteOrganization(id: string): Promise<{
         message: string;
     }>;
-    updateSubscription(id: string, input: any): Promise<{
-        id: string;
-        name: string;
-        slug: string;
-        planType: import(".prisma/client").$Enums.PlanType;
+    updateSubscription(id: string, data: any): Promise<{
+        subscription: ({
+            plan: {
+                name: string;
+                type: import(".prisma/client").$Enums.PlanType;
+                id: string;
+                createdAt: Date;
+                updatedAt: Date;
+                slug: string;
+                description: string | null;
+                monthlyPrice: import("@prisma/client/runtime/library").Decimal;
+                yearlyPrice: import("@prisma/client/runtime/library").Decimal;
+                maxContacts: number;
+                maxMessages: number;
+                maxTeamMembers: number;
+                maxCampaigns: number;
+                maxChatbots: number;
+                maxTemplates: number;
+                maxWhatsAppAccounts: number;
+                maxMessagesPerMonth: number;
+                maxCampaignsPerMonth: number;
+                maxAutomations: number;
+                maxApiCalls: number;
+                features: import("@prisma/client/runtime/library").JsonValue;
+                isActive: boolean;
+            };
+        } & {
+            organizationId: string;
+            id: string;
+            status: import(".prisma/client").$Enums.SubscriptionStatus;
+            createdAt: Date;
+            updatedAt: Date;
+            billingCycle: string;
+            currentPeriodStart: Date;
+            currentPeriodEnd: Date;
+            messagesUsed: number;
+            contactsUsed: number;
+            paymentMethod: string | null;
+            lastPaymentAt: Date | null;
+            nextPaymentAt: Date | null;
+            cancelledAt: Date | null;
+            planId: string;
+        }) | null;
         owner: {
             email: string;
             id: string;
             firstName: string;
+            lastName: string | null;
         };
-        memberCount: number;
-        contactCount: number;
-    }>;
-    getPlans(): Promise<{
+        members: ({
+            user: {
+                email: string;
+                id: string;
+                firstName: string;
+                lastName: string | null;
+                avatar: string | null;
+            };
+        } & {
+            userId: string;
+            organizationId: string;
+            id: string;
+            updatedAt: Date;
+            role: import(".prisma/client").$Enums.UserRole;
+            invitedAt: Date;
+            joinedAt: Date | null;
+        })[];
+        whatsappAccounts: {
+            phoneNumber: string;
+            id: string;
+            status: import(".prisma/client").$Enums.WhatsAppAccountStatus;
+            displayName: string;
+        }[];
+        _count: {
+            contacts: number;
+            templates: number;
+            campaigns: number;
+            chatbots: number;
+        };
+    } & {
+        name: string;
         id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        slug: string;
+        logo: string | null;
+        website: string | null;
+        industry: string | null;
+        timezone: string;
+        planType: import(".prisma/client").$Enums.PlanType;
+        ownerId: string;
+    }>;
+    getPlans(): Promise<({
+        _count: {
+            subscriptions: number;
+        };
+    } & {
         name: string;
         type: import(".prisma/client").$Enums.PlanType;
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        slug: string;
         description: string | null;
-        monthlyPrice: number;
-        yearlyPrice: number;
+        monthlyPrice: import("@prisma/client/runtime/library").Decimal;
+        yearlyPrice: import("@prisma/client/runtime/library").Decimal;
         maxContacts: number;
         maxMessages: number;
         maxTeamMembers: number;
-        features: string[];
+        maxCampaigns: number;
+        maxChatbots: number;
+        maxTemplates: number;
+        maxWhatsAppAccounts: number;
+        maxMessagesPerMonth: number;
+        maxCampaignsPerMonth: number;
+        maxAutomations: number;
+        maxApiCalls: number;
+        features: import("@prisma/client/runtime/library").JsonValue;
         isActive: boolean;
-    }[]>;
-    createPlan(input: any): Promise<{
-        id: string;
+    })[]>;
+    createPlan(data: any): Promise<{
         name: string;
         type: import(".prisma/client").$Enums.PlanType;
-        monthlyPrice: number;
-        yearlyPrice: number;
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        slug: string;
+        description: string | null;
+        monthlyPrice: import("@prisma/client/runtime/library").Decimal;
+        yearlyPrice: import("@prisma/client/runtime/library").Decimal;
         maxContacts: number;
         maxMessages: number;
+        maxTeamMembers: number;
+        maxCampaigns: number;
+        maxChatbots: number;
+        maxTemplates: number;
+        maxWhatsAppAccounts: number;
+        maxMessagesPerMonth: number;
+        maxCampaignsPerMonth: number;
+        maxAutomations: number;
+        maxApiCalls: number;
+        features: import("@prisma/client/runtime/library").JsonValue;
         isActive: boolean;
     }>;
-    updatePlan(id: string, input: any): Promise<{
-        id: string;
+    updatePlan(id: string, data: any): Promise<{
         name: string;
         type: import(".prisma/client").$Enums.PlanType;
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        slug: string;
+        description: string | null;
+        monthlyPrice: import("@prisma/client/runtime/library").Decimal;
+        yearlyPrice: import("@prisma/client/runtime/library").Decimal;
+        maxContacts: number;
+        maxMessages: number;
+        maxTeamMembers: number;
+        maxCampaigns: number;
+        maxChatbots: number;
+        maxTemplates: number;
+        maxWhatsAppAccounts: number;
+        maxMessagesPerMonth: number;
+        maxCampaignsPerMonth: number;
+        maxAutomations: number;
+        maxApiCalls: number;
+        features: import("@prisma/client/runtime/library").JsonValue;
         isActive: boolean;
     }>;
-    getActivityLogs(query: {
-        page?: number;
-        limit?: number;
-        action?: string;
-        userId?: string;
-        organizationId?: string;
-        startDate?: string;
-        endDate?: string;
-    }): Promise<{
-        logs: {
+    deletePlan(id: string): Promise<{
+        message: string;
+    }>;
+    getAdmins(): Promise<{
+        name: string;
+        email: string;
+        id: string;
+        lastLoginAt: Date | null;
+        createdAt: Date;
+        role: string;
+        isActive: boolean;
+    }[]>;
+    createAdmin(data: any): Promise<{
+        name: string;
+        email: string;
+        id: string;
+        createdAt: Date;
+        role: string;
+        isActive: boolean;
+    }>;
+    updateAdmin(id: string, data: any): Promise<{
+        name: string;
+        email: string;
+        id: string;
+        role: string;
+        isActive: boolean;
+    }>;
+    deleteAdmin(id: string): Promise<{
+        message: string;
+    }>;
+    getActivityLogs(input: GetActivityLogsInput): Promise<{
+        logs: ({
+            user: {
+                email: string;
+                id: string;
+                firstName: string;
+                lastName: string | null;
+            } | null;
+            organization: {
+                name: string;
+                id: string;
+            } | null;
+        } & {
+            userId: string | null;
+            organizationId: string | null;
             id: string;
-            action: string;
+            createdAt: Date;
+            userAgent: string | null;
+            ipAddress: string | null;
             entity: string | null;
             entityId: string | null;
-            userId: string | null;
-            userEmail: string;
-            organizationId: string | null;
-            organizationName: string;
-            metadata: Prisma.JsonValue;
-            ipAddress: string | null;
-            createdAt: Date;
-        }[];
+            action: import(".prisma/client").$Enums.ActivityAction | null;
+            metadata: import("@prisma/client/runtime/library").JsonValue;
+        })[];
         total: number;
     }>;
     getSystemSettings(): {
         maintenanceMode: boolean;
-        registrationEnabled: boolean;
-        defaultPlan: string;
+        allowRegistration: boolean;
         maxOrganizationsPerUser: number;
-        lastUpdated: Date;
+        defaultPlanType: string;
+        smtpEnabled: boolean;
     };
-    updateSystemSettings(input: any): {
+    updateSystemSettings(data: any): {
         maintenanceMode: boolean;
-        registrationEnabled: boolean;
-        defaultPlan: string;
+        allowRegistration: boolean;
         maxOrganizationsPerUser: number;
-        lastUpdated: Date;
+        defaultPlanType: string;
+        smtpEnabled: boolean;
     };
 }
 export declare const adminService: AdminService;
+export {};
 //# sourceMappingURL=admin.service.d.ts.map

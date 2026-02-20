@@ -14,7 +14,7 @@ enum QueueStatus {
 }
 import { EventEmitter } from 'events';
 
-const prisma = new PrismaClient();
+import prisma from '../config/database';
 
 // ============================================
 // TYPES

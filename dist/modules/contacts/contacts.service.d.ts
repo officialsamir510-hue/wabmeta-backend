@@ -7,10 +7,6 @@ export declare class ContactsService {
     delete(organizationId: string, contactId: string): Promise<{
         message: string;
     }>;
-    /**
-     * Import contacts in bulk (single DB query + optional group add)
-     * Prevents Prisma pool timeout with efficient batch processing
-     */
     import(organizationId: string, input: ImportContactsInput): Promise<ImportContactsResponse>;
     bulkUpdate(organizationId: string, input: BulkUpdateContactsInput): Promise<{
         message: string;

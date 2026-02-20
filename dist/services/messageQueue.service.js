@@ -1,5 +1,8 @@
 "use strict";
 // 📁 src/services/messageQueue.service.ts - COMPLETE MESSAGE QUEUE WORKER
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.messageQueueWorker = void 0;
 const client_1 = require("@prisma/client");
@@ -15,7 +18,7 @@ var QueueStatus;
     QueueStatus["CANCELLED"] = "CANCELLED";
 })(QueueStatus || (QueueStatus = {}));
 const events_1 = require("events");
-const prisma = new client_1.PrismaClient();
+const database_1 = __importDefault(require("../config/database"));
 // ============================================
 // MESSAGE QUEUE WORKER CLASS
 // ============================================
@@ -100,7 +103,7 @@ class MessageQueueWorker extends events_1.EventEmitter {
     // ============================================
     async processNextBatch(workerId) {
         const startTime = Date.now();
-        const messages = await prisma.messageQueue.findMany({
+        const messages = await database_1.default.messageQueue.findMany({
             where: {
                 OR: [
                     { status: QueueStatus.PENDING },
@@ -136,7 +139,7 @@ class MessageQueueWorker extends events_1.EventEmitter {
                 break;
             }
             try {
-                await prisma.messageQueue.update({
+                await database_1.default.messageQueue.update({
                     where: { id: message.id },
                     data: { status: QueueStatus.PROCESSING },
                 });
@@ -186,7 +189,7 @@ class MessageQueueWorker extends events_1.EventEmitter {
             const canSend = await this.checkRateLimits(whatsappAccount);
             if (!canSend) {
                 console.warn(`⚠️ Rate limit reached for account ${whatsappAccount.id}`);
-                await prisma.messageQueue.update({
+                await database_1.default.messageQueue.update({
                     where: { id: queueItem.id },
                     data: {
                         status: QueueStatus.PENDING,
@@ -218,7 +221,7 @@ class MessageQueueWorker extends events_1.EventEmitter {
             const result = await meta_api_1.metaApi.sendMessage(whatsappAccount.phoneNumberId, accessToken, contact.phone, templateMessage);
             const waMessageId = result.messageId;
             console.log(`✅ Message sent: ${waMessageId}`);
-            await prisma.messageQueue.update({
+            await database_1.default.messageQueue.update({
                 where: { id: queueItem.id },
                 data: {
                     status: QueueStatus.SENT,
@@ -226,14 +229,14 @@ class MessageQueueWorker extends events_1.EventEmitter {
                     sentAt: new Date(),
                 },
             });
-            await prisma.whatsAppAccount.update({
+            await database_1.default.whatsAppAccount.update({
                 where: { id: whatsappAccount.id },
                 data: {
                     dailyMessagesUsed: { increment: 1 },
                 },
             });
             if (queueItem.campaignId) {
-                await prisma.campaignContact.updateMany({
+                await database_1.default.campaignContact.updateMany({
                     where: {
                         campaignId: queueItem.campaignId,
                         contactId: contact.id,
@@ -274,7 +277,7 @@ class MessageQueueWorker extends events_1.EventEmitter {
             }
             await this.handleFailure(queueItem.id, errorMessage, queueItem.retryCount, errorCode);
             if (queueItem.campaignId) {
-                await prisma.campaignContact.updateMany({
+                await database_1.default.campaignContact.updateMany({
                     where: {
                         campaignId: queueItem.campaignId,
                         contactId: queueItem.contactId,
@@ -305,7 +308,7 @@ class MessageQueueWorker extends events_1.EventEmitter {
         const lastReset = new Date(account.lastLimitReset);
         const hoursSinceReset = (now.getTime() - lastReset.getTime()) / (1000 * 60 * 60);
         if (hoursSinceReset >= 24) {
-            await prisma.whatsAppAccount.update({
+            await database_1.default.whatsAppAccount.update({
                 where: { id: account.id },
                 data: {
                     dailyMessagesUsed: 0,
@@ -338,7 +341,7 @@ class MessageQueueWorker extends events_1.EventEmitter {
             const retryDelay = this.config.retryDelays[newRetryCount - 1] || 60 * 60 * 1000;
             const nextRetryAt = new Date(Date.now() + retryDelay);
             console.log(`🔄 Scheduling retry #${newRetryCount} at ${nextRetryAt.toISOString()}`);
-            await prisma.messageQueue.update({
+            await database_1.default.messageQueue.update({
                 where: { id: queueId },
                 data: {
                     status: QueueStatus.FAILED,
@@ -351,7 +354,7 @@ class MessageQueueWorker extends events_1.EventEmitter {
         }
         else {
             console.error(`❌ Max retries reached for queue item ${queueId}`);
-            await prisma.messageQueue.update({
+            await database_1.default.messageQueue.update({
                 where: { id: queueId },
                 data: {
                     status: QueueStatus.FAILED,
@@ -369,14 +372,14 @@ class MessageQueueWorker extends events_1.EventEmitter {
     async createConversationMessage(queueItem, waMessageId) {
         try {
             const { contact, whatsappAccount, template, templateParams } = queueItem;
-            let conversation = await prisma.conversation.findFirst({
+            let conversation = await database_1.default.conversation.findFirst({
                 where: {
                     organizationId: whatsappAccount.organizationId,
                     contactId: contact.id,
                 },
             });
             if (!conversation) {
-                conversation = await prisma.conversation.create({
+                conversation = await database_1.default.conversation.create({
                     data: {
                         organizationId: whatsappAccount.organizationId,
                         contactId: contact.id,
@@ -388,7 +391,7 @@ class MessageQueueWorker extends events_1.EventEmitter {
                 });
             }
             else {
-                await prisma.conversation.update({
+                await database_1.default.conversation.update({
                     where: { id: conversation.id },
                     data: {
                         lastMessageAt: new Date(),
@@ -396,7 +399,7 @@ class MessageQueueWorker extends events_1.EventEmitter {
                     },
                 });
             }
-            await prisma.message.create({
+            await database_1.default.message.create({
                 data: {
                     conversationId: conversation.id,
                     whatsappAccountId: whatsappAccount.id,
@@ -444,7 +447,7 @@ class MessageQueueWorker extends events_1.EventEmitter {
     // PUBLIC UTILITY METHODS
     // ============================================
     async addToQueue(data) {
-        const queueItem = await prisma.messageQueue.create({
+        const queueItem = await database_1.default.messageQueue.create({
             data: {
                 campaignId: data.campaignId || undefined,
                 contactId: data.contactId,
@@ -472,7 +475,7 @@ class MessageQueueWorker extends events_1.EventEmitter {
             priority: msg.priority || 0,
             status: QueueStatus.PENDING,
         }));
-        const result = await prisma.messageQueue.createMany({
+        const result = await database_1.default.messageQueue.createMany({
             data: queueItems,
         });
         console.log(`✅ Added ${result.count} messages to queue`);
@@ -483,11 +486,11 @@ class MessageQueueWorker extends events_1.EventEmitter {
     }
     async getQueueStats() {
         const [pending, processing, sent, failed, total] = await Promise.all([
-            prisma.messageQueue.count({ where: { status: QueueStatus.PENDING } }),
-            prisma.messageQueue.count({ where: { status: QueueStatus.PROCESSING } }),
-            prisma.messageQueue.count({ where: { status: QueueStatus.SENT } }),
-            prisma.messageQueue.count({ where: { status: QueueStatus.FAILED } }),
-            prisma.messageQueue.count(),
+            database_1.default.messageQueue.count({ where: { status: QueueStatus.PENDING } }),
+            database_1.default.messageQueue.count({ where: { status: QueueStatus.PROCESSING } }),
+            database_1.default.messageQueue.count({ where: { status: QueueStatus.SENT } }),
+            database_1.default.messageQueue.count({ where: { status: QueueStatus.FAILED } }),
+            database_1.default.messageQueue.count(),
         ]);
         return {
             pending,
@@ -502,7 +505,7 @@ class MessageQueueWorker extends events_1.EventEmitter {
     async cleanupOldMessages(daysOld = 30) {
         const cutoffDate = new Date();
         cutoffDate.setDate(cutoffDate.getDate() - daysOld);
-        const result = await prisma.messageQueue.deleteMany({
+        const result = await database_1.default.messageQueue.deleteMany({
             where: {
                 OR: [
                     { status: QueueStatus.SENT },
@@ -515,7 +518,7 @@ class MessageQueueWorker extends events_1.EventEmitter {
         return result.count;
     }
     async cancelPendingMessages(campaignId) {
-        const result = await prisma.messageQueue.updateMany({
+        const result = await database_1.default.messageQueue.updateMany({
             where: {
                 campaignId,
                 status: { in: [QueueStatus.PENDING, QueueStatus.PROCESSING] },
@@ -535,7 +538,7 @@ class MessageQueueWorker extends events_1.EventEmitter {
         if (campaignId) {
             where.campaignId = campaignId;
         }
-        const result = await prisma.messageQueue.updateMany({
+        const result = await database_1.default.messageQueue.updateMany({
             where,
             data: {
                 status: QueueStatus.PENDING,
@@ -546,7 +549,7 @@ class MessageQueueWorker extends events_1.EventEmitter {
         return result.count;
     }
     async clearFailedMessages() {
-        const result = await prisma.messageQueue.deleteMany({
+        const result = await database_1.default.messageQueue.deleteMany({
             where: {
                 status: QueueStatus.FAILED,
             },

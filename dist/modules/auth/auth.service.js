@@ -199,33 +199,60 @@ class AuthService {
         };
     }
     // ==========================================
-    // LOGIN
+    // LOGIN - ✅ FIXED VERSION
     // ==========================================
     async login(input) {
         const normalizedEmail = normalizeEmail(input.email);
         const { password } = input;
+        console.log(`🔐 Login attempt for: ${normalizedEmail}`);
         // Find user
         const user = await database_1.default.user.findUnique({
             where: { email: normalizedEmail },
         });
         if (!user) {
+            console.log('❌ User not found');
             throw new errorHandler_1.AppError('Invalid email or password', 401);
         }
-        // Check if user has password (not OAuth only user)
+        console.log(`👤 User found: ${user.id}`);
+        console.log(`   Has password: ${!!user.password}`);
+        console.log(`   Has Google ID: ${!!user.googleId}`);
+        console.log(`   Email verified: ${user.emailVerified}`);
+        console.log(`   Status: ${user.status}`);
+        // ✅ FIXED: Check if user has password set
         if (!user.password) {
-            throw new errorHandler_1.AppError('Please login with Google', 400);
+            // User signed up with Google only and never set a password
+            if (user.googleId) {
+                console.log('⚠️ User has Google login but no password');
+                throw new errorHandler_1.AppError('This account was created with Google Sign-In. Please login with Google or set a password in your account settings.', 400);
+            }
+            // Shouldn't happen, but handle it
+            console.log('❌ User has no password and no Google ID');
+            throw new errorHandler_1.AppError('Account configuration error. Please contact support.', 500);
         }
-        // Verify password
+        // ✅ Verify password
         const isValidPassword = await (0, password_1.comparePassword)(password, user.password);
         if (!isValidPassword) {
+            console.log('❌ Invalid password');
             throw new errorHandler_1.AppError('Invalid email or password', 401);
         }
-        // Check user status
+        console.log('✅ Password verified');
+        // ✅ Check user status
         if (user.status === 'SUSPENDED') {
+            console.log('❌ Account suspended');
             throw new errorHandler_1.AppError('Account suspended. Please contact support.', 403);
+        }
+        // ✅ Optional: Warn if email not verified (but still allow login)
+        if (!user.emailVerified) {
+            console.log('⚠️ Email not verified - allowing login anyway');
+            // You can choose to block here by uncommenting:
+            // throw new AppError('Please verify your email before logging in', 403);
         }
         // Get default organization
         const organization = await getDefaultOrganization(user.id);
+        if (!organization) {
+            console.log('⚠️ No organization found for user');
+            // You might want to create one here or handle differently
+        }
         // Update last login
         await database_1.default.user.update({
             where: { id: user.id },
@@ -235,6 +262,7 @@ class AuthService {
         });
         // Generate tokens
         const tokens = await generateTokens(user.id, user.email, organization?.id);
+        console.log('✅ Login successful');
         return {
             user: formatUserResponse(user),
             tokens,
@@ -605,7 +633,7 @@ class AuthService {
             throw new errorHandler_1.AppError('User not found', 404);
         }
         if (!user.password) {
-            throw new errorHandler_1.AppError('Cannot change password for OAuth accounts', 400);
+            throw new errorHandler_1.AppError('Cannot change password for OAuth-only accounts. Please set a password first.', 400);
         }
         // Verify current password
         const isValid = await (0, password_1.comparePassword)(currentPassword, user.password);

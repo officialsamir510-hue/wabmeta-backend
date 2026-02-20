@@ -8,14 +8,15 @@ declare class WebhookService {
     }>;
     private processIncomingMessage;
     private processMessageStatus;
+    private updateCampaignContactStatus;
+    expireConversationWindows(): Promise<number>;
+    resetDailyMessageLimits(): Promise<number>;
     private updateWebhookLog;
     private mapMessageType;
     private mapStatus;
     private getMessagePreview;
     private extractMessageContent;
     private getMediaUrl;
-    expireConversationWindows(): Promise<number>;
-    resetDailyMessageLimits(): Promise<number>;
 }
 export declare const webhookService: WebhookService;
 export default webhookService;

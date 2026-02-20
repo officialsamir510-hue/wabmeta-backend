@@ -63,19 +63,16 @@ export declare const updateAdminSchema: z.ZodObject<{
     }>;
     body: z.ZodObject<{
         name: z.ZodOptional<z.ZodString>;
-        email: z.ZodOptional<z.ZodString>;
-        password: z.ZodOptional<z.ZodString>;
         role: z.ZodOptional<z.ZodEnum<["admin", "super_admin"]>>;
         isActive: z.ZodOptional<z.ZodBoolean>;
+        password: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
         name?: string | undefined;
-        email?: string | undefined;
         password?: string | undefined;
         role?: "admin" | "super_admin" | undefined;
         isActive?: boolean | undefined;
     }, {
         name?: string | undefined;
-        email?: string | undefined;
         password?: string | undefined;
         role?: "admin" | "super_admin" | undefined;
         isActive?: boolean | undefined;
@@ -83,7 +80,6 @@ export declare const updateAdminSchema: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     body: {
         name?: string | undefined;
-        email?: string | undefined;
         password?: string | undefined;
         role?: "admin" | "super_admin" | undefined;
         isActive?: boolean | undefined;
@@ -94,7 +90,6 @@ export declare const updateAdminSchema: z.ZodObject<{
 }, {
     body: {
         name?: string | undefined;
-        email?: string | undefined;
         password?: string | undefined;
         role?: "admin" | "super_admin" | undefined;
         isActive?: boolean | undefined;
@@ -105,48 +100,43 @@ export declare const updateAdminSchema: z.ZodObject<{
 }>;
 export declare const getUsersSchema: z.ZodObject<{
     query: z.ZodObject<{
-        page: z.ZodDefault<z.ZodOptional<z.ZodEffects<z.ZodString, number, string>>>;
-        limit: z.ZodDefault<z.ZodOptional<z.ZodEffects<z.ZodString, number, string>>>;
+        page: z.ZodOptional<z.ZodString>;
+        limit: z.ZodOptional<z.ZodString>;
         search: z.ZodOptional<z.ZodString>;
-        status: z.ZodOptional<z.ZodNativeEnum<{
-            ACTIVE: "ACTIVE";
-            INACTIVE: "INACTIVE";
-            SUSPENDED: "SUSPENDED";
-            PENDING_VERIFICATION: "PENDING_VERIFICATION";
-        }>>;
-        sortBy: z.ZodDefault<z.ZodOptional<z.ZodEnum<["createdAt", "email", "firstName", "lastLoginAt"]>>>;
-        sortOrder: z.ZodDefault<z.ZodOptional<z.ZodEnum<["asc", "desc"]>>>;
+        status: z.ZodOptional<z.ZodString>;
+        sortBy: z.ZodOptional<z.ZodString>;
+        sortOrder: z.ZodOptional<z.ZodEnum<["asc", "desc"]>>;
     }, "strip", z.ZodTypeAny, {
-        page: number;
-        limit: number;
-        sortBy: "email" | "firstName" | "lastLoginAt" | "createdAt";
-        sortOrder: "asc" | "desc";
         search?: string | undefined;
-        status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
-    }, {
-        search?: string | undefined;
-        status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
+        status?: string | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        sortBy?: "email" | "firstName" | "lastLoginAt" | "createdAt" | undefined;
+        sortBy?: string | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
+    }, {
+        search?: string | undefined;
+        status?: string | undefined;
+        page?: string | undefined;
+        limit?: string | undefined;
+        sortBy?: string | undefined;
         sortOrder?: "asc" | "desc" | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     query: {
-        page: number;
-        limit: number;
-        sortBy: "email" | "firstName" | "lastLoginAt" | "createdAt";
-        sortOrder: "asc" | "desc";
         search?: string | undefined;
-        status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
+        status?: string | undefined;
+        page?: string | undefined;
+        limit?: string | undefined;
+        sortBy?: string | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
     };
 }, {
     query: {
         search?: string | undefined;
-        status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
+        status?: string | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        sortBy?: "email" | "firstName" | "lastLoginAt" | "createdAt" | undefined;
+        sortBy?: string | undefined;
         sortOrder?: "asc" | "desc" | undefined;
     };
 }>;
@@ -177,29 +167,28 @@ export declare const updateUserSchema: z.ZodObject<{
     }>;
     body: z.ZodObject<{
         firstName: z.ZodOptional<z.ZodString>;
-        lastName: z.ZodNullable<z.ZodOptional<z.ZodString>>;
-        status: z.ZodOptional<z.ZodNativeEnum<{
-            ACTIVE: "ACTIVE";
-            INACTIVE: "INACTIVE";
-            SUSPENDED: "SUSPENDED";
-            PENDING_VERIFICATION: "PENDING_VERIFICATION";
-        }>>;
+        lastName: z.ZodOptional<z.ZodString>;
+        phone: z.ZodOptional<z.ZodString>;
+        status: z.ZodOptional<z.ZodEnum<["ACTIVE", "INACTIVE", "SUSPENDED", "PENDING_VERIFICATION"]>>;
         emailVerified: z.ZodOptional<z.ZodBoolean>;
     }, "strip", z.ZodTypeAny, {
         firstName?: string | undefined;
-        lastName?: string | null | undefined;
+        lastName?: string | undefined;
+        phone?: string | undefined;
         status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
         emailVerified?: boolean | undefined;
     }, {
         firstName?: string | undefined;
-        lastName?: string | null | undefined;
+        lastName?: string | undefined;
+        phone?: string | undefined;
         status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
         emailVerified?: boolean | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     body: {
         firstName?: string | undefined;
-        lastName?: string | null | undefined;
+        lastName?: string | undefined;
+        phone?: string | undefined;
         status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
         emailVerified?: boolean | undefined;
     };
@@ -209,9 +198,40 @@ export declare const updateUserSchema: z.ZodObject<{
 }, {
     body: {
         firstName?: string | undefined;
-        lastName?: string | null | undefined;
+        lastName?: string | undefined;
+        phone?: string | undefined;
         status?: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION" | undefined;
         emailVerified?: boolean | undefined;
+    };
+    params: {
+        id: string;
+    };
+}>;
+export declare const updateUserStatusSchema: z.ZodObject<{
+    params: z.ZodObject<{
+        id: z.ZodString;
+    }, "strip", z.ZodTypeAny, {
+        id: string;
+    }, {
+        id: string;
+    }>;
+    body: z.ZodObject<{
+        status: z.ZodEnum<["ACTIVE", "INACTIVE", "SUSPENDED", "PENDING_VERIFICATION"]>;
+    }, "strip", z.ZodTypeAny, {
+        status: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION";
+    }, {
+        status: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION";
+    }>;
+}, "strip", z.ZodTypeAny, {
+    body: {
+        status: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION";
+    };
+    params: {
+        id: string;
+    };
+}, {
+    body: {
+        status: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "PENDING_VERIFICATION";
     };
     params: {
         id: string;
@@ -236,48 +256,43 @@ export declare const deleteUserSchema: z.ZodObject<{
 }>;
 export declare const getOrganizationsSchema: z.ZodObject<{
     query: z.ZodObject<{
-        page: z.ZodDefault<z.ZodOptional<z.ZodEffects<z.ZodString, number, string>>>;
-        limit: z.ZodDefault<z.ZodOptional<z.ZodEffects<z.ZodString, number, string>>>;
+        page: z.ZodOptional<z.ZodString>;
+        limit: z.ZodOptional<z.ZodString>;
         search: z.ZodOptional<z.ZodString>;
-        planType: z.ZodOptional<z.ZodNativeEnum<{
-            FREE: "FREE";
-            STARTER: "STARTER";
-            PRO: "PRO";
-            ENTERPRISE: "ENTERPRISE";
-        }>>;
-        sortBy: z.ZodDefault<z.ZodOptional<z.ZodEnum<["createdAt", "name", "planType"]>>>;
-        sortOrder: z.ZodDefault<z.ZodOptional<z.ZodEnum<["asc", "desc"]>>>;
+        planType: z.ZodOptional<z.ZodString>;
+        sortBy: z.ZodOptional<z.ZodString>;
+        sortOrder: z.ZodOptional<z.ZodEnum<["asc", "desc"]>>;
     }, "strip", z.ZodTypeAny, {
-        page: number;
-        limit: number;
-        sortBy: "name" | "createdAt" | "planType";
-        sortOrder: "asc" | "desc";
         search?: string | undefined;
-        planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
-    }, {
-        search?: string | undefined;
-        planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
+        planType?: string | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        sortBy?: "name" | "createdAt" | "planType" | undefined;
+        sortBy?: string | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
+    }, {
+        search?: string | undefined;
+        planType?: string | undefined;
+        page?: string | undefined;
+        limit?: string | undefined;
+        sortBy?: string | undefined;
         sortOrder?: "asc" | "desc" | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     query: {
-        page: number;
-        limit: number;
-        sortBy: "name" | "createdAt" | "planType";
-        sortOrder: "asc" | "desc";
         search?: string | undefined;
-        planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
+        planType?: string | undefined;
+        page?: string | undefined;
+        limit?: string | undefined;
+        sortBy?: string | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
     };
 }, {
     query: {
         search?: string | undefined;
-        planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
+        planType?: string | undefined;
         page?: string | undefined;
         limit?: string | undefined;
-        sortBy?: "name" | "createdAt" | "planType" | undefined;
+        sortBy?: string | undefined;
         sortOrder?: "asc" | "desc" | undefined;
     };
 }>;
@@ -308,22 +323,29 @@ export declare const updateOrganizationSchema: z.ZodObject<{
     }>;
     body: z.ZodObject<{
         name: z.ZodOptional<z.ZodString>;
-        planType: z.ZodOptional<z.ZodNativeEnum<{
-            FREE: "FREE";
-            STARTER: "STARTER";
-            PRO: "PRO";
-            ENTERPRISE: "ENTERPRISE";
-        }>>;
+        website: z.ZodNullable<z.ZodOptional<z.ZodString>>;
+        industry: z.ZodOptional<z.ZodString>;
+        timezone: z.ZodOptional<z.ZodString>;
+        planType: z.ZodOptional<z.ZodEnum<["FREE", "STARTER", "PRO", "ENTERPRISE"]>>;
     }, "strip", z.ZodTypeAny, {
         name?: string | undefined;
+        website?: string | null | undefined;
+        industry?: string | undefined;
+        timezone?: string | undefined;
         planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
     }, {
         name?: string | undefined;
+        website?: string | null | undefined;
+        industry?: string | undefined;
+        timezone?: string | undefined;
         planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     body: {
         name?: string | undefined;
+        website?: string | null | undefined;
+        industry?: string | undefined;
+        timezone?: string | undefined;
         planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
     };
     params: {
@@ -332,6 +354,9 @@ export declare const updateOrganizationSchema: z.ZodObject<{
 }, {
     body: {
         name?: string | undefined;
+        website?: string | null | undefined;
+        industry?: string | undefined;
+        timezone?: string | undefined;
         planType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
     };
     params: {
@@ -365,34 +390,21 @@ export declare const updateSubscriptionSchema: z.ZodObject<{
     }>;
     body: z.ZodObject<{
         planId: z.ZodOptional<z.ZodString>;
-        status: z.ZodOptional<z.ZodNativeEnum<{
-            ACTIVE: "ACTIVE";
-            CANCELLED: "CANCELLED";
-            EXPIRED: "EXPIRED";
-            PAST_DUE: "PAST_DUE";
-        }>>;
-        currentPeriodEnd: z.ZodOptional<z.ZodString>;
-        messagesUsed: z.ZodOptional<z.ZodNumber>;
-        contactsUsed: z.ZodOptional<z.ZodNumber>;
+        status: z.ZodOptional<z.ZodEnum<["ACTIVE", "CANCELLED", "EXPIRED", "PAST_DUE"]>>;
+        billingCycle: z.ZodOptional<z.ZodEnum<["monthly", "yearly"]>>;
     }, "strip", z.ZodTypeAny, {
         status?: "ACTIVE" | "CANCELLED" | "EXPIRED" | "PAST_DUE" | undefined;
-        currentPeriodEnd?: string | undefined;
-        messagesUsed?: number | undefined;
-        contactsUsed?: number | undefined;
+        billingCycle?: "monthly" | "yearly" | undefined;
         planId?: string | undefined;
     }, {
         status?: "ACTIVE" | "CANCELLED" | "EXPIRED" | "PAST_DUE" | undefined;
-        currentPeriodEnd?: string | undefined;
-        messagesUsed?: number | undefined;
-        contactsUsed?: number | undefined;
+        billingCycle?: "monthly" | "yearly" | undefined;
         planId?: string | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     body: {
         status?: "ACTIVE" | "CANCELLED" | "EXPIRED" | "PAST_DUE" | undefined;
-        currentPeriodEnd?: string | undefined;
-        messagesUsed?: number | undefined;
-        contactsUsed?: number | undefined;
+        billingCycle?: "monthly" | "yearly" | undefined;
         planId?: string | undefined;
     };
     params: {
@@ -401,9 +413,7 @@ export declare const updateSubscriptionSchema: z.ZodObject<{
 }, {
     body: {
         status?: "ACTIVE" | "CANCELLED" | "EXPIRED" | "PAST_DUE" | undefined;
-        currentPeriodEnd?: string | undefined;
-        messagesUsed?: number | undefined;
-        contactsUsed?: number | undefined;
+        billingCycle?: "monthly" | "yearly" | undefined;
         planId?: string | undefined;
     };
     params: {
@@ -413,12 +423,8 @@ export declare const updateSubscriptionSchema: z.ZodObject<{
 export declare const createPlanSchema: z.ZodObject<{
     body: z.ZodObject<{
         name: z.ZodString;
-        type: z.ZodNativeEnum<{
-            FREE: "FREE";
-            STARTER: "STARTER";
-            PRO: "PRO";
-            ENTERPRISE: "ENTERPRISE";
-        }>;
+        type: z.ZodEnum<["FREE", "STARTER", "PRO", "ENTERPRISE"]>;
+        slug: z.ZodString;
         description: z.ZodOptional<z.ZodString>;
         monthlyPrice: z.ZodNumber;
         yearlyPrice: z.ZodNumber;
@@ -428,10 +434,17 @@ export declare const createPlanSchema: z.ZodObject<{
         maxCampaigns: z.ZodNumber;
         maxChatbots: z.ZodNumber;
         maxTemplates: z.ZodNumber;
-        features: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodString, "many">>>;
+        maxWhatsAppAccounts: z.ZodNumber;
+        maxMessagesPerMonth: z.ZodNumber;
+        maxCampaignsPerMonth: z.ZodNumber;
+        maxAutomations: z.ZodNumber;
+        maxApiCalls: z.ZodNumber;
+        features: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+        isActive: z.ZodOptional<z.ZodBoolean>;
     }, "strip", z.ZodTypeAny, {
         name: string;
         type: "FREE" | "STARTER" | "PRO" | "ENTERPRISE";
+        slug: string;
         monthlyPrice: number;
         yearlyPrice: number;
         maxContacts: number;
@@ -440,11 +453,18 @@ export declare const createPlanSchema: z.ZodObject<{
         maxCampaigns: number;
         maxChatbots: number;
         maxTemplates: number;
-        features: string[];
+        maxWhatsAppAccounts: number;
+        maxMessagesPerMonth: number;
+        maxCampaignsPerMonth: number;
+        maxAutomations: number;
+        maxApiCalls: number;
         description?: string | undefined;
+        features?: string[] | undefined;
+        isActive?: boolean | undefined;
     }, {
         name: string;
         type: "FREE" | "STARTER" | "PRO" | "ENTERPRISE";
+        slug: string;
         monthlyPrice: number;
         yearlyPrice: number;
         maxContacts: number;
@@ -453,13 +473,20 @@ export declare const createPlanSchema: z.ZodObject<{
         maxCampaigns: number;
         maxChatbots: number;
         maxTemplates: number;
+        maxWhatsAppAccounts: number;
+        maxMessagesPerMonth: number;
+        maxCampaignsPerMonth: number;
+        maxAutomations: number;
+        maxApiCalls: number;
         description?: string | undefined;
         features?: string[] | undefined;
+        isActive?: boolean | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     body: {
         name: string;
         type: "FREE" | "STARTER" | "PRO" | "ENTERPRISE";
+        slug: string;
         monthlyPrice: number;
         yearlyPrice: number;
         maxContacts: number;
@@ -468,13 +495,20 @@ export declare const createPlanSchema: z.ZodObject<{
         maxCampaigns: number;
         maxChatbots: number;
         maxTemplates: number;
-        features: string[];
+        maxWhatsAppAccounts: number;
+        maxMessagesPerMonth: number;
+        maxCampaignsPerMonth: number;
+        maxAutomations: number;
+        maxApiCalls: number;
         description?: string | undefined;
+        features?: string[] | undefined;
+        isActive?: boolean | undefined;
     };
 }, {
     body: {
         name: string;
         type: "FREE" | "STARTER" | "PRO" | "ENTERPRISE";
+        slug: string;
         monthlyPrice: number;
         yearlyPrice: number;
         maxContacts: number;
@@ -483,8 +517,14 @@ export declare const createPlanSchema: z.ZodObject<{
         maxCampaigns: number;
         maxChatbots: number;
         maxTemplates: number;
+        maxWhatsAppAccounts: number;
+        maxMessagesPerMonth: number;
+        maxCampaignsPerMonth: number;
+        maxAutomations: number;
+        maxApiCalls: number;
         description?: string | undefined;
         features?: string[] | undefined;
+        isActive?: boolean | undefined;
     };
 }>;
 export declare const updatePlanSchema: z.ZodObject<{
@@ -497,7 +537,7 @@ export declare const updatePlanSchema: z.ZodObject<{
     }>;
     body: z.ZodObject<{
         name: z.ZodOptional<z.ZodString>;
-        description: z.ZodNullable<z.ZodOptional<z.ZodString>>;
+        description: z.ZodOptional<z.ZodString>;
         monthlyPrice: z.ZodOptional<z.ZodNumber>;
         yearlyPrice: z.ZodOptional<z.ZodNumber>;
         maxContacts: z.ZodOptional<z.ZodNumber>;
@@ -506,11 +546,16 @@ export declare const updatePlanSchema: z.ZodObject<{
         maxCampaigns: z.ZodOptional<z.ZodNumber>;
         maxChatbots: z.ZodOptional<z.ZodNumber>;
         maxTemplates: z.ZodOptional<z.ZodNumber>;
+        maxWhatsAppAccounts: z.ZodOptional<z.ZodNumber>;
+        maxMessagesPerMonth: z.ZodOptional<z.ZodNumber>;
+        maxCampaignsPerMonth: z.ZodOptional<z.ZodNumber>;
+        maxAutomations: z.ZodOptional<z.ZodNumber>;
+        maxApiCalls: z.ZodOptional<z.ZodNumber>;
         features: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         isActive: z.ZodOptional<z.ZodBoolean>;
     }, "strip", z.ZodTypeAny, {
         name?: string | undefined;
-        description?: string | null | undefined;
+        description?: string | undefined;
         monthlyPrice?: number | undefined;
         yearlyPrice?: number | undefined;
         maxContacts?: number | undefined;
@@ -519,11 +564,16 @@ export declare const updatePlanSchema: z.ZodObject<{
         maxCampaigns?: number | undefined;
         maxChatbots?: number | undefined;
         maxTemplates?: number | undefined;
+        maxWhatsAppAccounts?: number | undefined;
+        maxMessagesPerMonth?: number | undefined;
+        maxCampaignsPerMonth?: number | undefined;
+        maxAutomations?: number | undefined;
+        maxApiCalls?: number | undefined;
         features?: string[] | undefined;
         isActive?: boolean | undefined;
     }, {
         name?: string | undefined;
-        description?: string | null | undefined;
+        description?: string | undefined;
         monthlyPrice?: number | undefined;
         yearlyPrice?: number | undefined;
         maxContacts?: number | undefined;
@@ -532,13 +582,18 @@ export declare const updatePlanSchema: z.ZodObject<{
         maxCampaigns?: number | undefined;
         maxChatbots?: number | undefined;
         maxTemplates?: number | undefined;
+        maxWhatsAppAccounts?: number | undefined;
+        maxMessagesPerMonth?: number | undefined;
+        maxCampaignsPerMonth?: number | undefined;
+        maxAutomations?: number | undefined;
+        maxApiCalls?: number | undefined;
         features?: string[] | undefined;
         isActive?: boolean | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     body: {
         name?: string | undefined;
-        description?: string | null | undefined;
+        description?: string | undefined;
         monthlyPrice?: number | undefined;
         yearlyPrice?: number | undefined;
         maxContacts?: number | undefined;
@@ -547,6 +602,11 @@ export declare const updatePlanSchema: z.ZodObject<{
         maxCampaigns?: number | undefined;
         maxChatbots?: number | undefined;
         maxTemplates?: number | undefined;
+        maxWhatsAppAccounts?: number | undefined;
+        maxMessagesPerMonth?: number | undefined;
+        maxCampaignsPerMonth?: number | undefined;
+        maxAutomations?: number | undefined;
+        maxApiCalls?: number | undefined;
         features?: string[] | undefined;
         isActive?: boolean | undefined;
     };
@@ -556,7 +616,7 @@ export declare const updatePlanSchema: z.ZodObject<{
 }, {
     body: {
         name?: string | undefined;
-        description?: string | null | undefined;
+        description?: string | undefined;
         monthlyPrice?: number | undefined;
         yearlyPrice?: number | undefined;
         maxContacts?: number | undefined;
@@ -565,74 +625,32 @@ export declare const updatePlanSchema: z.ZodObject<{
         maxCampaigns?: number | undefined;
         maxChatbots?: number | undefined;
         maxTemplates?: number | undefined;
+        maxWhatsAppAccounts?: number | undefined;
+        maxMessagesPerMonth?: number | undefined;
+        maxCampaignsPerMonth?: number | undefined;
+        maxAutomations?: number | undefined;
+        maxApiCalls?: number | undefined;
         features?: string[] | undefined;
         isActive?: boolean | undefined;
     };
     params: {
         id: string;
-    };
-}>;
-export declare const updateSystemSettingsSchema: z.ZodObject<{
-    body: z.ZodObject<{
-        maintenanceMode: z.ZodOptional<z.ZodBoolean>;
-        registrationEnabled: z.ZodOptional<z.ZodBoolean>;
-        defaultPlan: z.ZodOptional<z.ZodNativeEnum<{
-            FREE: "FREE";
-            STARTER: "STARTER";
-            PRO: "PRO";
-            ENTERPRISE: "ENTERPRISE";
-        }>>;
-        maxOrganizationsPerUser: z.ZodOptional<z.ZodNumber>;
-        maxContactsFreePlan: z.ZodOptional<z.ZodNumber>;
-        maxMessagesFreePlan: z.ZodOptional<z.ZodNumber>;
-    }, "strip", z.ZodTypeAny, {
-        maintenanceMode?: boolean | undefined;
-        registrationEnabled?: boolean | undefined;
-        defaultPlan?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
-        maxOrganizationsPerUser?: number | undefined;
-        maxContactsFreePlan?: number | undefined;
-        maxMessagesFreePlan?: number | undefined;
-    }, {
-        maintenanceMode?: boolean | undefined;
-        registrationEnabled?: boolean | undefined;
-        defaultPlan?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
-        maxOrganizationsPerUser?: number | undefined;
-        maxContactsFreePlan?: number | undefined;
-        maxMessagesFreePlan?: number | undefined;
-    }>;
-}, "strip", z.ZodTypeAny, {
-    body: {
-        maintenanceMode?: boolean | undefined;
-        registrationEnabled?: boolean | undefined;
-        defaultPlan?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
-        maxOrganizationsPerUser?: number | undefined;
-        maxContactsFreePlan?: number | undefined;
-        maxMessagesFreePlan?: number | undefined;
-    };
-}, {
-    body: {
-        maintenanceMode?: boolean | undefined;
-        registrationEnabled?: boolean | undefined;
-        defaultPlan?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
-        maxOrganizationsPerUser?: number | undefined;
-        maxContactsFreePlan?: number | undefined;
-        maxMessagesFreePlan?: number | undefined;
     };
 }>;
 export declare const getActivityLogsSchema: z.ZodObject<{
     query: z.ZodObject<{
-        page: z.ZodDefault<z.ZodOptional<z.ZodEffects<z.ZodString, number, string>>>;
-        limit: z.ZodDefault<z.ZodOptional<z.ZodEffects<z.ZodString, number, string>>>;
+        page: z.ZodOptional<z.ZodString>;
+        limit: z.ZodOptional<z.ZodString>;
         action: z.ZodOptional<z.ZodString>;
         userId: z.ZodOptional<z.ZodString>;
         organizationId: z.ZodOptional<z.ZodString>;
         startDate: z.ZodOptional<z.ZodString>;
         endDate: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
-        page: number;
-        limit: number;
         userId?: string | undefined;
         organizationId?: string | undefined;
+        page?: string | undefined;
+        limit?: string | undefined;
         action?: string | undefined;
         startDate?: string | undefined;
         endDate?: string | undefined;
@@ -647,10 +665,10 @@ export declare const getActivityLogsSchema: z.ZodObject<{
     }>;
 }, "strip", z.ZodTypeAny, {
     query: {
-        page: number;
-        limit: number;
         userId?: string | undefined;
         organizationId?: string | undefined;
+        page?: string | undefined;
+        limit?: string | undefined;
         action?: string | undefined;
         startDate?: string | undefined;
         endDate?: string | undefined;
@@ -664,6 +682,43 @@ export declare const getActivityLogsSchema: z.ZodObject<{
         action?: string | undefined;
         startDate?: string | undefined;
         endDate?: string | undefined;
+    };
+}>;
+export declare const updateSystemSettingsSchema: z.ZodObject<{
+    body: z.ZodObject<{
+        maintenanceMode: z.ZodOptional<z.ZodBoolean>;
+        allowRegistration: z.ZodOptional<z.ZodBoolean>;
+        maxOrganizationsPerUser: z.ZodOptional<z.ZodNumber>;
+        defaultPlanType: z.ZodOptional<z.ZodEnum<["FREE", "STARTER", "PRO", "ENTERPRISE"]>>;
+        smtpEnabled: z.ZodOptional<z.ZodBoolean>;
+    }, "strip", z.ZodTypeAny, {
+        maintenanceMode?: boolean | undefined;
+        allowRegistration?: boolean | undefined;
+        maxOrganizationsPerUser?: number | undefined;
+        defaultPlanType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
+        smtpEnabled?: boolean | undefined;
+    }, {
+        maintenanceMode?: boolean | undefined;
+        allowRegistration?: boolean | undefined;
+        maxOrganizationsPerUser?: number | undefined;
+        defaultPlanType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
+        smtpEnabled?: boolean | undefined;
+    }>;
+}, "strip", z.ZodTypeAny, {
+    body: {
+        maintenanceMode?: boolean | undefined;
+        allowRegistration?: boolean | undefined;
+        maxOrganizationsPerUser?: number | undefined;
+        defaultPlanType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
+        smtpEnabled?: boolean | undefined;
+    };
+}, {
+    body: {
+        maintenanceMode?: boolean | undefined;
+        allowRegistration?: boolean | undefined;
+        maxOrganizationsPerUser?: number | undefined;
+        defaultPlanType?: "FREE" | "STARTER" | "PRO" | "ENTERPRISE" | undefined;
+        smtpEnabled?: boolean | undefined;
     };
 }>;
 export type AdminLoginSchema = z.infer<typeof adminLoginSchema>;
@@ -671,11 +726,12 @@ export type CreateAdminSchema = z.infer<typeof createAdminSchema>;
 export type UpdateAdminSchema = z.infer<typeof updateAdminSchema>;
 export type GetUsersSchema = z.infer<typeof getUsersSchema>;
 export type UpdateUserSchema = z.infer<typeof updateUserSchema>;
+export type UpdateUserStatusSchema = z.infer<typeof updateUserStatusSchema>;
 export type GetOrganizationsSchema = z.infer<typeof getOrganizationsSchema>;
 export type UpdateOrganizationSchema = z.infer<typeof updateOrganizationSchema>;
 export type UpdateSubscriptionSchema = z.infer<typeof updateSubscriptionSchema>;
 export type CreatePlanSchema = z.infer<typeof createPlanSchema>;
 export type UpdatePlanSchema = z.infer<typeof updatePlanSchema>;
-export type UpdateSystemSettingsSchema = z.infer<typeof updateSystemSettingsSchema>;
 export type GetActivityLogsSchema = z.infer<typeof getActivityLogsSchema>;
+export type UpdateSystemSettingsSchema = z.infer<typeof updateSystemSettingsSchema>;
 //# sourceMappingURL=admin.schema.d.ts.map

@@ -4,9 +4,24 @@ declare class WhatsAppController {
     getAccount(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
     setDefaultAccount(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
     disconnectAccount(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    /**
+     * ✅ FIXED: Send Text Message
+     * Accepts multiple field name formats for flexibility
+     */
     sendText(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    /**
+     * ✅ FIXED: Send Template Message
+     * Accepts multiple field name formats for flexibility
+     */
     sendTemplate(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    /**
+     * ✅ FIXED: Send Media Message
+     * Accepts multiple field name formats for flexibility
+     */
     sendMedia(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    /**
+     * ✅ FIXED: Mark Message as Read
+     */
     markAsRead(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
 }
 export declare const whatsappController: WhatsAppController;

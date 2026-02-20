@@ -10,7 +10,7 @@ import {
 import { metaApi } from '../meta/meta.api';
 import { safeDecrypt, maskToken } from '../../utils/encryption';
 
-const prisma = new PrismaClient();
+import prisma from '../../config/database';
 
 // ============================================
 // INTERFACES

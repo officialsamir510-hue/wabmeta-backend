@@ -1,9 +1,11 @@
 "use strict";
 // src/modules/inbox/inbox.service.ts
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.inboxService = void 0;
-const client_1 = require("@prisma/client");
-const prisma = new client_1.PrismaClient();
+const database_1 = __importDefault(require("../../config/database"));
 class AppError extends Error {
     statusCode;
     constructor(message, statusCode = 400) {
@@ -97,7 +99,7 @@ class InboxService {
             };
         }
         const [conversations, total] = await Promise.all([
-            prisma.conversation.findMany({
+            database_1.default.conversation.findMany({
                 where,
                 include: {
                     contact: {
@@ -116,7 +118,7 @@ class InboxService {
                 skip: (page - 1) * limit,
                 take: limit,
             }),
-            prisma.conversation.count({ where }),
+            database_1.default.conversation.count({ where }),
         ]);
         // Transform conversations to include computed name
         const transformedConversations = conversations.map((conv) => ({
@@ -154,7 +156,7 @@ class InboxService {
         if (organizationId) {
             where.organizationId = organizationId;
         }
-        const conversation = await prisma.conversation.findFirst({
+        const conversation = await database_1.default.conversation.findFirst({
             where,
             include: {
                 contact: true,
@@ -224,13 +226,13 @@ class InboxService {
             where.createdAt = { ...where.createdAt, gt: new Date(after) };
         }
         const [messages, total] = await Promise.all([
-            prisma.message.findMany({
+            database_1.default.message.findMany({
                 where,
                 orderBy: { createdAt: 'asc' },
                 skip: (page - 1) * limit,
                 take: limit,
             }),
-            prisma.message.count({ where }),
+            database_1.default.message.count({ where }),
         ]);
         return {
             messages,
@@ -262,7 +264,7 @@ class InboxService {
             // 1-argument style: markAsRead(conversationId)
             conversationId = conversationIdOrOrgId;
         }
-        const conversation = await prisma.conversation.update({
+        const conversation = await database_1.default.conversation.update({
             where: { id: conversationId },
             data: {
                 unreadCount: 0,
@@ -276,7 +278,7 @@ class InboxService {
      * For routes.ts compatibility
      */
     async updateArchiveStatus(conversationId, isArchived) {
-        const conversation = await prisma.conversation.update({
+        const conversation = await database_1.default.conversation.update({
             where: { id: conversationId },
             data: { isArchived },
         });
@@ -307,7 +309,7 @@ class InboxService {
             conversationId = labelsOrConversationId;
             newLabels = labels || [];
         }
-        const conversation = await prisma.conversation.update({
+        const conversation = await database_1.default.conversation.update({
             where: { id: conversationId },
             data: { labels: newLabels },
         });
@@ -346,7 +348,7 @@ class InboxService {
             conversationId = conversationIdOrOrgId;
             assignUserId = userIdOrConversationId;
         }
-        const conversation = await prisma.conversation.update({
+        const conversation = await database_1.default.conversation.update({
             where: { id: conversationId },
             data: { assignedTo: assignUserId },
         });
@@ -357,7 +359,7 @@ class InboxService {
      */
     async updateConversation(organizationId, conversationId, input) {
         await this.getConversation(conversationId, organizationId);
-        const conversation = await prisma.conversation.update({
+        const conversation = await database_1.default.conversation.update({
             where: { id: conversationId },
             data: input,
         });
@@ -368,7 +370,7 @@ class InboxService {
      */
     async deleteConversation(organizationId, conversationId) {
         await this.getConversation(conversationId, organizationId);
-        await prisma.conversation.delete({
+        await database_1.default.conversation.delete({
             where: { id: conversationId },
         });
         return { success: true, message: 'Conversation deleted' };
@@ -377,7 +379,7 @@ class InboxService {
      * Bulk update conversations
      */
     async bulkUpdate(organizationId, conversationIds, updates) {
-        const result = await prisma.conversation.updateMany({
+        const result = await database_1.default.conversation.updateMany({
             where: {
                 id: { in: conversationIds },
                 organizationId,
@@ -400,7 +402,7 @@ class InboxService {
             },
         };
         const [messages, total] = await Promise.all([
-            prisma.message.findMany({
+            database_1.default.message.findMany({
                 where,
                 include: {
                     conversation: {
@@ -413,7 +415,7 @@ class InboxService {
                 skip: (page - 1) * limit,
                 take: limit,
             }),
-            prisma.message.count({ where }),
+            database_1.default.message.count({ where }),
         ]);
         return {
             messages,
@@ -439,14 +441,14 @@ class InboxService {
             baseWhere.phoneNumberId = accountIdOrUserId;
         }
         const [total, open, unread, archived] = await Promise.all([
-            prisma.conversation.count({ where: baseWhere }),
-            prisma.conversation.count({
+            database_1.default.conversation.count({ where: baseWhere }),
+            database_1.default.conversation.count({
                 where: { ...baseWhere, isWindowOpen: true, isArchived: false },
             }),
-            prisma.conversation.count({
+            database_1.default.conversation.count({
                 where: { ...baseWhere, unreadCount: { gt: 0 } },
             }),
-            prisma.conversation.count({
+            database_1.default.conversation.count({
                 where: { ...baseWhere, isArchived: true },
             }),
         ]);
@@ -456,7 +458,7 @@ class InboxService {
      * Get all labels for organization
      */
     async getAllLabels(organizationId) {
-        const conversations = await prisma.conversation.findMany({
+        const conversations = await database_1.default.conversation.findMany({
             where: { organizationId },
             select: { labels: true },
         });
@@ -471,7 +473,7 @@ class InboxService {
      * Get or create conversation
      */
     async getOrCreateConversation(organizationId, contactId) {
-        let conversation = await prisma.conversation.findUnique({
+        let conversation = await database_1.default.conversation.findUnique({
             where: {
                 organizationId_contactId: {
                     organizationId,
@@ -484,7 +486,7 @@ class InboxService {
         });
         if (!conversation) {
             // Get default phone number
-            const phoneNumber = await prisma.phoneNumber.findFirst({
+            const phoneNumber = await database_1.default.phoneNumber.findFirst({
                 where: {
                     metaConnection: {
                         organizationId,
@@ -494,7 +496,7 @@ class InboxService {
                     isPrimary: true,
                 },
             });
-            conversation = await prisma.conversation.create({
+            conversation = await database_1.default.conversation.create({
                 data: {
                     organizationId,
                     contactId,
@@ -515,7 +517,7 @@ class InboxService {
     async sendMessage(organizationId, userId, conversationId, input) {
         const conversation = await this.getConversation(conversationId, organizationId);
         // Create message in database
-        const message = await prisma.message.create({
+        const message = await database_1.default.message.create({
             data: {
                 conversationId,
                 direction: 'OUTBOUND',
@@ -526,7 +528,7 @@ class InboxService {
             },
         });
         // Update conversation
-        await prisma.conversation.update({
+        await database_1.default.conversation.update({
             where: { id: conversationId },
             data: {
                 lastMessageAt: new Date(),

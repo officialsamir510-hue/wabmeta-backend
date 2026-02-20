@@ -5,7 +5,9 @@ interface AuthRequest extends Request {
         email: string;
         organizationId?: string;
     };
+    file?: any;
 }
+export declare const csvUpload: any;
 export declare class CampaignsController {
     create(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
     getList(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
@@ -21,7 +23,10 @@ export declare class CampaignsController {
     duplicate(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
     getStats(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
     getAnalytics(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    uploadContacts(req: AuthRequest, res: Response, next: NextFunction): Promise<void | Response<any, Record<string, any>>>;
+    getUploadTemplate(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    validateCsvFile(req: AuthRequest, res: Response, next: NextFunction): Promise<void | Response<any, Record<string, any>>>;
 }
 export declare const campaignsController: CampaignsController;
-export {};
+export type { AuthRequest };
 //# sourceMappingURL=campaigns.controller.d.ts.map

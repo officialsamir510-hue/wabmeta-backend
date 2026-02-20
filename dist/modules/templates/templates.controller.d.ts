@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 declare class TemplatesController {
     private getDefaultAccountId;
+    private getWabaIdForAccount;
     create(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
     getList(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
     getById(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;

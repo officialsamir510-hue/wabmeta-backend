@@ -25,8 +25,8 @@ export declare class CampaignsService {
     private processCampaignSending;
     getStats(organizationId: string): Promise<CampaignStats>;
     getAnalytics(organizationId: string, campaignId: string): Promise<CampaignAnalytics>;
-    updateContactStatus(campaignId: string, contactId: string, status: MessageStatus, waMessageId?: string, failureReason?: string): Promise<void>;
-    checkAndComplete(campaignId: string): Promise<void>;
+    updateContactStatus(organizationId: string, campaignId: string, contactId: string, status: MessageStatus, waMessageId?: string, failureReason?: string): Promise<void>;
+    checkAndComplete(organizationId: string, campaignId: string): Promise<void>;
 }
 export declare const campaignsService: CampaignsService;
 //# sourceMappingURL=campaigns.service.d.ts.map

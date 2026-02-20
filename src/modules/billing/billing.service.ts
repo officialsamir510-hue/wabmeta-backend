@@ -3,7 +3,7 @@
 import { PrismaClient, PlanType, SubscriptionStatus } from '@prisma/client';
 import crypto from 'crypto';
 
-const prisma = new PrismaClient();
+import prisma from '../../config/database';
 
 // ============================================
 // RAZORPAY INITIALIZATION

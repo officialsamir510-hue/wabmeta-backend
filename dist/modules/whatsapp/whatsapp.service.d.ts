@@ -27,6 +27,10 @@ declare class WhatsAppService {
      */
     private looksLikeAccessToken;
     /**
+     * ✅ NEW: Extract plain text content from message payload
+     */
+    private extractMessageContent;
+    /**
      * Get account with safe token decryption - ✅ FIXED VERSION
      */
     private getAccountWithToken;
@@ -265,7 +269,7 @@ declare class WhatsAppService {
         };
     }>;
     /**
-     * Core send message function - ✅ FIXED VERSION
+     * Core send message function - ✅ FIXED VERSION WITH CONTENT EXTRACTION
      */
     sendMessage(options: SendMessageOptions): Promise<{
         success: boolean;

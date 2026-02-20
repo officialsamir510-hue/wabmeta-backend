@@ -10,7 +10,7 @@ import { buildINPhoneVariants, normalizeINNational10 } from '../../utils/phone';
 export const webhookEvents = new EventEmitter();
 webhookEvents.setMaxListeners(20);
 
-const prisma = new PrismaClient();
+import prisma from '../../config/database';
 
 // ============================================
 // TYPES

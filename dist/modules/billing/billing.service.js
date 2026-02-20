@@ -7,7 +7,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.billingService = void 0;
 const client_1 = require("@prisma/client");
 const crypto_1 = __importDefault(require("crypto"));
-const prisma = new client_1.PrismaClient();
+const database_1 = __importDefault(require("../../config/database"));
 // ============================================
 // RAZORPAY INITIALIZATION
 // ============================================
@@ -42,13 +42,13 @@ class BillingService {
     // ============================================
     async getSubscription(organizationId) {
         try {
-            const subscription = await prisma.subscription.findUnique({
+            const subscription = await database_1.default.subscription.findUnique({
                 where: { organizationId },
                 include: { plan: true }
             });
             if (!subscription) {
                 // Return default free plan info
-                const freePlan = await prisma.plan.findFirst({
+                const freePlan = await database_1.default.plan.findFirst({
                     where: { type: client_1.PlanType.FREE }
                 });
                 return {
@@ -91,7 +91,7 @@ class BillingService {
     // ============================================
     async getPlans() {
         try {
-            const plans = await prisma.plan.findMany({
+            const plans = await database_1.default.plan.findMany({
                 where: { isActive: true },
                 orderBy: { monthlyPrice: 'asc' }
             });
@@ -216,7 +216,7 @@ class BillingService {
     // ============================================
     async getUsage(organizationId) {
         try {
-            const subscription = await prisma.subscription.findUnique({
+            const subscription = await database_1.default.subscription.findUnique({
                 where: { organizationId },
                 include: { plan: true }
             });
@@ -225,13 +225,13 @@ class BillingService {
                 new Date(now.getFullYear(), now.getMonth(), 1); // First day of month
             // Get actual usage counts with proper error handling
             const [contactCount, messageCount, campaignCount] = await Promise.all([
-                prisma.contact.count({
+                database_1.default.contact.count({
                     where: { organizationId }
                 }).catch((err) => {
                     console.error('Error counting contacts:', err);
                     return 0;
                 }),
-                prisma.message.count({
+                database_1.default.message.count({
                     where: {
                         conversation: { organizationId },
                         direction: 'OUTBOUND',
@@ -241,7 +241,7 @@ class BillingService {
                     console.error('Error counting messages:', err);
                     return 0;
                 }),
-                prisma.campaign.count({
+                database_1.default.campaign.count({
                     where: {
                         organizationId,
                         createdAt: { gte: periodStart }
@@ -310,7 +310,7 @@ class BillingService {
             throw new Error('Payment gateway not configured. Please contact support.');
         }
         // Get plan by slug or type
-        let plan = await prisma.plan.findFirst({
+        let plan = await database_1.default.plan.findFirst({
             where: {
                 OR: [
                     { slug: planKey.toLowerCase() },
@@ -328,7 +328,7 @@ class BillingService {
             }
             // Create plan in database for future use
             try {
-                plan = await prisma.plan.create({
+                plan = await database_1.default.plan.create({
                     data: {
                         name: defaultPlan.name,
                         type: defaultPlan.type,
@@ -474,7 +474,7 @@ class BillingService {
             const notes = order.notes || {};
             console.log('Order notes:', notes);
             // Get plan from database
-            const plan = await prisma.plan.findUnique({
+            const plan = await database_1.default.plan.findUnique({
                 where: { id: notes.planId }
             });
             if (!plan) {
@@ -491,7 +491,7 @@ class BillingService {
                 periodEnd
             });
             // Update or create subscription
-            const subscription = await prisma.subscription.upsert({
+            const subscription = await database_1.default.subscription.upsert({
                 where: { organizationId },
                 create: {
                     organizationId,
@@ -517,7 +517,7 @@ class BillingService {
                 }
             });
             // Update organization plan type
-            await prisma.organization.update({
+            await database_1.default.organization.update({
                 where: { id: organizationId },
                 data: { planType: plan.type }
             });
@@ -542,7 +542,7 @@ class BillingService {
     // ============================================
     async upgradePlan(params) {
         const { organizationId, planType, billingCycle = 'monthly' } = params;
-        const plan = await prisma.plan.findFirst({
+        const plan = await database_1.default.plan.findFirst({
             where: {
                 OR: [
                     { type: planType.toUpperCase() },
@@ -559,7 +559,7 @@ class BillingService {
         }
         const now = new Date();
         const periodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-        const subscription = await prisma.subscription.upsert({
+        const subscription = await database_1.default.subscription.upsert({
             where: { organizationId },
             create: {
                 organizationId,
@@ -576,7 +576,7 @@ class BillingService {
                 currentPeriodEnd: periodEnd,
             },
         });
-        await prisma.organization.update({
+        await database_1.default.organization.update({
             where: { id: organizationId },
             data: { planType: plan.type },
         });
@@ -587,7 +587,7 @@ class BillingService {
     // ============================================
     async cancelSubscription(organizationId, reason) {
         try {
-            const existingSubscription = await prisma.subscription.findUnique({
+            const existingSubscription = await database_1.default.subscription.findUnique({
                 where: { organizationId }
             });
             if (!existingSubscription) {
@@ -596,7 +596,7 @@ class BillingService {
             if (existingSubscription.status === client_1.SubscriptionStatus.CANCELLED) {
                 throw new Error('Subscription is already cancelled');
             }
-            const subscription = await prisma.subscription.update({
+            const subscription = await database_1.default.subscription.update({
                 where: { organizationId },
                 data: {
                     status: client_1.SubscriptionStatus.CANCELLED,
@@ -611,7 +611,7 @@ class BillingService {
                 reason
             });
             if (reason) {
-                await prisma.activityLog.create({
+                await database_1.default.activityLog.create({
                     data: {
                         organizationId,
                         action: 'UPDATE',
@@ -635,7 +635,7 @@ class BillingService {
     // RESUME SUBSCRIPTION (Restored)
     // ============================================
     async resumeSubscription(organizationId) {
-        const subscription = await prisma.subscription.update({
+        const subscription = await database_1.default.subscription.update({
             where: { organizationId },
             data: {
                 status: client_1.SubscriptionStatus.ACTIVE,
@@ -663,7 +663,7 @@ class BillingService {
     // ============================================
     async checkSubscriptionStatus(organizationId) {
         try {
-            const subscription = await prisma.subscription.findUnique({
+            const subscription = await database_1.default.subscription.findUnique({
                 where: { organizationId },
                 include: { plan: true }
             });
@@ -676,7 +676,7 @@ class BillingService {
             if (isExpired || isCancelled) {
                 // Update status if expired
                 if (isExpired && subscription.status === client_1.SubscriptionStatus.ACTIVE) {
-                    await prisma.subscription.update({
+                    await database_1.default.subscription.update({
                         where: { organizationId },
                         data: { status: client_1.SubscriptionStatus.EXPIRED }
                     });

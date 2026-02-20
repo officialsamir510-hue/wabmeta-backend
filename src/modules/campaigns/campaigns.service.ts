@@ -20,7 +20,7 @@ import {
   AudienceFilter,
 } from './campaigns.types';
 
-const prisma = new PrismaClient();
+import prisma from '../../config/database';
 
 // ============================================
 // HELPER FUNCTIONS

@@ -1,5 +1,5 @@
 "use strict";
-// 📁 src/modules/campaigns/campaigns.routes.ts - COMPLETE CAMPAIGN ROUTES
+// 📁 src/modules/campaigns/campaigns.routes.ts - COMPLETE WITH CSV UPLOAD
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
@@ -55,6 +55,29 @@ router.use(auth_1.authenticate);
  * @access  Private
  */
 router.get('/stats', campaigns_controller_1.campaignsController.getStats.bind(campaigns_controller_1.campaignsController));
+// ============================================
+// CSV UPLOAD ROUTES (Must be before :id routes)
+// ============================================
+/**
+ * @route   POST /api/v1/campaigns/upload-contacts
+ * @desc    Upload CSV and create contacts
+ * @access  Private
+ * @body    FormData with 'file' field containing CSV
+ */
+router.post('/upload-contacts', campaigns_controller_1.csvUpload, campaigns_controller_1.campaignsController.uploadContacts.bind(campaigns_controller_1.campaignsController));
+/**
+ * @route   GET /api/v1/campaigns/upload-template
+ * @desc    Get CSV upload template format
+ * @access  Private
+ */
+router.get('/upload-template', campaigns_controller_1.campaignsController.getUploadTemplate.bind(campaigns_controller_1.campaignsController));
+/**
+ * @route   POST /api/v1/campaigns/upload-validate
+ * @desc    Validate CSV file without importing
+ * @access  Private
+ * @body    FormData with 'file' field containing CSV
+ */
+router.post('/upload-validate', campaigns_controller_1.csvUpload, campaigns_controller_1.campaignsController.validateCsvFile.bind(campaigns_controller_1.campaignsController));
 // ============================================
 // CAMPAIGN CRUD ROUTES
 // ============================================

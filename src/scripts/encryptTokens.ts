@@ -9,7 +9,7 @@ import {
     maskToken
 } from '../utils/encryption';
 
-const prisma = new PrismaClient();
+import prisma from '../config/database';
 
 async function encryptTokens() {
     console.log('🔐 Starting token encryption process...\n');

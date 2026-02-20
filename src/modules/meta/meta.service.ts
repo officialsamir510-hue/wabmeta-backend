@@ -14,7 +14,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ConnectionProgress } from './meta.types';
 import { AppError } from '../../middleware/errorHandler';
 
-const prisma = new PrismaClient();
+import prisma from '../../config/database';
 
 export class MetaService {
   // ============================================

@@ -1,9 +1,12 @@
 "use strict";
 // src/scripts/encryptTokens.ts
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 const client_1 = require("@prisma/client");
 const encryption_1 = require("../utils/encryption");
-const prisma = new client_1.PrismaClient();
+const database_1 = __importDefault(require("../config/database"));
 async function encryptTokens() {
     console.log('🔐 Starting token encryption process...\n');
     // Validate encryption key
@@ -13,7 +16,7 @@ async function encryptTokens() {
     }
     try {
         // Get all WhatsApp accounts with tokens
-        const accounts = await prisma.whatsAppAccount.findMany({
+        const accounts = await database_1.default.whatsAppAccount.findMany({
             where: {
                 accessToken: { not: null },
             },
@@ -42,7 +45,7 @@ async function encryptTokens() {
                 // Check if it's a valid Meta token
                 if (!(0, encryption_1.isMetaToken)(token)) {
                     console.log(`❌ Account ${account.id}: Invalid token format - marking as disconnected`);
-                    await prisma.whatsAppAccount.update({
+                    await database_1.default.whatsAppAccount.update({
                         where: { id: account.id },
                         data: {
                             status: client_1.WhatsAppAccountStatus.DISCONNECTED,
@@ -59,7 +62,7 @@ async function encryptTokens() {
                 const encryptedToken = (0, encryption_1.encrypt)(token);
                 console.log(`   Encrypted: ${encryptedToken.substring(0, 50)}...`);
                 // Update in database
-                await prisma.whatsAppAccount.update({
+                await database_1.default.whatsAppAccount.update({
                     where: { id: account.id },
                     data: {
                         accessToken: encryptedToken,
@@ -85,7 +88,7 @@ async function encryptTokens() {
         process.exit(1);
     }
     finally {
-        await prisma.$disconnect();
+        await database_1.default.$disconnect();
     }
 }
 // Run if called directly

@@ -1,11 +1,14 @@
 "use strict";
 // src/modules/whatsapp/whatsapp.service.ts
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.whatsappService = void 0;
 const client_1 = require("@prisma/client");
 const meta_api_1 = require("../meta/meta.api");
 const encryption_1 = require("../../utils/encryption");
-const prisma = new client_1.PrismaClient();
+const database_1 = __importDefault(require("../../config/database"));
 // ============================================
 // WHATSAPP SERVICE CLASS
 // ============================================
@@ -24,10 +27,58 @@ class WhatsAppService {
             value.startsWith('EAAI'));
     }
     /**
+     * ✅ NEW: Extract plain text content from message payload
+     */
+    extractMessageContent(type, content) {
+        if (typeof content === 'string') {
+            return content;
+        }
+        // Extract text from different message types
+        switch (type.toLowerCase()) {
+            case 'text':
+                // Handle nested structure: { text: { body: "message" } }
+                if (content?.text?.body) {
+                    return content.text.body;
+                }
+                // Handle direct body
+                if (content?.body) {
+                    return content.body;
+                }
+                // Fallback to stringified content
+                return JSON.stringify(content);
+            case 'template':
+                const templateName = content?.template?.name || 'Unknown Template';
+                return `📋 Template: ${templateName}`;
+            case 'image':
+                const imageCaption = content?.image?.caption || '';
+                return imageCaption || '📷 Image';
+            case 'video':
+                const videoCaption = content?.video?.caption || '';
+                return videoCaption || '🎥 Video';
+            case 'document':
+                const docCaption = content?.document?.caption || '';
+                const fileName = content?.document?.filename || '';
+                return docCaption || fileName || '📄 Document';
+            case 'audio':
+                return '🎵 Audio';
+            case 'location':
+                const locationName = content?.location?.name || '';
+                return locationName || '📍 Location';
+            case 'sticker':
+                return '🎭 Sticker';
+            case 'contacts':
+                return '👤 Contact';
+            case 'interactive':
+                return content?.interactive?.body?.text || 'Interactive message';
+            default:
+                return JSON.stringify(content);
+        }
+    }
+    /**
      * Get account with safe token decryption - ✅ FIXED VERSION
      */
     async getAccountWithToken(accountId) {
-        const account = await prisma.whatsAppAccount.findUnique({
+        const account = await database_1.default.whatsAppAccount.findUnique({
             where: { id: accountId },
             include: { organization: true },
         });
@@ -93,7 +144,7 @@ class WhatsAppService {
             : `+${this.formatPhoneNumber(phone)}`;
         // Try finding by exact match or just digits match
         const cleanPhone = this.formatPhoneNumber(phone);
-        let contact = await prisma.contact.findFirst({
+        let contact = await database_1.default.contact.findFirst({
             where: {
                 organizationId,
                 OR: [
@@ -104,7 +155,7 @@ class WhatsAppService {
             },
         });
         if (!contact) {
-            contact = await prisma.contact.create({
+            contact = await database_1.default.contact.create({
                 data: {
                     organizationId,
                     phone: formattedPhone,
@@ -122,10 +173,10 @@ class WhatsAppService {
      */
     async getOrCreateConversation(organizationId, contactId, phoneNumberId, messagePreview, existingConversationId) {
         let conversation = existingConversationId
-            ? await prisma.conversation.findUnique({
+            ? await database_1.default.conversation.findUnique({
                 where: { id: existingConversationId },
             })
-            : await prisma.conversation.findUnique({
+            : await database_1.default.conversation.findUnique({
                 where: {
                     organizationId_contactId: {
                         organizationId,
@@ -134,7 +185,7 @@ class WhatsAppService {
                 },
             });
         if (!conversation) {
-            conversation = await prisma.conversation.create({
+            conversation = await database_1.default.conversation.create({
                 data: {
                     organizationId,
                     phoneNumberId,
@@ -148,7 +199,7 @@ class WhatsAppService {
             console.log(`💬 Created new conversation: ${conversation.id}`);
         }
         else {
-            await prisma.conversation.update({
+            await database_1.default.conversation.update({
                 where: { id: conversation.id },
                 data: {
                     lastMessageAt: new Date(),
@@ -220,7 +271,7 @@ class WhatsAppService {
         });
     }
     /**
-     * Core send message function - ✅ FIXED VERSION
+     * Core send message function - ✅ FIXED VERSION WITH CONTENT EXTRACTION
      */
     async sendMessage(options) {
         const { accountId, to, type, content, conversationId } = options;
@@ -253,12 +304,14 @@ class WhatsAppService {
             console.log(`   Message ID: ${result.messageId}`);
             // Get or create contact
             const contact = await this.getOrCreateContact(organizationId, to);
-            // Get message preview
-            const messagePreview = this.getMessagePreview(type, content);
+            // ✅ Extract clean content for preview and storage
+            const messageContent = this.extractMessageContent(type, content);
+            const messagePreview = messageContent.substring(0, 100);
+            console.log(`   Message Content: ${messageContent.substring(0, 50)}...`);
             // Get or create conversation
             const conversation = await this.getOrCreateConversation(organizationId, contact.id, account.phoneNumberId, messagePreview, conversationId);
-            // Save message to database
-            const message = await prisma.message.create({
+            // ✅ Save message to database with clean content
+            const message = await database_1.default.message.create({
                 data: {
                     conversationId: conversation.id,
                     whatsappAccountId: accountId,
@@ -266,7 +319,7 @@ class WhatsAppService {
                     waMessageId: result.messageId, // Duplicate for backward compatibility
                     direction: client_1.MessageDirection.OUTBOUND,
                     type: this.mapMessageType(type),
-                    content: typeof content === 'string' ? content : JSON.stringify(content),
+                    content: messageContent, // ✅ Now saves clean text instead of JSON
                     status: client_1.MessageStatus.SENT,
                     sentAt: new Date(),
                 },
@@ -277,6 +330,10 @@ class WhatsAppService {
                         },
                     },
                 },
+            });
+            console.log(`💾 Message saved to DB:`, {
+                id: message.id,
+                content: messageContent.substring(0, 50) + '...',
             });
             console.log(`📤 ========== SEND MESSAGE END ==========\n`);
             return {
@@ -290,16 +347,17 @@ class WhatsAppService {
                 error: error.message,
                 response: error.response?.data,
             });
-            // Save failed message for tracking
+            // ✅ Save failed message with clean content
             if (conversationId) {
                 try {
-                    await prisma.message.create({
+                    const failedContent = this.extractMessageContent(type, content);
+                    await database_1.default.message.create({
                         data: {
                             conversationId,
                             whatsappAccountId: accountId,
                             direction: client_1.MessageDirection.OUTBOUND,
                             type: this.mapMessageType(type),
-                            content: typeof content === 'string' ? content : JSON.stringify(content),
+                            content: failedContent, // ✅ Clean content for failed messages too
                             status: client_1.MessageStatus.FAILED,
                             failureReason: error.response?.data?.error?.message || error.message,
                             sentAt: new Date(),
@@ -330,7 +388,7 @@ class WhatsAppService {
         console.log(`   Campaign ID: ${campaignId}`);
         console.log(`   Batch Size: ${batchSize}`);
         console.log(`   Delay: ${delayMs}ms`);
-        const campaign = await prisma.campaign.findUnique({
+        const campaign = await database_1.default.campaign.findUnique({
             where: { id: campaignId },
             include: {
                 template: true,
@@ -359,7 +417,7 @@ class WhatsAppService {
         catch (error) {
             console.error('❌ Failed to get access token for campaign:', error);
             // Update campaign with failure
-            await prisma.campaign.update({
+            await database_1.default.campaign.update({
                 where: { id: campaignId },
                 data: {
                     status: 'FAILED',
@@ -450,7 +508,7 @@ class WhatsAppService {
                 break;
         }
         // Update CampaignContact
-        await prisma.campaignContact.updateMany({
+        await database_1.default.campaignContact.updateMany({
             where: {
                 campaignId,
                 contactId,
@@ -466,7 +524,7 @@ class WhatsAppService {
         };
         const fieldToIncrement = countFieldMap[status];
         if (fieldToIncrement) {
-            await prisma.campaign.update({
+            await database_1.default.campaign.update({
                 where: { id: campaignId },
                 data: {
                     [fieldToIncrement]: { increment: 1 },
@@ -478,18 +536,18 @@ class WhatsAppService {
      * Check if campaign is complete and update status
      */
     async checkCampaignCompletion(campaignId) {
-        const remainingRecipients = await prisma.campaignContact.count({
+        const remainingRecipients = await database_1.default.campaignContact.count({
             where: {
                 campaignId,
                 status: client_1.MessageStatus.PENDING,
             },
         });
         if (remainingRecipients === 0) {
-            const campaign = await prisma.campaign.findUnique({
+            const campaign = await database_1.default.campaign.findUnique({
                 where: { id: campaignId },
                 select: { sentCount: true, failedCount: true },
             });
-            await prisma.campaign.update({
+            await database_1.default.campaign.update({
                 where: { id: campaignId },
                 data: {
                     status: 'COMPLETED',
@@ -512,7 +570,7 @@ class WhatsAppService {
             const { account, accessToken } = await this.getAccountWithToken(accountId);
             await meta_api_1.metaApi.markMessageAsRead(account.phoneNumberId, accessToken, messageId);
             // Also update DB
-            await prisma.message.updateMany({
+            await database_1.default.message.updateMany({
                 where: { wamId: messageId },
                 data: {
                     status: client_1.MessageStatus.READ,
@@ -678,7 +736,7 @@ class WhatsAppService {
      * Get default WhatsApp account for organization
      */
     async getDefaultAccount(organizationId) {
-        const account = await prisma.whatsAppAccount.findFirst({
+        const account = await database_1.default.whatsAppAccount.findFirst({
             where: {
                 organizationId,
                 isDefault: true,
@@ -687,7 +745,7 @@ class WhatsAppService {
         });
         if (!account) {
             // Fallback to any connected account
-            return prisma.whatsAppAccount.findFirst({
+            return database_1.default.whatsAppAccount.findFirst({
                 where: {
                     organizationId,
                     status: client_1.WhatsAppAccountStatus.CONNECTED,

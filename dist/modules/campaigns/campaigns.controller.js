@@ -1,10 +1,39 @@
 "use strict";
-// src/modules/campaigns/campaigns.controller.ts
+// 📁 src/modules/campaigns/campaigns.controller.ts - COMPLETE FINAL VERSION
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.campaignsController = exports.CampaignsController = void 0;
+exports.campaignsController = exports.CampaignsController = exports.csvUpload = void 0;
+const multer_1 = __importDefault(require("multer"));
 const campaigns_service_1 = require("./campaigns.service");
+const campaigns_upload_service_1 = require("./campaigns.upload.service");
 const response_1 = require("../../utils/response");
 const errorHandler_1 = require("../../middleware/errorHandler");
+// ==========================================
+// MULTER CONFIGURATION FOR CSV UPLOAD
+// ==========================================
+const upload = (0, multer_1.default)({
+    storage: multer_1.default.memoryStorage(),
+    limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB max file size
+    },
+    fileFilter: (req, file, cb) => {
+        const isCSV = file.mimetype === 'text/csv' ||
+            file.mimetype === 'application/vnd.ms-excel' ||
+            file.originalname.endsWith('.csv');
+        if (isCSV) {
+            cb(null, true);
+        }
+        else {
+            cb(new Error('Only CSV files are allowed'));
+        }
+    },
+});
+exports.csvUpload = upload.single('file');
+// ==========================================
+// CAMPAIGNS CONTROLLER CLASS
+// ==========================================
 class CampaignsController {
     // ==========================================
     // CREATE CAMPAIGN
@@ -16,6 +45,11 @@ class CampaignsController {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
             const input = req.body;
+            console.log('📦 Creating campaign:', {
+                organizationId,
+                userId: req.user.id,
+                name: input.name,
+            });
             const campaign = await campaigns_service_1.campaignsService.create(organizationId, req.user.id, input);
             return (0, response_1.sendSuccess)(res, campaign, 'Campaign created successfully', 201);
         }
@@ -35,7 +69,7 @@ class CampaignsController {
             const query = {
                 page: parseInt(req.query.page) || 1,
                 limit: parseInt(req.query.limit) || 20,
-                search: req.query.search,
+                search: req.query.search ? String(req.query.search) : undefined,
                 status: req.query.status,
                 sortBy: req.query.sortBy || 'createdAt',
                 sortOrder: req.query.sortOrder || 'desc',
@@ -61,7 +95,10 @@ class CampaignsController {
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const id = req.params.id; // ✅ Fixed
+            const id = String(req.params.id);
+            if (!id) {
+                throw new errorHandler_1.AppError('Campaign ID is required', 400);
+            }
             const campaign = await campaigns_service_1.campaignsService.getById(organizationId, id);
             return (0, response_1.sendSuccess)(res, campaign, 'Campaign fetched successfully');
         }
@@ -78,8 +115,12 @@ class CampaignsController {
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const id = req.params.id; // ✅ Fixed
+            const id = String(req.params.id);
+            if (!id) {
+                throw new errorHandler_1.AppError('Campaign ID is required', 400);
+            }
             const input = req.body;
+            console.log('📝 Updating campaign:', { id, organizationId });
             const campaign = await campaigns_service_1.campaignsService.update(organizationId, id, input);
             return (0, response_1.sendSuccess)(res, campaign, 'Campaign updated successfully');
         }
@@ -96,7 +137,11 @@ class CampaignsController {
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const id = req.params.id; // ✅ Fixed
+            const id = String(req.params.id);
+            if (!id) {
+                throw new errorHandler_1.AppError('Campaign ID is required', 400);
+            }
+            console.log('🗑️ Deleting campaign:', { id, organizationId });
             const result = await campaigns_service_1.campaignsService.delete(organizationId, id);
             return (0, response_1.sendSuccess)(res, result, result.message);
         }
@@ -113,7 +158,11 @@ class CampaignsController {
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const id = req.params.id; // ✅ Fixed
+            const id = String(req.params.id);
+            if (!id) {
+                throw new errorHandler_1.AppError('Campaign ID is required', 400);
+            }
+            console.log('🚀 Starting campaign:', { id, organizationId });
             const campaign = await campaigns_service_1.campaignsService.start(organizationId, id);
             return (0, response_1.sendSuccess)(res, campaign, 'Campaign started successfully');
         }
@@ -130,7 +179,11 @@ class CampaignsController {
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const id = req.params.id; // ✅ Fixed
+            const id = String(req.params.id);
+            if (!id) {
+                throw new errorHandler_1.AppError('Campaign ID is required', 400);
+            }
+            console.log('⏸️ Pausing campaign:', { id, organizationId });
             const campaign = await campaigns_service_1.campaignsService.pause(organizationId, id);
             return (0, response_1.sendSuccess)(res, campaign, 'Campaign paused successfully');
         }
@@ -147,7 +200,11 @@ class CampaignsController {
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const id = req.params.id; // ✅ Fixed
+            const id = String(req.params.id);
+            if (!id) {
+                throw new errorHandler_1.AppError('Campaign ID is required', 400);
+            }
+            console.log('▶️ Resuming campaign:', { id, organizationId });
             const campaign = await campaigns_service_1.campaignsService.resume(organizationId, id);
             return (0, response_1.sendSuccess)(res, campaign, 'Campaign resumed successfully');
         }
@@ -164,7 +221,11 @@ class CampaignsController {
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const id = req.params.id; // ✅ Fixed
+            const id = String(req.params.id);
+            if (!id) {
+                throw new errorHandler_1.AppError('Campaign ID is required', 400);
+            }
+            console.log('❌ Cancelling campaign:', { id, organizationId });
             const campaign = await campaigns_service_1.campaignsService.cancel(organizationId, id);
             return (0, response_1.sendSuccess)(res, campaign, 'Campaign cancelled successfully');
         }
@@ -181,7 +242,10 @@ class CampaignsController {
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const id = req.params.id; // ✅ Fixed
+            const id = String(req.params.id);
+            if (!id) {
+                throw new errorHandler_1.AppError('Campaign ID is required', 400);
+            }
             const query = {
                 page: parseInt(req.query.page) || 1,
                 limit: parseInt(req.query.limit) || 50,
@@ -208,8 +272,17 @@ class CampaignsController {
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const id = req.params.id; // ✅ Fixed
-            const { retryFailed, retryPending } = req.body;
+            const id = String(req.params.id);
+            if (!id) {
+                throw new errorHandler_1.AppError('Campaign ID is required', 400);
+            }
+            const { retryFailed = true, retryPending = false } = req.body;
+            console.log('🔄 Retrying campaign messages:', {
+                id,
+                organizationId,
+                retryFailed,
+                retryPending,
+            });
             const result = await campaigns_service_1.campaignsService.retry(organizationId, id, retryFailed, retryPending);
             return (0, response_1.sendSuccess)(res, result, result.message);
         }
@@ -226,9 +299,16 @@ class CampaignsController {
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const id = req.params.id; // ✅ Fixed
+            const id = String(req.params.id);
+            if (!id) {
+                throw new errorHandler_1.AppError('Campaign ID is required', 400);
+            }
             const { name } = req.body;
-            const campaign = await campaigns_service_1.campaignsService.duplicate(organizationId, id, name);
+            if (!name || typeof name !== 'string' || name.trim().length === 0) {
+                throw new errorHandler_1.AppError('Campaign name is required', 400);
+            }
+            console.log('📋 Duplicating campaign:', { id, newName: name });
+            const campaign = await campaigns_service_1.campaignsService.duplicate(organizationId, id, name.trim());
             return (0, response_1.sendSuccess)(res, campaign, 'Campaign duplicated successfully', 201);
         }
         catch (error) {
@@ -260,7 +340,10 @@ class CampaignsController {
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const id = req.params.id; // ✅ Fixed
+            const id = String(req.params.id);
+            if (!id) {
+                throw new errorHandler_1.AppError('Campaign ID is required', 400);
+            }
             const analytics = await campaigns_service_1.campaignsService.getAnalytics(organizationId, id);
             return (0, response_1.sendSuccess)(res, analytics, 'Analytics fetched successfully');
         }
@@ -268,8 +351,99 @@ class CampaignsController {
             next(error);
         }
     }
+    // ==========================================
+    // ✅ NEW: UPLOAD CSV CONTACTS
+    // ==========================================
+    async uploadContacts(req, res, next) {
+        try {
+            const userId = req.user.id;
+            const organizationId = req.user.organizationId;
+            if (!organizationId) {
+                throw new errorHandler_1.AppError('Organization context required', 400);
+            }
+            if (!req.file) {
+                throw new errorHandler_1.AppError('CSV file is required', 400);
+            }
+            console.log('📤 Processing CSV upload:', {
+                userId,
+                organizationId,
+                filename: req.file.originalname,
+                size: req.file.size,
+            });
+            const result = await campaigns_upload_service_1.campaignUploadService.processCsvFile(req.file.buffer, userId, organizationId);
+            console.log('✅ CSV processed successfully:', {
+                total: result.totalRows,
+                successful: result.validRows,
+                failed: result.invalidRows,
+            });
+            return (0, response_1.sendSuccess)(res, result, 'CSV processed successfully');
+        }
+        catch (error) {
+            console.error('❌ CSV upload error:', error);
+            // Handle multer errors
+            if (error.message === 'Only CSV files are allowed') {
+                return next(new errorHandler_1.AppError('Only CSV files are allowed', 400));
+            }
+            if (error.code === 'LIMIT_FILE_SIZE') {
+                return next(new errorHandler_1.AppError('File size exceeds 5MB limit', 400));
+            }
+            next(error);
+        }
+    }
+    // ==========================================
+    // ✅ NEW: GET CSV UPLOAD TEMPLATE
+    // ==========================================
+    async getUploadTemplate(req, res, next) {
+        try {
+            const template = campaigns_upload_service_1.campaignUploadService.getTemplateHeaders();
+            return (0, response_1.sendSuccess)(res, {
+                headers: template,
+                example: {
+                    phone: '+911234567890',
+                    firstName: 'John',
+                    lastName: 'Doe',
+                    email: 'john@example.com',
+                    tags: 'customer,premium',
+                },
+                instructions: [
+                    'Phone number is required',
+                    'Use international format with country code (e.g., +911234567890)',
+                    'Tags should be comma-separated',
+                    'All other fields are optional',
+                ],
+            }, 'CSV template fetched successfully');
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    // ==========================================
+    // ✅ NEW: VALIDATE CSV FILE
+    // ==========================================
+    async validateCsvFile(req, res, next) {
+        try {
+            if (!req.file) {
+                throw new errorHandler_1.AppError('CSV file is required', 400);
+            }
+            console.log('🔍 Validating CSV file:', {
+                filename: req.file.originalname,
+                size: req.file.size,
+            });
+            const validation = await campaigns_upload_service_1.campaignUploadService.validateCsvFile(req.file.buffer);
+            return (0, response_1.sendSuccess)(res, validation, 'CSV validation completed');
+        }
+        catch (error) {
+            console.error('❌ CSV validation error:', error);
+            if (error.message === 'Only CSV files are allowed') {
+                return next(new errorHandler_1.AppError('Only CSV files are allowed', 400));
+            }
+            next(error);
+        }
+    }
 }
 exports.CampaignsController = CampaignsController;
-// Export singleton instance
+// ==========================================
+// EXPORT SINGLETON INSTANCE
+// ==========================================
 exports.campaignsController = new CampaignsController();
 //# sourceMappingURL=campaigns.controller.js.map

@@ -10,8 +10,9 @@ export declare class TemplatesService {
     }): Promise<TemplateResponse>;
     getList(organizationId: string, query: TemplatesQueryInput & {
         whatsappAccountId?: string;
+        wabaId?: string;
     }): Promise<TemplatesListResponse>;
-    getApprovedTemplates(organizationId: string, whatsappAccountId?: string): Promise<TemplateResponse[]>;
+    getApprovedTemplates(organizationId: string, whatsappAccountId?: string, wabaId?: string): Promise<TemplateResponse[]>;
     syncFromMeta(organizationId: string, whatsappAccountId?: string): Promise<{
         message: string;
         synced: number;
