@@ -33,7 +33,7 @@ const upload = multer({
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB max file size
   },
-  fileFilter: (req: Request, file: any, cb: multer.FileFilterCallback) => {
+  fileFilter: (req: Request, file: any, cb: any) => {
     const isCSV =
       file.mimetype === 'text/csv' ||
       file.mimetype === 'application/vnd.ms-excel' ||
