@@ -5,19 +5,11 @@ import prisma from '../../config/database';
 export class DashboardService {
   async getDashboardStats(userId: string, organizationId: string) {
     try {
-      const [
-        totalContacts,
-        totalCampaigns,
-        totalTemplates,
-        totalConversations,
-        messagesStats
-      ] = await Promise.all([
-        prisma.contact.count({ where: { organizationId } }),
-        prisma.campaign.count({ where: { organizationId } }),
-        prisma.template.count({ where: { organizationId } }),
-        prisma.conversation.count({ where: { organizationId } }),
-        this.getMessageStats(organizationId)
-      ]);
+      const totalContacts = await prisma.contact.count({ where: { organizationId } });
+      const totalCampaigns = await prisma.campaign.count({ where: { organizationId } });
+      const totalTemplates = await prisma.template.count({ where: { organizationId } });
+      const totalConversations = await prisma.conversation.count({ where: { organizationId } });
+      const messagesStats = await this.getMessageStats(organizationId);
 
       return {
         totalContacts,
@@ -37,37 +29,30 @@ export class DashboardService {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      const [
-        contactsToday,
-        messagesToday,
-        campaignsActive,
-        unreadConversations
-      ] = await Promise.all([
-        prisma.contact.count({
-          where: {
-            organizationId,
-            createdAt: { gte: today }
-          }
-        }),
-        prisma.message.count({
-          where: {
-            conversation: { organizationId },
-            createdAt: { gte: today }
-          }
-        }),
-        prisma.campaign.count({
-          where: {
-            organizationId,
-            status: 'RUNNING'
-          }
-        }),
-        prisma.conversation.count({
-          where: {
-            organizationId,
-            unreadCount: { gt: 0 }
-          }
-        })
-      ]);
+      const contactsToday = await prisma.contact.count({
+        where: {
+          organizationId,
+          createdAt: { gte: today }
+        }
+      });
+      const messagesToday = await prisma.message.count({
+        where: {
+          conversation: { organizationId },
+          createdAt: { gte: today }
+        }
+      });
+      const campaignsActive = await prisma.campaign.count({
+        where: {
+          organizationId,
+          status: 'RUNNING'
+        }
+      });
+      const unreadConversations = await prisma.conversation.count({
+        where: {
+          organizationId,
+          unreadCount: { gt: 0 }
+        }
+      });
 
       return {
         contactsToday,
@@ -141,7 +126,7 @@ export class DashboardService {
       ] = await Promise.all([
         // Total contacts
         prisma.contact.count({ where: { organizationId } }),
-        
+
         // New contacts in period
         prisma.contact.count({
           where: {
@@ -149,14 +134,14 @@ export class DashboardService {
             createdAt: { gte: startDate }
           }
         }),
-        
+
         // Total messages
         prisma.message.count({
           where: {
             conversation: { organizationId }
           }
         }),
-        
+
         // Messages sent in period
         prisma.message.count({
           where: {
@@ -165,7 +150,7 @@ export class DashboardService {
             createdAt: { gte: startDate }
           }
         }),
-        
+
         // Delivered messages
         prisma.message.count({
           where: {
@@ -174,7 +159,7 @@ export class DashboardService {
             createdAt: { gte: startDate }
           }
         }),
-        
+
         // Read messages
         prisma.message.count({
           where: {
@@ -183,7 +168,7 @@ export class DashboardService {
             createdAt: { gte: startDate }
           }
         }),
-        
+
         // Failed messages
         prisma.message.count({
           where: {
@@ -192,7 +177,7 @@ export class DashboardService {
             createdAt: { gte: startDate }
           }
         }),
-        
+
         // Active campaigns
         prisma.campaign.count({
           where: {
@@ -200,7 +185,7 @@ export class DashboardService {
             status: { in: ['RUNNING', 'SCHEDULED'] }
           }
         }),
-        
+
         // Completed campaigns
         prisma.campaign.count({
           where: {
@@ -208,10 +193,10 @@ export class DashboardService {
             status: 'COMPLETED'
           }
         }),
-        
+
         // Total templates
         prisma.template.count({ where: { organizationId } }),
-        
+
         // Approved templates
         prisma.template.count({
           where: {
@@ -219,7 +204,7 @@ export class DashboardService {
             status: 'APPROVED'
           }
         }),
-        
+
         // Unread conversations
         prisma.conversation.count({
           where: {
@@ -227,7 +212,7 @@ export class DashboardService {
             unreadCount: { gt: 0 }
           }
         }),
-        
+
         // WhatsApp accounts
         prisma.whatsAppAccount.count({
           where: {
@@ -238,16 +223,16 @@ export class DashboardService {
       ]);
 
       // Calculate rates
-      const deliveryRate = sentMessages > 0 
-        ? Math.round((deliveredMessages / sentMessages) * 100) 
-        : 0;
-      
-      const readRate = deliveredMessages > 0 
-        ? Math.round((readMessages / deliveredMessages) * 100) 
+      const deliveryRate = sentMessages > 0
+        ? Math.round((deliveredMessages / sentMessages) * 100)
         : 0;
 
-      const failureRate = sentMessages > 0 
-        ? Math.round((failedMessages / sentMessages) * 100) 
+      const readRate = deliveredMessages > 0
+        ? Math.round((readMessages / deliveredMessages) * 100)
+        : 0;
+
+      const failureRate = sentMessages > 0
+        ? Math.round((failedMessages / sentMessages) * 100)
         : 0;
 
       return {
@@ -320,7 +305,7 @@ export class DashboardService {
             }
           }
         }),
-        
+
         // Recent campaigns
         prisma.campaign.findMany({
           where: { organizationId },
@@ -335,7 +320,7 @@ export class DashboardService {
             updatedAt: true
           }
         }),
-        
+
         // Recent contacts
         prisma.contact.findMany({
           where: { organizationId },
@@ -358,7 +343,7 @@ export class DashboardService {
           id: msg.id,
           title: msg.direction === 'INBOUND' ? 'Message received' : 'Message sent',
           description: msg.content?.substring(0, 50) || 'Media message',
-          contact: msg.conversation?.contact 
+          contact: msg.conversation?.contact
             ? `${msg.conversation.contact.firstName || ''} ${msg.conversation.contact.lastName || ''}`.trim() || msg.conversation.contact.phone
             : 'Unknown',
           timestamp: msg.createdAt,
@@ -382,7 +367,7 @@ export class DashboardService {
       ];
 
       // Sort by timestamp
-      activities.sort((a, b) => 
+      activities.sort((a, b) =>
         new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
       );
 
@@ -446,23 +431,23 @@ export class DashboardService {
   private formatChartData(data: any[], days: number) {
     const result = [];
     const today = new Date();
-    
+
     for (let i = days - 1; i >= 0; i--) {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
       const dateStr = date.toISOString().split('T')[0];
-      
+
       const count = data.filter(d => {
         const dDate = new Date(d.createdAt).toISOString().split('T')[0];
         return dDate === dateStr;
       }).reduce((sum, d) => sum + (d._count?.id || 0), 0);
-      
+
       result.push({
         date: dateStr,
         count
       });
     }
-    
+
     return result;
   }
 }

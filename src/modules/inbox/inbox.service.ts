@@ -542,18 +542,16 @@ class InboxService {
       baseWhere.phoneNumberId = accountIdOrUserId;
     }
 
-    const [total, open, unread, archived] = await Promise.all([
-      prisma.conversation.count({ where: baseWhere }),
-      prisma.conversation.count({
-        where: { ...baseWhere, isWindowOpen: true, isArchived: false },
-      }),
-      prisma.conversation.count({
-        where: { ...baseWhere, unreadCount: { gt: 0 } },
-      }),
-      prisma.conversation.count({
-        where: { ...baseWhere, isArchived: true },
-      }),
-    ]);
+    const total = await prisma.conversation.count({ where: baseWhere });
+    const open = await prisma.conversation.count({
+      where: { ...baseWhere, isWindowOpen: true, isArchived: false },
+    });
+    const unread = await prisma.conversation.count({
+      where: { ...baseWhere, unreadCount: { gt: 0 } },
+    });
+    const archived = await prisma.conversation.count({
+      where: { ...baseWhere, isArchived: true },
+    });
 
     return { total, open, unread, archived };
   }

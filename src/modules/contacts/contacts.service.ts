@@ -534,14 +534,12 @@ export class ContactsService {
   async getStats(organizationId: string): Promise<ContactStats> {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    const [total, active, blocked, unsubscribed, recentlyAdded, withMessages] = await Promise.all([
-      prisma.contact.count({ where: { organizationId } }),
-      prisma.contact.count({ where: { organizationId, status: 'ACTIVE' } }),
-      prisma.contact.count({ where: { organizationId, status: 'BLOCKED' } }),
-      prisma.contact.count({ where: { organizationId, status: 'UNSUBSCRIBED' } }),
-      prisma.contact.count({ where: { organizationId, createdAt: { gte: sevenDaysAgo } } }),
-      prisma.contact.count({ where: { organizationId, messageCount: { gt: 0 } } }),
-    ]);
+    const total = await prisma.contact.count({ where: { organizationId } });
+    const active = await prisma.contact.count({ where: { organizationId, status: 'ACTIVE' } });
+    const blocked = await prisma.contact.count({ where: { organizationId, status: 'BLOCKED' } });
+    const unsubscribed = await prisma.contact.count({ where: { organizationId, status: 'UNSUBSCRIBED' } });
+    const recentlyAdded = await prisma.contact.count({ where: { organizationId, createdAt: { gte: sevenDaysAgo } } });
+    const withMessages = await prisma.contact.count({ where: { organizationId, messageCount: { gt: 0 } } });
 
     return { total, active, blocked, unsubscribed, recentlyAdded, withMessages };
   }
