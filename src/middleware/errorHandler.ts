@@ -25,9 +25,9 @@ const logErrorSafe = (err: unknown, req?: Request) => {
     const timestamp = new Date().toISOString();
     const method = req?.method || 'UNKNOWN';
     const url = req?.url || 'UNKNOWN';
-    
+
     console.error(`❌ [${timestamp}] ${method} ${url}`);
-    
+
     if (err instanceof Error) {
       console.error(`   Error: ${err.message}`);
       if (config.nodeEnv === 'development' && err.stack) {
@@ -35,7 +35,7 @@ const logErrorSafe = (err: unknown, req?: Request) => {
       }
       return;
     }
-    
+
     // Fallback for non-Error objects
     console.error('   Error:', typeof err === 'string' ? err : JSON.stringify(err));
   } catch {
@@ -126,7 +126,8 @@ export const errorHandler = (
         return sendJsonError(res, 'Database temporarily unavailable. Please try again.', 503);
       }
       default:
-        return sendJsonError(res, 'Database error', 500, [
+        console.error('⚠️ Unhandled Prisma Error:', err.code, err.message);
+        return sendJsonError(res, `Database error: ${err.code} ${err.message}`, 500, [
           { field: 'prisma', message: `Error code: ${err.code}` }
         ]);
     }
@@ -153,15 +154,15 @@ export const errorHandler = (
   // ============================================
   if (typeof err === 'object' && err !== null && 'name' in err) {
     const name = (err as any).name;
-    
+
     if (name === 'JsonWebTokenError') {
       return sendJsonError(res, 'Invalid token', 401);
     }
-    
+
     if (name === 'TokenExpiredError') {
       return sendJsonError(res, 'Token expired', 401);
     }
-    
+
     if (name === 'NotBeforeError') {
       return sendJsonError(res, 'Token not yet valid', 401);
     }
@@ -172,15 +173,15 @@ export const errorHandler = (
   // ============================================
   if (typeof err === 'object' && err !== null && 'code' in err) {
     const code = (err as any).code;
-    
+
     if (code === 'LIMIT_FILE_SIZE') {
       return sendJsonError(res, 'File too large', 400);
     }
-    
+
     if (code === 'LIMIT_FILE_COUNT') {
       return sendJsonError(res, 'Too many files', 400);
     }
-    
+
     if (code === 'LIMIT_UNEXPECTED_FILE') {
       return sendJsonError(res, 'Unexpected file field', 400);
     }
@@ -192,17 +193,17 @@ export const errorHandler = (
   if (typeof err === 'object' && err !== null && 'isAxiosError' in err) {
     const axiosError = err as any;
     const status = axiosError.response?.status || 500;
-    const message = axiosError.response?.data?.error?.message || 
-                   axiosError.response?.data?.message || 
-                   axiosError.message || 
-                   'External API error';
-    
+    const message = axiosError.response?.data?.error?.message ||
+      axiosError.response?.data?.message ||
+      axiosError.message ||
+      'External API error';
+
     console.error('⚠️ External API error:', {
       status,
       url: axiosError.config?.url,
       message,
     });
-    
+
     return sendJsonError(res, message, status >= 500 ? 502 : status);
   }
 
@@ -224,7 +225,7 @@ export const errorHandler = (
     if (config.nodeEnv === 'development') {
       message = err.message;
     }
-    
+
     // Check for status code in error object
     if ('statusCode' in err && typeof (err as any).statusCode === 'number') {
       statusCode = (err as any).statusCode;
@@ -240,8 +241,8 @@ export const errorHandler = (
 // ============================================
 export const notFoundHandler = (req: Request, res: Response) => {
   sendJsonError(
-    res, 
-    `Route ${req.method} ${req.originalUrl} not found`, 
+    res,
+    `Route ${req.method} ${req.originalUrl} not found`,
     404
   );
 };

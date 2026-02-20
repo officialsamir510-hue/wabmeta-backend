@@ -3,11 +3,25 @@
 import { PrismaClient } from '@prisma/client';
 
 const createPrismaClient = () => {
-  const client = new PrismaClient({
-    log: process.env.NODE_ENV === 'development' 
-      ? ['query', 'error', 'warn'] 
+  let dbUrl = process.env.DATABASE_URL;
+  const prismaOptions: any = {
+    log: process.env.NODE_ENV === 'development'
+      ? ['query', 'error', 'warn']
       : ['error'],
-  });
+  };
+
+  if (dbUrl && dbUrl.includes('.pooler.supabase.com')) {
+    if (!dbUrl.includes('pgbouncer=true')) {
+      dbUrl += (dbUrl.includes('?') ? '&' : '?') + 'pgbouncer=true';
+    }
+    if (!dbUrl.includes('pool_timeout=')) {
+      dbUrl += '&pool_timeout=30';
+    }
+    prismaOptions.datasources = { db: { url: dbUrl } };
+    console.log('🔧 Auto-configured Supabase pooler connection string');
+  }
+
+  const client = new PrismaClient(prismaOptions);
 
   // ✅ Add connection retry logic
   client.$connect()

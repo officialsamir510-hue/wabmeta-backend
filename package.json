@@ -18,7 +18,7 @@
     "db:migrate": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
-    "render-build": "npm install --include=dev && npx prisma generate && tsc",
+    "render-build": "npm install --include=dev && npx prisma generate && npx prisma migrate deploy && tsc",
     "migrate:encrypt": "ts-node src/scripts/encryptTokens.ts",
     "migrate:encrypt:dry": "ts-node src/scripts/encryptTokens.ts --dry-run",
     "generate:key": "node -e \"console.log('ENCRYPTION_KEY=' + require('crypto').randomBytes(32).toString('hex'))\""

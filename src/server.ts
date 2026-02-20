@@ -216,7 +216,8 @@ async function bootstrap() {
       console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.error(error);
       console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      shutdown('uncaughtException');
+      // Do not shutdown aggressively to prevent websocket disconnects
+      // shutdown('uncaughtException');
     });
 
     // Handle unhandled promise rejections
@@ -228,7 +229,8 @@ async function bootstrap() {
       console.error('Promise:', promise);
       console.error('Reason:', reason);
       console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      shutdown('unhandledRejection');
+      // Do not shutdown aggressively to prevent websocket disconnects
+      // shutdown('unhandledRejection');
     });
   } catch (error) {
     console.error('');
