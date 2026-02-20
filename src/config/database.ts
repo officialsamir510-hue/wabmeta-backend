@@ -11,37 +11,22 @@ const createPrismaClient = () => {
   };
 
   if (dbUrl && dbUrl.includes('.pooler.supabase.com')) {
-    // 1. Render servers lack outbound IPv6, so we must use Supabase IPv4 pooler.
-    // 2. However, the default Transaction pooler (port 6543) aggressively drops idle connections,
-    //    causing Prisma P1001 errors "Can't reach database server" after some time.
-    // 3. We forcefully switch to the Session pooler (port 5432), which acts exactly like a 
-    //    direct connection, keeps sockets alive, and runs perfectly on Node.js backends.
-
-    try {
-      const parsedUrl = new URL(dbUrl);
-
-      // Force port 5432 (Session pooler)
-      if (parsedUrl.port === '6543') {
-        parsedUrl.port = '5432';
-      }
-
-      // Session pooler fully supports prepared statements, so remove pgbouncer=true
-      parsedUrl.searchParams.delete('pgbouncer');
-
-      // Add sane limits for long-running Node process
-      if (!parsedUrl.searchParams.has('connection_limit')) {
-        parsedUrl.searchParams.set('connection_limit', '10');
-      }
-      if (!parsedUrl.searchParams.has('pool_timeout')) {
-        parsedUrl.searchParams.set('pool_timeout', '30');
-      }
-
-      dbUrl = parsedUrl.toString();
-      prismaOptions.datasources = { db: { url: dbUrl } };
-      console.log('🔧 Auto-configured Supabase Session pooler (Port 5432) to prevent idle P1001 timeouts');
-    } catch (err) {
-      console.error('⚠️ Failed to auto-configure Supabase pooler URL:', err);
+    // 1. We must use the transaction pooler on port 6543 for Supabase Prisma interactions.
+    // 2. We NEED pgbouncer=true to correctly work with the Transaction Pooler.
+    if (!dbUrl.includes('pgbouncer=true')) {
+      dbUrl += (dbUrl.includes('?') ? '&' : '?') + 'pgbouncer=true';
     }
+
+    // 3. Add sane limits for long-running Node process
+    if (!dbUrl.includes('connection_limit=')) {
+      dbUrl += '&connection_limit=10';
+    }
+    if (!dbUrl.includes('pool_timeout=')) {
+      dbUrl += '&pool_timeout=30';
+    }
+
+    prismaOptions.datasources = { db: { url: dbUrl } };
+    console.log('🔧 Auto-configured Supabase Transaction pooler (pgbouncer=true)');
   }
 
   const client = new PrismaClient(prismaOptions);

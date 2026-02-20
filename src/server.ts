@@ -290,7 +290,7 @@ function startCronJobs() {
     ); // 24 hours
   }
 
-  // Health check every 30 minutes
+  // Health check every 3 minutes to prevent Supabase Transaction Pooler from dropping idle connections
   setInterval(
     async () => {
       try {
@@ -298,13 +298,13 @@ function startCronJobs() {
         await prisma.$queryRaw`SELECT 1`;
 
         // Log health status
-        console.log('✅ Health check passed');
+        // console.log('✅ DB Health check ping sent');
       } catch (error) {
-        console.error('❌ Health check failed:', error);
+        console.error('❌ DB Health check ping failed:', error);
       }
     },
-    30 * 60 * 1000
-  ); // 30 minutes
+    3 * 60 * 1000
+  ); // 3 minutes
 }
 
 // ============================================
