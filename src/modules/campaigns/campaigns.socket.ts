@@ -102,6 +102,38 @@ export class CampaignSocketService {
     }
 
     /**
+     * Emit CSV upload progress
+     */
+    emitCsvUploadProgress(userId: string, data: {
+        uploadId: string;
+        progress: number;
+        totalRows: number;
+        processedRows: number;
+        validRows: number;
+        invalidRows: number;
+        duplicateRows: number;
+        status: string;
+    }) {
+        this.io.to(`user:${userId}`).emit('csv:upload:progress', {
+            ...data,
+            timestamp: new Date().toISOString(),
+        });
+    }
+
+    /**
+     * Emit contact validation results
+     */
+    emitContactValidation(userId: string, data: {
+        uploadId: string;
+        contacts: any[];
+    }) {
+        this.io.to(`user:${userId}`).emit('csv:validation:batch', {
+            ...data,
+            timestamp: new Date().toISOString(),
+        });
+    }
+
+    /**
      * Get active socket count for organization
      */
     getActiveConnections(organizationId: string): number {
