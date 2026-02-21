@@ -1,7 +1,6 @@
-// 📁 src/modules/meta/meta.controller.ts - FINAL VERSION
+// 📁 src/modules/meta/meta.controller.ts - COMPLETE FINAL VERSION
 
 import { Request, Response, NextFunction } from 'express';
-import { metaService } from './meta.service';
 import { AppError } from '../../middleware/errorHandler';
 import { sendSuccess } from '../../utils/response';
 import prisma from '../../config/database';
@@ -327,8 +326,9 @@ export class MetaController {
       }
 
       // Save MetaConnection (if model exists)
+      let savedMetaConnection = null;
       try {
-        await (prisma as any).metaConnection.upsert({
+        savedMetaConnection = await (prisma as any).metaConnection.upsert({
           where: { organizationId },
           update: {
             accessToken: access_token,
@@ -361,21 +361,24 @@ export class MetaController {
               displayName: phone.verified_name,
               qualityRating: phone.quality_rating,
               verifiedName: phone.verified_name,
+              isActive: true,
             },
             create: {
-              organizationId,
+              metaConnectionId: savedMetaConnection?.id,
               phoneNumberId: phone.id,
               phoneNumber: phone.display_phone_number,
               displayName: phone.verified_name,
               qualityRating: phone.quality_rating,
               verifiedName: phone.verified_name,
+              isActive: true,
+              isPrimary: phoneNumbers[0].id === phone.id, // First is primary
             },
           });
           savedPhoneNumbers.push(savedPhone);
         }
         console.log('   ✅ PhoneNumbers saved');
-      } catch (e) {
-        console.log('   ⚠️ PhoneNumber model not available (optional)');
+      } catch (e: any) {
+        console.log('   ⚠️ PhoneNumber model not available:', e.message);
       }
 
       // Delete used state
@@ -418,7 +421,7 @@ export class MetaController {
   }
 
   // ============================================
-  // GET ACCOUNTS
+  // GET ACCOUNTS (OLD METHOD - WHATSAPPACCOUNT ONLY)
   // ============================================
   async getAccounts(req: AuthRequest, res: Response, next: NextFunction) {
     try {
@@ -428,19 +431,181 @@ export class MetaController {
         throw new AppError('Organization ID is required', 400);
       }
 
+      const orgIdString = Array.isArray(organizationId) ? organizationId[0] : organizationId;
+      console.log('📋 Fetching accounts (old method) for org:', orgIdString);
+
       const accounts = await prisma.whatsAppAccount.findMany({
-        where: { organizationId },
+        where: { organizationId: orgIdString },
         orderBy: { createdAt: 'desc' },
       });
 
-      return sendSuccess(res, { accounts }, 'Accounts fetched');
+      console.log('   Found accounts:', accounts.length);
+
+      return sendSuccess(res, { accounts }, 'Accounts fetched successfully');
     } catch (error) {
       next(error);
     }
   }
 
   // ============================================
-  // GET ACCOUNT
+  // GET WHATSAPP ACCOUNTS (NEW METHOD - SUPPORTS BOTH STRUCTURES)
+  // ============================================
+  async getWhatsAppAccounts(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const { organizationId } = req.params;
+
+      console.log('\n📋 Fetching WhatsApp accounts for org:', organizationId);
+
+      if (!organizationId) {
+        throw new AppError('Organization ID is required', 400);
+      }
+
+      let accounts: any[] = [];
+
+      // METHOD 1: Check MetaConnection + PhoneNumber (New structure)
+      try {
+        const metaConnection = await (prisma as any).metaConnection.findUnique({
+          where: { organizationId },
+          include: {
+            phoneNumbers: {
+              where: { isActive: true },
+              orderBy: { isPrimary: 'desc' },
+            },
+          },
+        });
+
+        if (metaConnection && metaConnection.phoneNumbers && metaConnection.phoneNumbers.length > 0) {
+          console.log('✅ Found MetaConnection with phones:', metaConnection.phoneNumbers.length);
+
+          accounts = metaConnection.phoneNumbers.map((phone: any) => ({
+            id: phone.id,
+            phoneNumberId: phone.phoneNumberId,
+            phoneNumber: phone.phoneNumber,
+            displayName: phone.displayName,
+            verifiedName: phone.verifiedName,
+            qualityRating: phone.qualityRating,
+            isPrimary: phone.isPrimary,
+            isActive: phone.isActive,
+            wabaId: metaConnection.wabaId,
+            wabaName: metaConnection.wabaName,
+          }));
+
+          console.log('📤 Returning accounts from MetaConnection:', accounts.length);
+          return sendSuccess(res, { accounts }, 'Accounts fetched successfully');
+        }
+      } catch (e: any) {
+        console.log('⚠️ MetaConnection check failed:', e.message);
+      }
+
+      // METHOD 2: Check WhatsAppAccount table (Fallback)
+      console.log('⚠️ No MetaConnection found, checking WhatsAppAccount table...');
+
+      const orgIdString = Array.isArray(organizationId) ? organizationId[0] : organizationId;
+      const whatsappAccounts = await prisma.whatsAppAccount.findMany({
+        where: {
+          organizationId: orgIdString,
+          status: 'CONNECTED'
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (whatsappAccounts.length > 0) {
+        console.log('✅ Found WhatsAppAccounts:', whatsappAccounts.length);
+        accounts = whatsappAccounts.map((acc: any) => ({
+          id: acc.id,
+          phoneNumberId: acc.phoneNumberId,
+          phoneNumber: acc.phoneNumber,
+          displayName: acc.displayName,
+          verifiedName: acc.verifiedName,
+          qualityRating: acc.qualityRating,
+          wabaId: acc.wabaId,
+          isActive: acc.status === 'CONNECTED',
+        }));
+      }
+
+      console.log('📤 Returning accounts:', accounts.length);
+
+      return sendSuccess(res, { accounts }, 'Accounts fetched successfully');
+
+    } catch (error: any) {
+      console.error('❌ Get WhatsApp accounts error:', error);
+      next(error);
+    }
+  }
+
+  // ============================================
+  // GET CONNECTION STATUS
+  // ============================================
+  async getConnectionStatus(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const { organizationId } = req.params;
+
+      if (!organizationId) {
+        throw new AppError('Organization ID is required', 400);
+      }
+
+      console.log('🔍 Checking connection status for org:', organizationId);
+
+      // Check MetaConnection
+      let isConnected = false;
+      let status = 'NOT_CONNECTED';
+      let details: any = null;
+
+      try {
+        const metaConnection = await (prisma as any).metaConnection.findUnique({
+          where: { organizationId },
+          include: {
+            phoneNumbers: {
+              where: { isActive: true },
+            },
+          },
+        });
+
+        if (metaConnection) {
+          isConnected = metaConnection.status === 'CONNECTED';
+          status = metaConnection.status;
+          details = {
+            wabaId: metaConnection.wabaId,
+            wabaName: metaConnection.wabaName,
+            phoneNumbers: metaConnection.phoneNumbers?.length || 0,
+            lastSyncedAt: metaConnection.lastSyncedAt,
+          };
+        }
+      } catch (e) {
+        console.log('⚠️ MetaConnection not available, checking WhatsAppAccount');
+      }
+
+      // Fallback to WhatsAppAccount
+      if (!isConnected) {
+        const orgIdString = Array.isArray(organizationId) ? organizationId[0] : organizationId;
+        const whatsappAccount = await prisma.whatsAppAccount.findFirst({
+          where: { organizationId: orgIdString, status: 'CONNECTED' },
+        });
+
+        if (whatsappAccount) {
+          isConnected = true;
+          status = 'CONNECTED';
+          details = {
+            wabaId: whatsappAccount.wabaId,
+            phoneNumber: whatsappAccount.phoneNumber,
+            displayName: whatsappAccount.displayName,
+          };
+        }
+      }
+
+      return sendSuccess(res, {
+        isConnected,
+        status,
+        ...details,
+      }, 'Connection status fetched');
+
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ============================================
+  // GET SINGLE ACCOUNT
   // ============================================
   async getAccount(req: AuthRequest, res: Response, next: NextFunction) {
     try {
@@ -459,7 +624,7 @@ export class MetaController {
         throw new AppError('Account not found', 404);
       }
 
-      return sendSuccess(res, account, 'Account fetched');
+      return sendSuccess(res, account, 'Account fetched successfully');
     } catch (error) {
       next(error);
     }
@@ -499,14 +664,24 @@ export class MetaController {
         data: { status: 'DISCONNECTED' },
       });
 
-      return sendSuccess(res, { success: true }, 'Account disconnected');
+      // Also disconnect MetaConnection if exists
+      try {
+        await (prisma as any).metaConnection.update({
+          where: { organizationId },
+          data: { status: 'DISCONNECTED' },
+        });
+      } catch (e) {
+        console.log('⚠️ MetaConnection not updated (may not exist)');
+      }
+
+      return sendSuccess(res, { success: true }, 'Account disconnected successfully');
     } catch (error) {
       next(error);
     }
   }
 
   // ============================================
-  // GET CONFIG
+  // GET EMBEDDED SIGNUP CONFIG
   // ============================================
   async getEmbeddedSignupConfig(req: Request, res: Response, next: NextFunction) {
     try {
@@ -517,12 +692,15 @@ export class MetaController {
         features: ['whatsapp_business_app_onboarding'],
       };
 
-      return sendSuccess(res, config, 'Config fetched');
+      return sendSuccess(res, config, 'Config fetched successfully');
     } catch (error) {
       next(error);
     }
   }
 
+  // ============================================
+  // GET INTEGRATION STATUS
+  // ============================================
   async getIntegrationStatus(req: Request, res: Response, next: NextFunction) {
     try {
       const status = {
@@ -532,9 +710,46 @@ export class MetaController {
         embeddedSignup: true,
       };
 
-      return sendSuccess(res, status, 'Integration status');
+      return sendSuccess(res, status, 'Integration status fetched');
     } catch (error) {
       next(error);
+    }
+  }
+
+  // ============================================
+  // WEBHOOK VERIFICATION (META REQUIREMENT)
+  // ============================================
+  async verifyWebhook(req: Request, res: Response, next: NextFunction) {
+    try {
+      const mode = req.query['hub.mode'];
+      const token = req.query['hub.verify_token'];
+      const challenge = req.query['hub.challenge'];
+
+      if (mode === 'subscribe' && token === process.env.META_VERIFY_TOKEN) {
+        console.log('✅ Webhook verified');
+        res.status(200).send(challenge);
+      } else {
+        console.error('❌ Webhook verification failed');
+        res.sendStatus(403);
+      }
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ============================================
+  // WEBHOOK HANDLER
+  // ============================================
+  async handleWebhook(req: Request, res: Response, next: NextFunction) {
+    try {
+      console.log('📨 Webhook received:', JSON.stringify(req.body, null, 2));
+
+      // TODO: Process webhook events (message status updates, etc.)
+
+      res.sendStatus(200);
+    } catch (error) {
+      console.error('❌ Webhook error:', error);
+      res.sendStatus(500);
     }
   }
 }
