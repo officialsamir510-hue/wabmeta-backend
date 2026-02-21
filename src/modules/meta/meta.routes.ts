@@ -1,4 +1,4 @@
-// 📁 src/modules/meta/meta.routes.ts - FINAL COMPLETE VERSION
+// 📁 src/modules/meta/meta.routes.ts - COMPLETE FINAL VERSION
 
 import { Router } from 'express';
 import { metaController } from './meta.controller';
@@ -7,23 +7,23 @@ import { metaService } from './meta.service';
 import { sendSuccess } from '../../utils/response';
 import { AppError } from '../../middleware/errorHandler';
 import prisma from '../../config/database';
+import { MessageStatus } from '@prisma/client';
 
 const router = Router();
 
 // ============================================
-// PUBLIC ROUTES (Webhook)
+// PUBLIC ROUTES (Webhook) - BEFORE authenticate
 // ============================================
 
 /**
  * GET /webhook - Webhook verification
- * Required by Meta for webhook setup
  */
 router.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  const verifyToken = process.env.META_WEBHOOK_VERIFY_TOKEN || 'your_verify_token';
+  const verifyToken = process.env.META_WEBHOOK_VERIFY_TOKEN || process.env.META_VERIFY_TOKEN;
 
   console.log('📞 Webhook verification request:', {
     mode,
@@ -42,20 +42,21 @@ router.get('/webhook', (req, res) => {
 
 /**
  * POST /webhook - Handle incoming webhook events
- * Receives messages, status updates, etc.
  */
 router.post('/webhook', async (req, res) => {
   try {
-    console.log('📨 Webhook event received:', JSON.stringify(req.body, null, 2));
+    const body = req.body;
 
-    // Acknowledge receipt immediately
+    console.log('\n📨 ========== WEBHOOK RECEIVED ==========');
+    console.log(JSON.stringify(body, null, 2));
+
+    // Acknowledge receipt immediately (Meta requirement)
     res.sendStatus(200);
 
-    // Process webhook asynchronously
-    const { entry } = req.body;
+    const entry = body?.entry;
 
-    if (!entry || !Array.isArray(entry)) {
-      console.warn('⚠️ Invalid webhook payload');
+    if (!Array.isArray(entry) || entry.length === 0) {
+      console.warn('⚠️ Invalid webhook payload - no entries');
       return;
     }
 
@@ -63,38 +64,150 @@ router.post('/webhook', async (req, res) => {
       const changes = item.changes || [];
 
       for (const change of changes) {
-        if (change.field === 'messages') {
-          const { messages, statuses } = change.value;
+        const field = change.field;
+        const value = change.value;
 
-          // Handle incoming messages
-          if (messages) {
-            for (const message of messages) {
-              console.log('📩 Incoming message:', message);
-              // TODO: Process incoming message
-              // await metaService.handleIncomingMessage(message);
+        // ✅ HANDLE MESSAGE STATUS UPDATES
+        if (field === 'messages' && value.statuses && Array.isArray(value.statuses)) {
+          for (const statusUpdate of value.statuses) {
+            console.log('📦 WA STATUS UPDATE:', {
+              id: statusUpdate.id,
+              status: statusUpdate.status,
+              recipient_id: statusUpdate.recipient_id,
+              timestamp: statusUpdate.timestamp,
+              errors: statusUpdate.errors,
+            });
+
+            try {
+              let dbStatus: MessageStatus = MessageStatus.SENT;
+              let deliveredAt: Date | undefined;
+              let readAt: Date | undefined;
+              let failedAt: Date | undefined;
+
+              const metaStatus = statusUpdate.status;
+              const timestamp = new Date(Number(statusUpdate.timestamp) * 1000);
+
+              switch (metaStatus) {
+                case 'sent':
+                  dbStatus = MessageStatus.SENT;
+                  break;
+                case 'delivered':
+                  dbStatus = MessageStatus.DELIVERED;
+                  deliveredAt = timestamp;
+                  break;
+                case 'read':
+                  dbStatus = MessageStatus.READ;
+                  readAt = timestamp;
+                  break;
+                case 'failed':
+                  dbStatus = MessageStatus.FAILED;
+                  failedAt = timestamp;
+                  break;
+                default:
+                  console.warn(`⚠️ Unknown status: ${metaStatus}`);
+              }
+
+              const failureReason = statusUpdate.errors?.[0]?.message || null;
+
+              const updateData: any = {
+                status: dbStatus,
+              };
+
+              if (deliveredAt) updateData.deliveredAt = deliveredAt;
+              if (readAt) updateData.readAt = readAt;
+              if (failedAt) updateData.failedAt = failedAt;
+              if (failureReason) updateData.failureReason = failureReason;
+
+              // Update Message
+              const updated = await prisma.message.updateMany({
+                where: {
+                  OR: [
+                    { wamId: statusUpdate.id },
+                    { waMessageId: statusUpdate.id },
+                  ],
+                },
+                data: updateData,
+              });
+
+              if (updated.count > 0) {
+                console.log(`✅ Updated ${updated.count} message(s) to status: ${dbStatus}`);
+
+                // Update CampaignContact
+                await prisma.campaignContact.updateMany({
+                  where: { waMessageId: statusUpdate.id },
+                  data: {
+                    status: dbStatus,
+                    deliveredAt,
+                    readAt,
+                    failedAt,
+                    failureReason,
+                  },
+                });
+              } else {
+                console.warn(`⚠️ No message found with ID: ${statusUpdate.id}`);
+              }
+            } catch (dbError: any) {
+              console.error('❌ DB update error:', dbError.message);
             }
           }
+        }
 
-          // Handle message statuses
-          if (statuses) {
-            for (const status of statuses) {
-              console.log('📊 Message status:', status);
-              // TODO: Update message status
-              // await metaService.updateMessageStatus(status);
+        // ✅ HANDLE INCOMING MESSAGES
+        if (field === 'messages' && value.messages && Array.isArray(value.messages)) {
+          for (const message of value.messages) {
+            console.log('📩 INCOMING MESSAGE:', {
+              id: message.id,
+              from: message.from,
+              type: message.type,
+              timestamp: message.timestamp,
+            });
+
+            // TODO: Process incoming message
+          }
+        }
+
+        // ✅ HANDLE TEMPLATE STATUS UPDATES
+        if (field === 'message_template_status_update') {
+          console.log('📋 TEMPLATE STATUS UPDATE:', {
+            messageTemplateId: value.message_template_id,
+            messageTemplateName: value.message_template_name,
+            event: value.event,
+            reason: value.reason,
+          });
+
+          try {
+            const metaTemplateId = value.message_template_id?.toString();
+            if (metaTemplateId) {
+              let templateStatus = 'PENDING';
+              if (value.event === 'APPROVED') templateStatus = 'APPROVED';
+              if (value.event === 'REJECTED') templateStatus = 'REJECTED';
+
+              await prisma.template.updateMany({
+                where: { metaTemplateId },
+                data: {
+                  status: templateStatus as any,
+                  rejectionReason: value.reason || null,
+                },
+              });
+
+              console.log(`✅ Template ${metaTemplateId} updated to ${templateStatus}`);
             }
+          } catch (templateError: any) {
+            console.error('❌ Template update error:', templateError.message);
           }
         }
       }
     }
-  } catch (error) {
+
+    console.log('📨 ========== WEBHOOK PROCESSED ==========\n');
+  } catch (error: any) {
     console.error('❌ Webhook processing error:', error);
-    // Still return 200 to prevent Meta from retrying
     res.sendStatus(200);
   }
 });
 
 // ============================================
-// PROTECTED ROUTES (Require Authentication)
+// PROTECTED ROUTES
 // ============================================
 
 router.use(authenticate);
@@ -103,57 +216,23 @@ router.use(authenticate);
 // OAUTH & CONNECTION ROUTES
 // ============================================
 
-/**
- * GET /oauth-url - Get Meta OAuth URL for Embedded Signup
- * Query: ?organizationId=xxx
- */
 router.get('/oauth-url', metaController.getOAuthUrl.bind(metaController));
-
-/**
- * GET /auth/url - Alias for /oauth-url
- */
 router.get('/auth/url', metaController.getAuthUrl.bind(metaController));
-
-/**
- * POST /initiate-connection - Alternative endpoint
- */
 router.post('/initiate-connection', metaController.initiateConnection.bind(metaController));
-
-/**
- * POST /callback - Handle OAuth callback
- * Body: { code, state }
- */
 router.post('/callback', metaController.handleCallback.bind(metaController));
-
-/**
- * POST /connect - Legacy connect endpoint
- * Body: { code, organizationId }
- */
 router.post('/connect', metaController.handleCallback.bind(metaController));
 
 // ============================================
 // CONFIGURATION ROUTES
 // ============================================
 
-/**
- * GET /config - Get Embedded Signup configuration
- */
 router.get('/config', metaController.getEmbeddedSignupConfig.bind(metaController));
-
-/**
- * GET /integration-status - Get integration status
- */
 router.get('/integration-status', metaController.getIntegrationStatus.bind(metaController));
 
 // ============================================
 // ORGANIZATION-BASED ROUTES
 // ============================================
 
-/**
- * GET /organizations/:organizationId/accounts
- * Get all WhatsApp accounts for an organization
- * Supports both WhatsAppAccount and MetaConnection tables
- */
 router.get('/organizations/:organizationId/accounts', async (req, res, next) => {
   try {
     const { organizationId } = req.params;
@@ -161,13 +240,9 @@ router.get('/organizations/:organizationId/accounts', async (req, res, next) => 
 
     console.log('📋 Fetching accounts for organization:', organizationId);
 
-    // Verify user has access to organization
     if (userId) {
       const membership = await prisma.organizationMember.findFirst({
-        where: {
-          organizationId,
-          userId,
-        },
+        where: { organizationId, userId },
       });
 
       if (!membership) {
@@ -175,45 +250,35 @@ router.get('/organizations/:organizationId/accounts', async (req, res, next) => 
       }
     }
 
-    // Try to get accounts from metaService (handles both table structures)
     let accounts: any[] = [];
 
     try {
       accounts = await metaService.getAccounts(organizationId);
     } catch (error: any) {
-      console.warn('⚠️ metaService.getAccounts failed, trying direct query:', error.message);
+      console.warn('⚠️ metaService.getAccounts failed:', error.message);
 
-      // Fallback: Direct query to WhatsAppAccount table
       const whatsappAccounts = await prisma.whatsAppAccount.findMany({
         where: {
           organizationId,
           status: { in: ['CONNECTED', 'PENDING'] },
         },
-        orderBy: [
-          { isDefault: 'desc' },
-          { createdAt: 'desc' },
-        ],
+        orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
       });
 
       accounts = whatsappAccounts;
 
-      // Also try MetaConnection table if available
       try {
         const metaConnection = await (prisma as any).metaConnection.findUnique({
           where: { organizationId },
           include: {
             phoneNumbers: {
               where: { isActive: true },
-              orderBy: [
-                { isPrimary: 'desc' },
-                { createdAt: 'desc' },
-              ],
+              orderBy: [{ isPrimary: 'desc' }, { createdAt: 'desc' }],
             },
           },
         });
 
         if (metaConnection && metaConnection.phoneNumbers?.length > 0) {
-          // Add MetaConnection phone numbers to accounts
           const metaAccounts = metaConnection.phoneNumbers.map((phone: any) => ({
             id: phone.id,
             organizationId,
@@ -253,24 +318,14 @@ router.get('/organizations/:organizationId/accounts', async (req, res, next) => 
   }
 });
 
-/**
- * GET /organizations/:organizationId/accounts/:accountId
- * Get single WhatsApp account
- */
 router.get('/organizations/:organizationId/accounts/:accountId', async (req, res, next) => {
   try {
     const { organizationId, accountId } = req.params;
     const userId = req.user?.id;
 
-    console.log('🔍 Fetching account:', { organizationId, accountId });
-
-    // Verify user has access
     if (userId) {
       const membership = await prisma.organizationMember.findFirst({
-        where: {
-          organizationId,
-          userId,
-        },
+        where: { organizationId, userId },
       });
 
       if (!membership) {
@@ -279,17 +334,12 @@ router.get('/organizations/:organizationId/accounts/:accountId', async (req, res
     }
 
     const account = await metaService.getAccount(accountId, organizationId);
-
     return sendSuccess(res, account, 'Account fetched successfully');
   } catch (error) {
     next(error);
   }
 });
 
-/**
- * DELETE /organizations/:organizationId/accounts/:accountId
- * Disconnect WhatsApp account
- */
 router.delete('/organizations/:organizationId/accounts/:accountId', async (req, res, next) => {
   try {
     const { organizationId, accountId } = req.params;
@@ -299,7 +349,6 @@ router.delete('/organizations/:organizationId/accounts/:accountId', async (req, 
       throw new AppError('Authentication required', 401);
     }
 
-    // Verify user has permission (OWNER or ADMIN only)
     const membership = await prisma.organizationMember.findFirst({
       where: {
         organizationId,
@@ -315,17 +364,12 @@ router.delete('/organizations/:organizationId/accounts/:accountId', async (req, 
     console.log(`🔌 Disconnecting account ${accountId} from org ${organizationId}`);
 
     const result = await metaService.disconnectAccount(accountId, organizationId);
-
     return sendSuccess(res, result, 'Account disconnected successfully');
   } catch (error) {
     next(error);
   }
 });
 
-/**
- * POST /organizations/:organizationId/accounts/:accountId/default
- * Set account as default for organization
- */
 router.post('/organizations/:organizationId/accounts/:accountId/default', async (req, res, next) => {
   try {
     const { organizationId, accountId } = req.params;
@@ -335,7 +379,6 @@ router.post('/organizations/:organizationId/accounts/:accountId/default', async 
       throw new AppError('Authentication required', 401);
     }
 
-    // Verify user has permission
     const membership = await prisma.organizationMember.findFirst({
       where: {
         organizationId,
@@ -348,20 +391,13 @@ router.post('/organizations/:organizationId/accounts/:accountId/default', async 
       throw new AppError('You do not have permission to set default account', 403);
     }
 
-    console.log(`⭐ Setting account ${accountId} as default for org ${organizationId}`);
-
     const result = await metaService.setDefaultAccount(accountId, organizationId);
-
     return sendSuccess(res, result, 'Default account updated successfully');
   } catch (error) {
     next(error);
   }
 });
 
-/**
- * POST /organizations/:organizationId/accounts/:accountId/sync-templates
- * Sync message templates for account
- */
 router.post('/organizations/:organizationId/accounts/:accountId/sync-templates', async (req, res, next) => {
   try {
     const { organizationId, accountId } = req.params;
@@ -371,7 +407,6 @@ router.post('/organizations/:organizationId/accounts/:accountId/sync-templates',
       throw new AppError('Authentication required', 401);
     }
 
-    // Verify user has access
     const membership = await prisma.organizationMember.findFirst({
       where: {
         organizationId,
@@ -384,20 +419,13 @@ router.post('/organizations/:organizationId/accounts/:accountId/sync-templates',
       throw new AppError('You do not have permission to sync templates', 403);
     }
 
-    console.log(`🔄 Syncing templates for account ${accountId}`);
-
     const result = await metaService.syncTemplates(accountId, organizationId);
-
     return sendSuccess(res, result, 'Templates synced successfully');
   } catch (error) {
     next(error);
   }
 });
 
-/**
- * POST /organizations/:organizationId/accounts/:accountId/health
- * Refresh account health status
- */
 router.post('/organizations/:organizationId/accounts/:accountId/health', async (req, res, next) => {
   try {
     const { organizationId, accountId } = req.params;
@@ -407,46 +435,29 @@ router.post('/organizations/:organizationId/accounts/:accountId/health', async (
       throw new AppError('Authentication required', 401);
     }
 
-    // Verify user has access
     const membership = await prisma.organizationMember.findFirst({
-      where: {
-        organizationId,
-        userId,
-      },
+      where: { organizationId, userId },
     });
 
     if (!membership) {
       throw new AppError('You do not have access to this organization', 403);
     }
 
-    console.log(`🏥 Checking health for account ${accountId}`);
-
     const result = await metaService.refreshAccountHealth(accountId, organizationId);
-
     return sendSuccess(res, result, 'Health check completed');
   } catch (error) {
     next(error);
   }
 });
 
-/**
- * GET /organizations/:organizationId/status
- * Get organization connection status
- */
 router.get('/organizations/:organizationId/status', async (req, res, next) => {
   try {
     const { organizationId } = req.params;
     const userId = req.user?.id;
 
-    console.log('🔍 Checking organization status:', organizationId);
-
-    // Verify user has access
     if (userId) {
       const membership = await prisma.organizationMember.findFirst({
-        where: {
-          organizationId,
-          userId,
-        },
+        where: { organizationId, userId },
       });
 
       if (!membership) {
@@ -454,12 +465,8 @@ router.get('/organizations/:organizationId/status', async (req, res, next) => {
       }
     }
 
-    // Check WhatsAppAccount table
     const whatsappAccounts = await prisma.whatsAppAccount.findMany({
-      where: {
-        organizationId,
-        status: 'CONNECTED',
-      },
+      where: { organizationId, status: 'CONNECTED' },
       select: {
         id: true,
         phoneNumber: true,
@@ -474,21 +481,15 @@ router.get('/organizations/:organizationId/status', async (req, res, next) => {
     let allAccounts = [...whatsappAccounts];
     let hasMetaConnection = false;
 
-    // Check MetaConnection table
     try {
       const metaConnection = await (prisma as any).metaConnection.findUnique({
         where: { organizationId },
-        include: {
-          phoneNumbers: {
-            where: { isActive: true },
-          },
-        },
+        include: { phoneNumbers: { where: { isActive: true } } },
       });
 
       if (metaConnection && metaConnection.status === 'CONNECTED') {
         hasMetaConnection = true;
 
-        // Add MetaConnection phone numbers
         if (metaConnection.phoneNumbers?.length > 0) {
           const metaAccounts = metaConnection.phoneNumbers.map((phone: any) => ({
             id: phone.id,
@@ -509,8 +510,6 @@ router.get('/organizations/:organizationId/status', async (req, res, next) => {
 
     const status = allAccounts.length > 0 ? 'CONNECTED' : 'DISCONNECTED';
 
-    console.log(`✅ Organization status: ${status} (${allAccounts.length} accounts)`);
-
     return sendSuccess(
       res,
       {
@@ -523,15 +522,10 @@ router.get('/organizations/:organizationId/status', async (req, res, next) => {
       'Organization status fetched'
     );
   } catch (error) {
-    console.error('❌ Get organization status error:', error);
     next(error);
   }
 });
 
-/**
- * POST /organizations/:organizationId/sync
- * Sync all phone numbers for organization
- */
 router.post('/organizations/:organizationId/sync', async (req, res, next) => {
   try {
     const { organizationId } = req.params;
@@ -541,7 +535,6 @@ router.post('/organizations/:organizationId/sync', async (req, res, next) => {
       throw new AppError('Authentication required', 401);
     }
 
-    // Verify user has permission
     const membership = await prisma.organizationMember.findFirst({
       where: {
         organizationId,
@@ -554,14 +547,8 @@ router.post('/organizations/:organizationId/sync', async (req, res, next) => {
       throw new AppError('You do not have permission to sync', 403);
     }
 
-    console.log(`🔄 Syncing all accounts for org ${organizationId}`);
-
-    // Get all connected accounts
     const accounts = await prisma.whatsAppAccount.findMany({
-      where: {
-        organizationId,
-        status: 'CONNECTED',
-      },
+      where: { organizationId, status: 'CONNECTED' },
     });
 
     const results = [];
@@ -584,18 +571,12 @@ router.post('/organizations/:organizationId/sync', async (req, res, next) => {
       }
     }
 
-    console.log(`✅ Sync completed: ${results.filter(r => r.success).length}/${results.length} successful`);
-
     return sendSuccess(res, { results, total: results.length }, 'Sync completed');
   } catch (error) {
     next(error);
   }
 });
 
-/**
- * DELETE /organizations/:organizationId/disconnect
- * Disconnect all WhatsApp accounts for organization
- */
 router.delete('/organizations/:organizationId/disconnect', async (req, res, next) => {
   try {
     const { organizationId } = req.params;
@@ -605,48 +586,28 @@ router.delete('/organizations/:organizationId/disconnect', async (req, res, next
       throw new AppError('Authentication required', 401);
     }
 
-    // Verify user is OWNER
     const membership = await prisma.organizationMember.findFirst({
-      where: {
-        organizationId,
-        userId,
-        role: 'OWNER',
-      },
+      where: { organizationId, userId, role: 'OWNER' },
     });
 
     if (!membership) {
       throw new AppError('Only organization owners can disconnect all accounts', 403);
     }
 
-    console.log(`🔌 Disconnecting all accounts for org ${organizationId}`);
-
-    let disconnectedCount = 0;
-
-    // Disconnect WhatsAppAccount entries
     const result = await prisma.whatsAppAccount.updateMany({
       where: { organizationId },
       data: { status: 'DISCONNECTED' },
     });
-    disconnectedCount += result.count;
 
-    // Delete MetaConnection if exists
     try {
-      await (prisma as any).metaConnection.delete({
-        where: { organizationId },
-      });
-      console.log('✅ MetaConnection deleted');
+      await (prisma as any).metaConnection.delete({ where: { organizationId } });
     } catch (e) {
       console.log('⚠️ No MetaConnection to delete');
     }
 
-    console.log(`✅ Disconnected ${disconnectedCount} account(s)`);
-
     return sendSuccess(
       res,
-      {
-        success: true,
-        disconnectedCount,
-      },
+      { success: true, disconnectedCount: result.count },
       'All accounts disconnected successfully'
     );
   } catch (error) {
@@ -655,31 +616,17 @@ router.delete('/organizations/:organizationId/disconnect', async (req, res, next
 });
 
 // ============================================
-// HEADER-BASED ROUTES (Legacy support)
+// HEADER-BASED ROUTES (Legacy)
 // ============================================
 
-/**
- * GET /accounts - Get accounts using x-organization-id header
- */
 router.get('/accounts', metaController.getAccounts.bind(metaController));
-
-/**
- * GET /accounts/:id - Get single account
- */
 router.get('/accounts/:id', metaController.getAccount.bind(metaController));
-
-/**
- * DELETE /accounts/:id - Disconnect account
- */
 router.delete('/accounts/:id', metaController.disconnectAccount.bind(metaController));
 
 // ============================================
 // HEALTH CHECK
 // ============================================
 
-/**
- * GET /health - Health check endpoint
- */
 router.get('/health', (req, res) => {
   res.json({
     success: true,
@@ -687,51 +634,9 @@ router.get('/health', (req, res) => {
     version: 'v25.0',
     configured: !!(process.env.META_APP_ID && process.env.META_APP_SECRET),
     embeddedSignup: !!process.env.META_CONFIG_ID,
+    webhookConfigured: !!process.env.META_WEBHOOK_VERIFY_TOKEN,
     timestamp: new Date().toISOString(),
   });
 });
-
-// ============================================
-// DEBUG ROUTE (Development only)
-// ============================================
-
-if (process.env.NODE_ENV === 'development') {
-  router.get('/debug/accounts/:organizationId', async (req, res) => {
-    try {
-      const { organizationId } = req.params;
-
-      const whatsappAccounts = await prisma.whatsAppAccount.findMany({
-        where: { organizationId },
-      });
-
-      let metaConnection = null;
-      try {
-        metaConnection = await (prisma as any).metaConnection.findUnique({
-          where: { organizationId },
-          include: { phoneNumbers: true },
-        });
-      } catch (e) {
-        console.log('MetaConnection not available');
-      }
-
-      res.json({
-        success: true,
-        organizationId,
-        whatsappAccounts: {
-          count: whatsappAccounts.length,
-          accounts: whatsappAccounts,
-        },
-        metaConnection: metaConnection || 'Not available',
-      });
-    } catch (error: any) {
-      res.status(500).json({
-        success: false,
-        error: error.message,
-      });
-    }
-  });
-
-  console.log('🐛 Debug route available: GET /api/v1/meta/debug/accounts/:organizationId');
-}
 
 export default router;

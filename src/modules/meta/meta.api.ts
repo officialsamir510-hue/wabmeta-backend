@@ -342,6 +342,54 @@ class MetaApiClient {
   }
 
   // ============================================
+  // CONTACT VALIDATION
+  // ============================================
+
+  /**
+   * ✅ NEW: Check if a phone number has WhatsApp
+   * @param phoneNumberId - The business phone number ID
+   * @param accessToken - Access token
+   * @param phone - Phone number to check (will be cleaned)
+   * @returns Contact check result
+   */
+  async checkContact(phoneNumberId: string, accessToken: string, phone: string): Promise<{
+    contacts: Array<{
+      input: string;
+      wa_id: string;
+      status: string; // 'valid' | 'invalid'
+    }>;
+  }> {
+    try {
+      const clean = phone.replace(/[^0-9]/g, '');
+
+      console.log(`📞 Checking contact: ${clean}`);
+
+      const response = await this.client.post(
+        `/${phoneNumberId}/contacts`,
+        {
+          messaging_product: 'whatsapp',
+          blocking: 'wait',
+          force_check: true,
+          contacts: [clean],
+        },
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }
+      );
+
+      const result = response.data;
+      const status = result.contacts?.[0]?.status;
+
+      console.log(`📞 Contact check result: ${status}`);
+
+      return result;
+    } catch (error: any) {
+      console.error('[Meta API] Contact check failed:', error.response?.data || error.message);
+      throw this.handleError(error, 'Failed to check contact');
+    }
+  }
+
+  // ============================================
   // WEBHOOK METHODS
   // ============================================
 
