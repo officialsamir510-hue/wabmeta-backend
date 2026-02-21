@@ -41,7 +41,6 @@ router.get('/auth/url', metaController.getAuthUrl.bind(metaController));
 
 // Callback & Connect
 router.post('/callback', metaController.handleCallback.bind(metaController));
-router.post('/connect', metaController.connect.bind(metaController));
 
 // Configuration
 router.get('/config', metaController.getEmbeddedSignupConfig.bind(metaController));
@@ -148,10 +147,11 @@ router.post('/organizations/:organizationId/accounts/:accountId/health', async (
 });
 
 // Organization status
-router.get(
-  '/organizations/:organizationId/status',
-  metaController.getOrganizationStatus.bind(metaController)
-);
+// Removed as getOrganizationStatus relies on deleted controller method
+// router.get(
+//   '/organizations/:organizationId/status',
+//   metaController.getOrganizationStatus.bind(metaController)
+// );
 
 // ============================================
 // ACCOUNT MANAGEMENT ROUTES (Header-based)
@@ -165,11 +165,5 @@ router.get('/accounts/:id', metaController.getAccount.bind(metaController));
 
 // Disconnect account
 router.delete('/accounts/:id', metaController.disconnectAccount.bind(metaController));
-
-// Set default account
-router.post('/accounts/:id/default', metaController.setDefaultAccount.bind(metaController));
-
-// Sync templates
-router.post('/accounts/:id/sync-templates', metaController.syncTemplates.bind(metaController));
 
 export default router;
