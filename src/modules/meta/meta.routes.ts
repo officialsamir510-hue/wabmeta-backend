@@ -152,6 +152,7 @@ router.get('/integration-status', metaController.getIntegrationStatus.bind(metaC
 /**
  * GET /organizations/:organizationId/accounts
  * Get all WhatsApp accounts for an organization
+ * Supports both WhatsAppAccount and MetaConnection tables
  */
 router.get('/organizations/:organizationId/accounts', async (req, res, next) => {
   try {
@@ -174,12 +175,80 @@ router.get('/organizations/:organizationId/accounts', async (req, res, next) => 
       }
     }
 
-    const accounts = await metaService.getAccounts(organizationId);
+    // Try to get accounts from metaService (handles both table structures)
+    let accounts: any[] = [];
+
+    try {
+      accounts = await metaService.getAccounts(organizationId);
+    } catch (error: any) {
+      console.warn('⚠️ metaService.getAccounts failed, trying direct query:', error.message);
+
+      // Fallback: Direct query to WhatsAppAccount table
+      const whatsappAccounts = await prisma.whatsAppAccount.findMany({
+        where: {
+          organizationId,
+          status: { in: ['CONNECTED', 'PENDING'] },
+        },
+        orderBy: [
+          { isDefault: 'desc' },
+          { createdAt: 'desc' },
+        ],
+      });
+
+      accounts = whatsappAccounts;
+
+      // Also try MetaConnection table if available
+      try {
+        const metaConnection = await (prisma as any).metaConnection.findUnique({
+          where: { organizationId },
+          include: {
+            phoneNumbers: {
+              where: { isActive: true },
+              orderBy: [
+                { isPrimary: 'desc' },
+                { createdAt: 'desc' },
+              ],
+            },
+          },
+        });
+
+        if (metaConnection && metaConnection.phoneNumbers?.length > 0) {
+          // Add MetaConnection phone numbers to accounts
+          const metaAccounts = metaConnection.phoneNumbers.map((phone: any) => ({
+            id: phone.id,
+            organizationId,
+            phoneNumberId: phone.phoneNumberId,
+            phoneNumber: phone.phoneNumber,
+            displayName: phone.displayName || phone.verifiedName,
+            wabaId: metaConnection.wabaId,
+            status: metaConnection.status,
+            qualityRating: phone.qualityRating,
+            isDefault: phone.isPrimary,
+            createdAt: phone.createdAt,
+            updatedAt: phone.updatedAt,
+            source: 'MetaConnection',
+          }));
+
+          accounts = [...accounts, ...metaAccounts];
+        }
+      } catch (metaError) {
+        console.log('⚠️ MetaConnection table not available');
+      }
+    }
 
     console.log(`✅ Found ${accounts.length} account(s)`);
 
-    return sendSuccess(res, { accounts }, 'Accounts fetched successfully');
+    return sendSuccess(
+      res,
+      {
+        accounts,
+        total: accounts.length,
+        hasConnected: accounts.some((a: any) => a.status === 'CONNECTED'),
+      },
+      'Accounts fetched successfully'
+    );
   } catch (error) {
+    console.error('❌ Get accounts error:', error);
     next(error);
   }
 });
@@ -192,6 +261,8 @@ router.get('/organizations/:organizationId/accounts/:accountId', async (req, res
   try {
     const { organizationId, accountId } = req.params;
     const userId = req.user?.id;
+
+    console.log('🔍 Fetching account:', { organizationId, accountId });
 
     // Verify user has access
     if (userId) {
@@ -367,6 +438,8 @@ router.get('/organizations/:organizationId/status', async (req, res, next) => {
     const { organizationId } = req.params;
     const userId = req.user?.id;
 
+    console.log('🔍 Checking organization status:', organizationId);
+
     // Verify user has access
     if (userId) {
       const membership = await prisma.organizationMember.findFirst({
@@ -381,7 +454,8 @@ router.get('/organizations/:organizationId/status', async (req, res, next) => {
       }
     }
 
-    const accounts = await prisma.whatsAppAccount.findMany({
+    // Check WhatsAppAccount table
+    const whatsappAccounts = await prisma.whatsAppAccount.findMany({
       where: {
         organizationId,
         status: 'CONNECTED',
@@ -393,17 +467,63 @@ router.get('/organizations/:organizationId/status', async (req, res, next) => {
         isDefault: true,
         status: true,
         qualityRating: true,
+        wabaId: true,
       },
     });
 
-    const status = accounts.length > 0 ? 'CONNECTED' : 'DISCONNECTED';
+    let allAccounts = [...whatsappAccounts];
+    let hasMetaConnection = false;
 
-    return sendSuccess(res, {
-      status,
-      connectedCount: accounts.length,
-      accounts,
-    }, 'Organization status fetched');
+    // Check MetaConnection table
+    try {
+      const metaConnection = await (prisma as any).metaConnection.findUnique({
+        where: { organizationId },
+        include: {
+          phoneNumbers: {
+            where: { isActive: true },
+          },
+        },
+      });
+
+      if (metaConnection && metaConnection.status === 'CONNECTED') {
+        hasMetaConnection = true;
+
+        // Add MetaConnection phone numbers
+        if (metaConnection.phoneNumbers?.length > 0) {
+          const metaAccounts = metaConnection.phoneNumbers.map((phone: any) => ({
+            id: phone.id,
+            phoneNumber: phone.phoneNumber,
+            displayName: phone.displayName || phone.verifiedName,
+            isDefault: phone.isPrimary,
+            status: 'CONNECTED',
+            qualityRating: phone.qualityRating,
+            wabaId: metaConnection.wabaId,
+          }));
+
+          allAccounts = [...allAccounts, ...metaAccounts];
+        }
+      }
+    } catch (e) {
+      console.log('⚠️ MetaConnection table not available');
+    }
+
+    const status = allAccounts.length > 0 ? 'CONNECTED' : 'DISCONNECTED';
+
+    console.log(`✅ Organization status: ${status} (${allAccounts.length} accounts)`);
+
+    return sendSuccess(
+      res,
+      {
+        status,
+        connectedCount: allAccounts.length,
+        hasWhatsAppAccount: whatsappAccounts.length > 0,
+        hasMetaConnection,
+        accounts: allAccounts,
+      },
+      'Organization status fetched'
+    );
   } catch (error) {
+    console.error('❌ Get organization status error:', error);
     next(error);
   }
 });
@@ -450,19 +570,23 @@ router.post('/organizations/:organizationId/sync', async (req, res, next) => {
         const result = await metaService.syncTemplates(account.id, organizationId);
         results.push({
           accountId: account.id,
+          phoneNumber: account.phoneNumber,
           success: true,
           ...result,
         });
       } catch (err: any) {
         results.push({
           accountId: account.id,
+          phoneNumber: account.phoneNumber,
           success: false,
           error: err.message,
         });
       }
     }
 
-    return sendSuccess(res, { results }, 'Sync completed');
+    console.log(`✅ Sync completed: ${results.filter(r => r.success).length}/${results.length} successful`);
+
+    return sendSuccess(res, { results, total: results.length }, 'Sync completed');
   } catch (error) {
     next(error);
   }
@@ -496,22 +620,35 @@ router.delete('/organizations/:organizationId/disconnect', async (req, res, next
 
     console.log(`🔌 Disconnecting all accounts for org ${organizationId}`);
 
-    // Disconnect all accounts
-    await prisma.whatsAppAccount.updateMany({
+    let disconnectedCount = 0;
+
+    // Disconnect WhatsAppAccount entries
+    const result = await prisma.whatsAppAccount.updateMany({
       where: { organizationId },
       data: { status: 'DISCONNECTED' },
     });
+    disconnectedCount += result.count;
 
     // Delete MetaConnection if exists
     try {
       await (prisma as any).metaConnection.delete({
         where: { organizationId },
       });
+      console.log('✅ MetaConnection deleted');
     } catch (e) {
-      // MetaConnection might not exist
+      console.log('⚠️ No MetaConnection to delete');
     }
 
-    return sendSuccess(res, { success: true }, 'All accounts disconnected');
+    console.log(`✅ Disconnected ${disconnectedCount} account(s)`);
+
+    return sendSuccess(
+      res,
+      {
+        success: true,
+        disconnectedCount,
+      },
+      'All accounts disconnected successfully'
+    );
   } catch (error) {
     next(error);
   }
@@ -549,8 +686,52 @@ router.get('/health', (req, res) => {
     service: 'Meta Integration',
     version: 'v25.0',
     configured: !!(process.env.META_APP_ID && process.env.META_APP_SECRET),
+    embeddedSignup: !!process.env.META_CONFIG_ID,
     timestamp: new Date().toISOString(),
   });
 });
+
+// ============================================
+// DEBUG ROUTE (Development only)
+// ============================================
+
+if (process.env.NODE_ENV === 'development') {
+  router.get('/debug/accounts/:organizationId', async (req, res) => {
+    try {
+      const { organizationId } = req.params;
+
+      const whatsappAccounts = await prisma.whatsAppAccount.findMany({
+        where: { organizationId },
+      });
+
+      let metaConnection = null;
+      try {
+        metaConnection = await (prisma as any).metaConnection.findUnique({
+          where: { organizationId },
+          include: { phoneNumbers: true },
+        });
+      } catch (e) {
+        console.log('MetaConnection not available');
+      }
+
+      res.json({
+        success: true,
+        organizationId,
+        whatsappAccounts: {
+          count: whatsappAccounts.length,
+          accounts: whatsappAccounts,
+        },
+        metaConnection: metaConnection || 'Not available',
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  });
+
+  console.log('🐛 Debug route available: GET /api/v1/meta/debug/accounts/:organizationId');
+}
 
 export default router;
