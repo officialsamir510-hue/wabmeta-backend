@@ -1,4 +1,4 @@
-// src/app.ts - COMPLETE FIXED VERSION
+// src/app.ts - COMPLETE FINAL VERSION
 
 import express, { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
@@ -8,7 +8,9 @@ import path from 'path';
 import { errorHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
 
-// Import all routes
+// ============================================
+// IMPORT ALL ROUTES
+// ============================================
 import authRoutes from './modules/auth/auth.routes';
 import contactsRoutes from './modules/contacts/contacts.routes';
 import campaignsRoutes from './modules/campaigns/campaigns.routes';
@@ -42,7 +44,7 @@ app.use(
 );
 
 // ============================================
-// CORS CONFIGURATION - FIXED
+// CORS CONFIGURATION
 // ============================================
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map((origin) => origin.trim())
@@ -58,7 +60,7 @@ console.log('🔒 CORS Allowed Origins:', allowedOrigins);
 app.use(
   cors({
     origin: function (origin, callback) {
-      // Allow requests with no origin (mobile apps, curl, Postman)
+      // Allow requests with no origin (mobile apps, curl, Postman, Meta webhooks)
       if (!origin) {
         return callback(null, true);
       }
@@ -77,13 +79,14 @@ app.use(
       'Content-Type',
       'Authorization',
       'X-Requested-With',
-      'X-Organization-Id', // ✅ CRITICAL FIX
-      'x-organization-id', // ✅ CRITICAL FIX (lowercase variant)
+      'X-Organization-Id',
+      'x-organization-id',
       'Accept',
       'Origin',
+      'X-Hub-Signature-256', // For Meta webhook signature
     ],
     exposedHeaders: ['Content-Range', 'X-Content-Range', 'X-Total-Count'],
-    maxAge: 600, // Preflight cache: 10 minutes
+    maxAge: 600,
     optionsSuccessStatus: 204,
   })
 );
@@ -106,11 +109,16 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
-// Custom request logger
-app.use(requestLogger);
+// Custom request logger (skip for webhook endpoints to reduce noise)
+app.use((req, res, next) => {
+  if (!req.path.includes('/webhooks/')) {
+    return requestLogger(req, res, next);
+  }
+  next();
+});
 
 // ============================================
-// STATIC FILES (if needed)
+// STATIC FILES
 // ============================================
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
@@ -137,14 +145,33 @@ app.get('/health', (req: Request, res: Response) => {
 });
 
 // ============================================
-// API ROUTES
+// DEBUG MIDDLEWARE (TEMPORARY - for webhook debugging)
+// ============================================
+app.use('/api/webhooks', (req, res, next) => {
+  console.log(`🔔 Webhook ${req.method} ${req.path}`, {
+    query: req.query,
+    headers: {
+      'content-type': req.get('content-type'),
+      'x-hub-signature-256': req.get('x-hub-signature-256'),
+    },
+  });
+  next();
+});
+
+// ============================================
+// API ROUTES - CORRECT ORDER
 // ============================================
 
-// Public routes (no auth required)
-app.use('/api/auth', authRoutes);
-app.use('/api/webhooks', webhookRoutes); // ✅ Webhooks must be public for Meta
+console.log('🔧 Registering API routes...');
 
-// Protected routes (auth required)
+// ✅ PUBLIC ROUTES (NO AUTH) - MUST BE FIRST
+app.use('/api/webhooks', webhookRoutes);
+console.log('✅ Registered: /api/webhooks');
+
+app.use('/api/auth', authRoutes);
+console.log('✅ Registered: /api/auth');
+
+// ✅ PROTECTED ROUTES (AUTH REQUIRED)
 app.use('/api/contacts', contactsRoutes);
 app.use('/api/campaigns', campaignsRoutes);
 app.use('/api/templates', templatesRoutes);
@@ -157,13 +184,16 @@ app.use('/api/chatbot', chatbotRoutes);
 app.use('/api/inbox', inboxRoutes);
 app.use('/api/billing', billingRoutes);
 
-// Admin routes
+// ✅ ADMIN ROUTES
 app.use('/api/admin', adminRoutes);
+
+console.log('✅ All API routes registered');
 
 // ============================================
 // 404 HANDLER
 // ============================================
 app.use((req: Request, res: Response) => {
+  console.warn(`⚠️ 404: ${req.method} ${req.path}`);
   res.status(404).json({
     success: false,
     message: `Route not found: ${req.method} ${req.path}`,
