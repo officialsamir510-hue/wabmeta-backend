@@ -1,4 +1,4 @@
-// src/modules/webhooks/webhook.routes.ts
+// src/modules/webhooks/webhook.routes.ts - FIXED
 
 import { Router, Request, Response } from 'express';
 import { webhookService } from './webhook.service';
@@ -6,10 +6,10 @@ import { webhookService } from './webhook.service';
 const router = Router();
 
 /**
- * GET /api/webhooks/verify
+ * GET /api/webhooks/meta
  * Webhook verification endpoint (for Meta setup)
  */
-router.get('/verify', (req: Request, res: Response) => {
+router.get('/meta', (req: Request, res: Response) => {
   const mode = req.query['hub.mode'] as string;
   const token = req.query['hub.verify_token'] as string;
   const challenge = req.query['hub.challenge'] as string;
@@ -19,19 +19,24 @@ router.get('/verify', (req: Request, res: Response) => {
   const result = webhookService.verifyWebhook(mode, token, challenge);
 
   if (result) {
+    console.log('✅ Webhook verified, sending challenge:', result);
     res.status(200).send(result);
   } else {
+    console.error('❌ Webhook verification failed');
     res.status(403).send('Forbidden');
   }
 });
 
 /**
- * POST /api/webhooks
+ * POST /api/webhooks/meta
  * Receive WhatsApp webhooks
  */
-router.post('/', async (req: Request, res: Response) => {
+router.post('/meta', async (req: Request, res: Response) => {
   try {
-    // Respond immediately to Meta (required)
+    console.log('📥 Webhook POST received');
+    console.log('Body:', JSON.stringify(req.body, null, 2));
+
+    // Respond immediately to Meta (required within 5 seconds)
     res.status(200).send('EVENT_RECEIVED');
 
     // Process webhook asynchronously
@@ -44,16 +49,38 @@ router.post('/', async (req: Request, res: Response) => {
       result.error || result.reason
     );
 
-    console.log('Webhook processed:', result);
+    console.log('✅ Webhook processed:', result);
   } catch (error: any) {
-    console.error('Webhook error:', error);
+    console.error('❌ Webhook error:', error);
 
     // Log error
-    await webhookService.logWebhook(
-      req.body,
-      'failed',
-      error.message
-    );
+    try {
+      await webhookService.logWebhook(
+        req.body,
+        'failed',
+        error.message
+      );
+    } catch (logError) {
+      console.error('Failed to log webhook error:', logError);
+    }
+  }
+});
+
+/**
+ * Legacy route support (if needed)
+ */
+router.get('/verify', (req: Request, res: Response) => {
+  console.log('⚠️ /verify called - redirecting to /meta');
+  const mode = req.query['hub.mode'] as string;
+  const token = req.query['hub.verify_token'] as string;
+  const challenge = req.query['hub.challenge'] as string;
+
+  const result = webhookService.verifyWebhook(mode, token, challenge);
+
+  if (result) {
+    res.status(200).send(result);
+  } else {
+    res.status(403).send('Forbidden');
   }
 });
 
