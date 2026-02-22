@@ -161,6 +161,60 @@ class CampaignSocketService {
     }
 
     /**
+     * Emit campaign error
+     */
+    emitCampaignError(organizationId: string, campaignId: string, error: {
+        message: string;
+        code?: string;
+    }) {
+        if (!io) return;
+
+        io.to(`org:${organizationId}`).emit('campaign:error', {
+            campaignId,
+            ...error,
+            timestamp: new Date().toISOString(),
+        });
+
+        console.error(`❌ Campaign ${campaignId} error:`, error.message);
+    }
+
+    /**
+     * Emit CSV upload progress
+     */
+    emitCsvUploadProgress(userId: string, data: {
+        uploadId: string;
+        progress: number;
+        totalRows: number;
+        processedRows: number;
+        validRows: number;
+        invalidRows: number;
+        duplicateRows: number;
+        status: string;
+    }) {
+        if (!io) return;
+
+        io.to(`user:${userId}`).emit('csv:upload:progress', {
+            ...data,
+            timestamp: new Date().toISOString(),
+        });
+    }
+
+    /**
+     * Emit contact validation results
+     */
+    emitContactValidation(userId: string, data: {
+        uploadId: string;
+        contacts: any[];
+    }) {
+        if (!io) return;
+
+        io.to(`user:${userId}`).emit('csv:validation:batch', {
+            ...data,
+            timestamp: new Date().toISOString(),
+        });
+    }
+
+    /**
      * Check if socket is initialized
      */
     isInitialized(): boolean {
