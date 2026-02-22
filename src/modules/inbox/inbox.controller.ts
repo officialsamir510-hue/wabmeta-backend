@@ -21,7 +21,7 @@ interface AuthRequest extends Request {
     email: string;
     organizationId?: string;
   };
-  file?: Express.Multer.File;
+  file?: any;
 }
 
 export class InboxController {
