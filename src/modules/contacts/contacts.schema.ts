@@ -76,6 +76,7 @@ export const importContactsSchema = z.object({
       })
     ).min(1, 'At least one contact is required'),
     groupId: z.string().optional(),
+    groupName: z.string().optional(),
     tags: z.array(z.string()).optional(),
     skipDuplicates: z.boolean().optional().default(true),
   }),
