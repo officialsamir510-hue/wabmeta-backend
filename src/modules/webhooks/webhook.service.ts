@@ -1,9 +1,40 @@
-// src/modules/webhooks/webhook.service.ts
+// src/modules/webhooks/webhook.service.ts - COMPLETE WITH SOCKET.IO
 
 import prisma from '../../config/database';
 import { contactsService } from '../contacts/contacts.service';
+import { getIO } from '../../socket';
 
 export class WebhookService {
+
+  /**
+   * Emit socket event to organization room
+   */
+  private emitToOrganization(organizationId: string, event: string, data: any) {
+    try {
+      const io = getIO();
+      if (io) {
+        io.to(`org:${organizationId}`).emit(event, data);
+        console.log(`📡 [SOCKET] Emitted ${event} to org:${organizationId}`);
+      }
+    } catch (error) {
+      console.error('Socket emit error:', error);
+    }
+  }
+
+  /**
+   * Emit socket event to conversation room
+   */
+  private emitToConversation(conversationId: string, event: string, data: any) {
+    try {
+      const io = getIO();
+      if (io) {
+        io.to(`conversation:${conversationId}`).emit(event, data);
+        console.log(`📡 [SOCKET] Emitted ${event} to conversation:${conversationId}`);
+      }
+    } catch (error) {
+      console.error('Socket emit error:', error);
+    }
+  }
 
   /**
    * Extract WhatsApp profile data from webhook payload
@@ -23,10 +54,9 @@ export class WebhookService {
       const message = value.messages[0];
       const contact = value.contacts?.[0];
 
-      // Extract 10-digit phone from waId (format: 919876543210)
       let phone = message.from;
       if (phone.startsWith('91') && phone.length === 12) {
-        phone = phone.substring(2); // Remove country code
+        phone = phone.substring(2);
       }
 
       return {
@@ -44,7 +74,6 @@ export class WebhookService {
    * Validate if number is Indian
    */
   private isIndianNumber(waId: string): boolean {
-    // waId format: 919876543210 (12 digits starting with 91)
     return waId.startsWith('91') && waId.length === 12;
   }
 
@@ -82,7 +111,6 @@ export class WebhookService {
     try {
       console.log('📨 Webhook received');
 
-      // Extract profile data
       const profileData = this.extractProfile(payload);
 
       if (!profileData) {
@@ -92,7 +120,6 @@ export class WebhookService {
 
       const { waId, profileName, phone } = profileData;
 
-      // Validate Indian number only
       if (!this.isIndianNumber(waId)) {
         console.log(`⛔ Rejected non-Indian number: ${waId}`);
         return {
@@ -103,7 +130,6 @@ export class WebhookService {
 
       console.log(`✅ Valid Indian number: ${phone}, Name: ${profileName}`);
 
-      // Find WhatsApp account by phone number ID
       const phoneNumberId = payload.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id;
 
       if (!phoneNumberId) {
@@ -121,7 +147,6 @@ export class WebhookService {
         return { status: 'error', reason: 'Account not found' };
       }
 
-      // Update or create contact with REAL WhatsApp name
       if (profileName && profileName !== 'Unknown') {
         await contactsService.updateContactFromWebhook(
           phone,
@@ -131,18 +156,15 @@ export class WebhookService {
         console.log(`✅ Contact updated/created: ${profileName}`);
       }
 
-      // Process message
       const messageData = this.extractMessageData(payload);
 
       if (messageData) {
-        // Handle incoming messages
         if (messageData.messages.length > 0) {
           for (const message of messageData.messages) {
             await this.processIncomingMessage(message, account);
           }
         }
 
-        // Handle status updates (sent, delivered, read)
         if (messageData.statuses.length > 0) {
           for (const status of messageData.statuses) {
             await this.processStatusUpdate(status, account);
@@ -162,19 +184,17 @@ export class WebhookService {
   }
 
   /**
-   * Process incoming message
+   * Process incoming message - WITH SOCKET EMIT
    */
   private async processIncomingMessage(message: any, account: any): Promise<void> {
     try {
       const { from, id: messageId, timestamp, type, text, image, video, document, audio } = message;
 
-      // Normalize phone (remove country code)
       let normalizedPhone = from;
       if (from.startsWith('91') && from.length === 12) {
         normalizedPhone = from.substring(2);
       }
 
-      // Find contact
       let contact = await prisma.contact.findFirst({
         where: {
           organizationId: account.organizationId,
@@ -182,12 +202,21 @@ export class WebhookService {
         },
       });
 
+      // Auto-create contact if not found
       if (!contact) {
-        console.log(`Contact not found for incoming message: ${normalizedPhone}`);
-        return;
+        console.log(`📝 Creating new contact for: ${normalizedPhone}`);
+        contact = await prisma.contact.create({
+          data: {
+            organizationId: account.organizationId,
+            phone: normalizedPhone,
+            countryCode: '+91',
+            firstName: 'Unknown',
+            status: 'ACTIVE',
+            source: 'WHATSAPP_INBOUND',
+          },
+        });
       }
 
-      // Find or create conversation
       let conversation = await prisma.conversation.findFirst({
         where: {
           organizationId: account.organizationId,
@@ -195,41 +224,54 @@ export class WebhookService {
         },
       });
 
+      const messageTime = new Date(parseInt(timestamp) * 1000);
+
       if (!conversation) {
         conversation = await prisma.conversation.create({
           data: {
             organizationId: account.organizationId,
             contactId: contact.id,
             phoneNumberId: account.phoneNumberId,
-            lastMessageAt: new Date(parseInt(timestamp) * 1000),
+            lastMessageAt: messageTime,
             isWindowOpen: true,
-            windowExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+            windowExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
           },
         });
+        console.log(`💬 Created new conversation: ${conversation.id}`);
       }
 
-      // Determine message content
-      let content = null;
-      let mediaUrl = null;
+      let content: string | null = null;
+      let mediaUrl: string | null = null;
+      let mediaType: string | null = null;
 
       if (type === 'text' && text) {
         content = text.body;
       } else if (type === 'image' && image) {
         mediaUrl = image.id;
+        mediaType = 'image';
         content = image.caption || '[Image]';
       } else if (type === 'video' && video) {
         mediaUrl = video.id;
+        mediaType = 'video';
         content = video.caption || '[Video]';
       } else if (type === 'document' && document) {
         mediaUrl = document.id;
+        mediaType = 'document';
         content = document.filename || '[Document]';
       } else if (type === 'audio' && audio) {
         mediaUrl = audio.id;
+        mediaType = 'audio';
         content = '[Audio]';
+      } else if (type === 'sticker') {
+        content = '[Sticker]';
+      } else if (type === 'location') {
+        content = '[Location]';
+      } else if (type === 'contacts') {
+        content = '[Contact]';
       }
 
-      // Save message
-      await prisma.message.create({
+      // Save message to database
+      const savedMessage = await prisma.message.create({
         data: {
           conversationId: conversation.id,
           whatsappAccountId: account.id,
@@ -239,10 +281,18 @@ export class WebhookService {
           type: type.toUpperCase(),
           content,
           mediaUrl,
+          mediaType,
           status: 'DELIVERED',
-          sentAt: new Date(parseInt(timestamp) * 1000),
-          deliveredAt: new Date(parseInt(timestamp) * 1000),
-          createdAt: new Date(parseInt(timestamp) * 1000),
+          sentAt: messageTime,
+          deliveredAt: messageTime,
+          createdAt: messageTime,
+        },
+        include: {
+          conversation: {
+            include: {
+              contact: true,
+            },
+          },
         },
       });
 
@@ -250,25 +300,74 @@ export class WebhookService {
       await prisma.conversation.update({
         where: { id: conversation.id },
         data: {
-          lastMessageAt: new Date(parseInt(timestamp) * 1000),
+          lastMessageAt: messageTime,
           lastMessagePreview: content?.substring(0, 100) || `[${type}]`,
-          lastCustomerMessageAt: new Date(parseInt(timestamp) * 1000),
+          lastCustomerMessageAt: messageTime,
           unreadCount: { increment: 1 },
           isRead: false,
+          isWindowOpen: true,
           windowExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
         },
       });
 
-      // Update contact message count
+      // Update contact
       await prisma.contact.update({
         where: { id: contact.id },
         data: {
-          lastMessageAt: new Date(parseInt(timestamp) * 1000),
+          lastMessageAt: messageTime,
           messageCount: { increment: 1 },
         },
       });
 
       console.log(`✅ Incoming message saved: ${messageId}`);
+
+      // ============================================
+      // ✅ EMIT SOCKET EVENT FOR REAL-TIME UPDATE
+      // ============================================
+
+      const messagePayload = {
+        id: savedMessage.id,
+        conversationId: conversation.id,
+        waMessageId: messageId,
+        direction: 'INBOUND',
+        type: type.toUpperCase(),
+        content,
+        mediaUrl,
+        mediaType,
+        status: 'DELIVERED',
+        createdAt: messageTime.toISOString(),
+        contact: {
+          id: contact.id,
+          phone: contact.phone,
+          firstName: contact.firstName,
+          lastName: contact.lastName,
+        },
+      };
+
+      // Emit to organization room
+      this.emitToOrganization(account.organizationId, 'message:new', messagePayload);
+
+      // Emit to specific conversation room
+      this.emitToConversation(conversation.id, 'message:new', messagePayload);
+
+      // Emit conversation update for inbox list
+      const conversationUpdate = {
+        id: conversation.id,
+        contactId: contact.id,
+        lastMessageAt: messageTime.toISOString(),
+        lastMessagePreview: content?.substring(0, 100) || `[${type}]`,
+        unreadCount: (conversation as any).unreadCount + 1,
+        contact: {
+          id: contact.id,
+          phone: contact.phone,
+          firstName: contact.firstName,
+          lastName: contact.lastName,
+        },
+      };
+
+      this.emitToOrganization(account.organizationId, 'conversation:updated', conversationUpdate);
+
+      console.log(`📡 Real-time events emitted for message: ${messageId}`);
 
     } catch (error) {
       console.error('Error processing incoming message:', error);
@@ -276,7 +375,7 @@ export class WebhookService {
   }
 
   /**
-   * Process status update
+   * Process status update - WITH SOCKET EMIT
    */
   private async processStatusUpdate(status: any, account: any): Promise<void> {
     try {
@@ -287,6 +386,9 @@ export class WebhookService {
           waMessageId: messageId,
           whatsappAccountId: account.id,
         },
+        include: {
+          conversation: true,
+        },
       });
 
       if (!message) {
@@ -294,19 +396,21 @@ export class WebhookService {
         return;
       }
 
+      const statusTime = new Date(parseInt(timestamp) * 1000);
+
       const updateData: any = {
         status: messageStatus.toUpperCase(),
-        statusUpdatedAt: new Date(parseInt(timestamp) * 1000),
+        statusUpdatedAt: statusTime,
       };
 
       if (messageStatus === 'sent') {
-        updateData.sentAt = new Date(parseInt(timestamp) * 1000);
+        updateData.sentAt = statusTime;
       } else if (messageStatus === 'delivered') {
-        updateData.deliveredAt = new Date(parseInt(timestamp) * 1000);
+        updateData.deliveredAt = statusTime;
       } else if (messageStatus === 'read') {
-        updateData.readAt = new Date(parseInt(timestamp) * 1000);
+        updateData.readAt = statusTime;
       } else if (messageStatus === 'failed') {
-        updateData.failedAt = new Date(parseInt(timestamp) * 1000);
+        updateData.failedAt = statusTime;
         updateData.failureReason = status.errors?.[0]?.message || 'Unknown error';
       }
 
@@ -315,7 +419,21 @@ export class WebhookService {
         data: updateData,
       });
 
-      // Update campaign contact status if applicable
+      console.log(`✅ Message status updated: ${messageId} → ${messageStatus}`);
+
+      // ✅ EMIT SOCKET EVENT FOR STATUS UPDATE
+      const statusPayload = {
+        messageId: message.id,
+        waMessageId: messageId,
+        conversationId: message.conversationId,
+        status: messageStatus.toUpperCase(),
+        timestamp: statusTime.toISOString(),
+      };
+
+      this.emitToOrganization(account.organizationId, 'message:status', statusPayload);
+      this.emitToConversation(message.conversationId, 'message:status', statusPayload);
+
+      // Update campaign contact if applicable
       if (message.conversationId) {
         const conversation = await prisma.conversation.findUnique({
           where: { id: message.conversationId },
@@ -345,7 +463,6 @@ export class WebhookService {
               },
             });
 
-            // Update campaign stats
             const campaign = await prisma.campaign.findUnique({
               where: { id: campaignContact.campaignId },
             });
@@ -353,14 +470,10 @@ export class WebhookService {
             if (campaign) {
               const statsUpdate: any = {};
 
-              if (messageStatus === 'sent') {
-                statsUpdate.sentCount = { increment: 1 };
-              } else if (messageStatus === 'delivered') {
+              if (messageStatus === 'delivered') {
                 statsUpdate.deliveredCount = { increment: 1 };
               } else if (messageStatus === 'read') {
                 statsUpdate.readCount = { increment: 1 };
-              } else if (messageStatus === 'failed') {
-                statsUpdate.failedCount = { increment: 1 };
               }
 
               if (Object.keys(statsUpdate).length > 0) {
@@ -374,8 +487,6 @@ export class WebhookService {
         }
       }
 
-      console.log(`✅ Message status updated: ${messageId} → ${messageStatus}`);
-
     } catch (error) {
       console.error('Error processing status update:', error);
     }
@@ -387,7 +498,7 @@ export class WebhookService {
   verifyWebhook(mode: string, token: string, challenge: string): string | null {
     const VERIFY_TOKEN = process.env.META_VERIFY_TOKEN ||
       process.env.WEBHOOK_VERIFY_TOKEN ||
-      'wabmeta_webhook_token';
+      'wabmeta_webhook_verify_2024';
 
     if (mode === 'subscribe' && token === VERIFY_TOKEN) {
       console.log('✅ Webhook verified successfully');
