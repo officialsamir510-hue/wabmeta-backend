@@ -59,7 +59,7 @@ export const contactsImportMiddleware = async (req: Request, res: Response, next
         }
 
         // 3) If file provided -> parse CSV
-        const file = (req as any).file as Express.Multer.File | undefined;
+        const file = (req as any).file as any | undefined;
         if (!file?.buffer) return next(); // validation will throw "contacts required"
 
         const rows: any[] = [];
