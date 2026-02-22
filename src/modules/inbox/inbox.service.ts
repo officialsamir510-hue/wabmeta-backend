@@ -1,13 +1,6 @@
-// src/modules/inbox/inbox.service.ts
+// src/modules/inbox/inbox.service.ts - COMPLETE FIXED
 
-import { PrismaClient, Prisma, MessageType } from '@prisma/client';
-import {
-  ConversationsQueryInput,
-  MessagesQueryInput,
-  SendMessageInput,
-  UpdateConversationInput,
-} from './inbox.types';
-
+import { PrismaClient, Prisma } from '@prisma/client';
 import prisma from '../../config/database';
 
 class AppError extends Error {
@@ -18,81 +11,28 @@ class AppError extends Error {
   }
 }
 
-// Define conversation filter type
-type ConversationFilter = 'all' | 'unread' | 'archived' | 'open';
-
-class InboxService {
+export class InboxService {
   /**
-   * Get conversations for an organization
-   * Supports both old 3-argument style and new 2-argument style
+   * Get conversations with flexible query support
    */
-  async getConversations(
-    organizationId: string,
-    accountIdOrQuery?: string | ConversationsQueryInput,
-    options?: {
-      filter?: ConversationFilter;
-      search?: string;
-      page?: number;
-      limit?: number;
-    }
-  ) {
-    // Handle both calling patterns
-    let accountId: string | undefined;
-    let filter: ConversationFilter | undefined;
-    let search: string | undefined;
-    let page = 1;
-    let limit = 50;
-    let isArchived: boolean | undefined;
-    let isRead: boolean | undefined;
-    let assignedTo: string | undefined;
-    let labels: string[] | undefined;
-    let sortBy: string = 'lastMessageAt';
-    let sortOrder: 'asc' | 'desc' = 'desc';
-
-    // Check if second argument is ConversationsQueryInput or accountId string
-    if (typeof accountIdOrQuery === 'object' && accountIdOrQuery !== null) {
-      // New style: getConversations(orgId, query)
-      const query = accountIdOrQuery as ConversationsQueryInput;
-      page = query.page || 1;
-      limit = query.limit || 50;
-      search = query.search;
-      isArchived = query.isArchived;
-      isRead = query.isRead;
-      assignedTo = query.assignedTo;
-      labels = query.labels;
-      sortBy = query.sortBy || 'lastMessageAt';
-      sortOrder = query.sortOrder || 'desc';
-    } else {
-      // Old style: getConversations(orgId, accountId, options)
-      accountId = accountIdOrQuery as string | undefined;
-      if (options) {
-        filter = options.filter;
-        search = options.search;
-        page = options.page || 1;
-        limit = options.limit || 50;
-      }
-    }
+  async getConversations(organizationId: string, query: any = {}) {
+    const {
+      page = 1,
+      limit = 50,
+      search,
+      isArchived,
+      isRead,
+      assignedTo,
+      labels,
+      sortBy = 'lastMessageAt',
+      sortOrder = 'desc',
+    } = query;
 
     const where: Prisma.ConversationWhereInput = {
       organizationId,
     };
 
-    // Apply phoneNumberId filter if accountId provided
-    if (accountId) {
-      where.phoneNumberId = accountId;
-    }
-
-    // Apply filters based on filter string (old style)
-    if (filter === 'unread') {
-      where.unreadCount = { gt: 0 };
-    } else if (filter === 'archived') {
-      where.isArchived = true;
-    } else if (filter === 'open') {
-      where.isWindowOpen = true;
-      where.isArchived = false;
-    }
-
-    // Apply filters (new style)
+    // Filters
     if (isArchived !== undefined) {
       where.isArchived = isArchived;
     }
@@ -106,20 +46,24 @@ class InboxService {
     }
 
     if (labels && labels.length > 0) {
-      where.labels = {
-        hasSome: labels,
-      };
+      where.labels = { hasSome: Array.isArray(labels) ? labels : [labels] };
     }
 
+    // Search
     if (search) {
-      where.contact = {
-        OR: [
-          { firstName: { contains: search, mode: 'insensitive' } },
-          { lastName: { contains: search, mode: 'insensitive' } },
-          { phone: { contains: search } },
-          { email: { contains: search, mode: 'insensitive' } },
-        ],
-      };
+      where.OR = [
+        {
+          contact: {
+            OR: [
+              { firstName: { contains: search, mode: 'insensitive' } },
+              { lastName: { contains: search, mode: 'insensitive' } },
+              { phone: { contains: search } },
+              { email: { contains: search, mode: 'insensitive' } },
+            ],
+          },
+        },
+        { lastMessagePreview: { contains: search, mode: 'insensitive' } },
+      ];
     }
 
     const [conversations, total] = await Promise.all([
@@ -135,6 +79,7 @@ class InboxService {
               email: true,
               avatar: true,
               tags: true,
+              whatsappProfileName: true,
             },
           },
         },
@@ -145,25 +90,21 @@ class InboxService {
       prisma.conversation.count({ where }),
     ]);
 
-    // Transform conversations to include computed name
-    const transformedConversations = conversations.map((conv) => ({
+    // Transform conversations
+    const transformed = conversations.map((conv) => ({
       ...conv,
       contact: {
         ...conv.contact,
-        name: conv.contact.firstName
-          ? `${conv.contact.firstName} ${conv.contact.lastName || ''}`.trim()
-          : conv.contact.phone,
+        name:
+          conv.contact.whatsappProfileName ||
+          (conv.contact.firstName
+            ? `${conv.contact.firstName} ${conv.contact.lastName || ''}`.trim()
+            : conv.contact.phone),
       },
     }));
 
     return {
-      conversations: transformedConversations,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      conversations: transformed,
       meta: {
         page,
         limit,
@@ -174,19 +115,14 @@ class InboxService {
   }
 
   /**
-   * Get single conversation by ID
+   * Get single conversation
    */
-  async getConversation(conversationId: string, organizationId?: string) {
-    const where: Prisma.ConversationWhereInput = {
-      id: conversationId,
-    };
-
-    if (organizationId) {
-      where.organizationId = organizationId;
-    }
-
+  async getConversationById(organizationId: string, conversationId: string) {
     const conversation = await prisma.conversation.findFirst({
-      where,
+      where: {
+        id: conversationId,
+        organizationId,
+      },
       include: {
         contact: true,
       },
@@ -200,67 +136,17 @@ class InboxService {
   }
 
   /**
-   * Get conversation by ID (alias for controller compatibility)
+   * Get messages for conversation
    */
-  async getConversationById(organizationId: string, conversationId: string) {
-    return this.getConversation(conversationId, organizationId);
-  }
+  async getMessages(organizationId: string, conversationId: string, query: any = {}) {
+    // Verify conversation belongs to organization
+    await this.getConversationById(organizationId, conversationId);
 
-  /**
-   * Get messages for a conversation
-   * Supports both 2-argument and 3-argument styles
-   */
-  async getMessages(
-    conversationIdOrOrgId: string,
-    optionsOrConversationId?:
-      | string
-      | MessagesQueryInput
-      | { before?: string; limit?: number },
-    query?: MessagesQueryInput
-  ) {
-    let conversationId: string;
-    let organizationId: string | undefined;
-    let before: string | undefined;
-    let after: string | undefined;
-    let page = 1;
-    let limit = 50;
+    const { page = 1, limit = 100, before, after } = query;
 
-    // Detect calling pattern
-    if (
-      typeof optionsOrConversationId === 'string' ||
-      optionsOrConversationId === undefined
-    ) {
-      if (query) {
-        // 3-argument style: getMessages(orgId, conversationId, query)
-        organizationId = conversationIdOrOrgId;
-        conversationId = optionsOrConversationId as string;
-        page = query.page || 1;
-        limit = query.limit || 50;
-        before = query.before;
-        after = query.after;
-      } else if (typeof optionsOrConversationId === 'string') {
-        // Could be 2-argument with conversationId as second
-        // Try to detect if first arg is orgId or conversationId
-        conversationId = optionsOrConversationId;
-        organizationId = conversationIdOrOrgId;
-      } else {
-        // Single argument - conversationId only
-        conversationId = conversationIdOrOrgId;
-      }
-    } else {
-      // 2-argument style: getMessages(conversationId, options)
-      conversationId = conversationIdOrOrgId;
-      const options = optionsOrConversationId as { before?: string; limit?: number };
-      before = options.before;
-      limit = options.limit || 50;
-    }
-
-    // Verify conversation exists if organizationId provided
-    if (organizationId) {
-      await this.getConversation(conversationId, organizationId);
-    }
-
-    const where: Prisma.MessageWhereInput = { conversationId };
+    const where: Prisma.MessageWhereInput = {
+      conversationId,
+    };
 
     if (before) {
       where.createdAt = { lt: new Date(before) };
@@ -282,12 +168,6 @@ class InboxService {
 
     return {
       messages,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
       meta: {
         page,
         limit,
@@ -299,18 +179,9 @@ class InboxService {
 
   /**
    * Mark conversation as read
-   * Supports both 1-argument and 2-argument styles
    */
-  async markAsRead(conversationIdOrOrgId: string, userIdOrConversationId?: string) {
-    let conversationId: string;
-
-    if (userIdOrConversationId && userIdOrConversationId.length > 10) {
-      // 2-argument style: markAsRead(orgId, conversationId)
-      conversationId = userIdOrConversationId;
-    } else {
-      // 1-argument style: markAsRead(conversationId)
-      conversationId = conversationIdOrOrgId;
-    }
+  async markAsRead(organizationId: string, conversationId: string) {
+    await this.getConversationById(organizationId, conversationId);
 
     const conversation = await prisma.conversation.update({
       where: { id: conversationId },
@@ -324,10 +195,15 @@ class InboxService {
   }
 
   /**
-   * Update archive status
-   * For routes.ts compatibility
+   * Archive/Unarchive conversation
    */
-  async updateArchiveStatus(conversationId: string, isArchived: boolean) {
+  async archiveConversation(
+    organizationId: string,
+    conversationId: string,
+    isArchived: boolean
+  ) {
+    await this.getConversationById(organizationId, conversationId);
+
     const conversation = await prisma.conversation.update({
       where: { id: conversationId },
       data: { isArchived },
@@ -337,43 +213,32 @@ class InboxService {
   }
 
   /**
-   * Archive conversation
-   * For controller.ts compatibility
+   * Assign conversation to user
    */
-  async archiveConversation(
+  async assignConversation(
     organizationId: string,
     conversationId: string,
-    isArchived: boolean
+    userId: string | null
   ) {
-    await this.getConversation(conversationId, organizationId);
-    return this.updateArchiveStatus(conversationId, isArchived);
-  }
-
-  /**
-   * Update labels
-   * Supports both 2-argument and 3-argument styles
-   */
-  async updateLabels(
-    conversationIdOrOrgId: string,
-    labelsOrConversationId: string[] | string,
-    labels?: string[]
-  ) {
-    let conversationId: string;
-    let newLabels: string[];
-
-    if (Array.isArray(labelsOrConversationId)) {
-      // 2-argument style: updateLabels(conversationId, labels)
-      conversationId = conversationIdOrOrgId;
-      newLabels = labelsOrConversationId;
-    } else {
-      // 3-argument style: updateLabels(orgId, conversationId, labels)
-      conversationId = labelsOrConversationId;
-      newLabels = labels || [];
-    }
+    await this.getConversationById(organizationId, conversationId);
 
     const conversation = await prisma.conversation.update({
       where: { id: conversationId },
-      data: { labels: newLabels },
+      data: { assignedTo: userId },
+    });
+
+    return conversation;
+  }
+
+  /**
+   * Update conversation labels
+   */
+  async updateLabels(organizationId: string, conversationId: string, labels: string[]) {
+    await this.getConversationById(organizationId, conversationId);
+
+    const conversation = await prisma.conversation.update({
+      where: { id: conversationId },
+      data: { labels },
     });
 
     return conversation;
@@ -382,103 +247,61 @@ class InboxService {
   /**
    * Add labels to conversation
    */
-  async addLabels(
-    organizationId: string,
-    conversationId: string,
-    newLabels: string[]
-  ) {
-    const conversation = await this.getConversation(conversationId, organizationId);
+  async addLabels(organizationId: string, conversationId: string, newLabels: string[]) {
+    const conversation = await this.getConversationById(organizationId, conversationId);
     const updatedLabels = [...new Set([...conversation.labels, ...newLabels])];
-    return this.updateLabels(conversationId, updatedLabels);
+
+    return this.updateLabels(organizationId, conversationId, updatedLabels);
   }
 
   /**
    * Remove label from conversation
    */
   async removeLabel(organizationId: string, conversationId: string, label: string) {
-    const conversation = await this.getConversation(conversationId, organizationId);
+    const conversation = await this.getConversationById(organizationId, conversationId);
     const updatedLabels = conversation.labels.filter((l) => l !== label);
-    return this.updateLabels(conversationId, updatedLabels);
+
+    return this.updateLabels(organizationId, conversationId, updatedLabels);
   }
 
   /**
-   * Assign conversation
-   * Supports both 2-argument and 3-argument styles
+   * Get inbox stats
    */
-  async assignConversation(
-    conversationIdOrOrgId: string,
-    userIdOrConversationId: string | null,
-    userId?: string | null
-  ) {
-    let conversationId: string;
-    let assignUserId: string | null;
+  async getStats(organizationId: string) {
+    const baseWhere: Prisma.ConversationWhereInput = { organizationId };
 
-    if (userId !== undefined) {
-      // 3-argument style: assignConversation(orgId, conversationId, userId)
-      conversationId = userIdOrConversationId as string;
-      assignUserId = userId;
-    } else {
-      // 2-argument style: assignConversation(conversationId, userId)
-      conversationId = conversationIdOrOrgId;
-      assignUserId = userIdOrConversationId;
-    }
+    const [total, open, unread, archived] = await Promise.all([
+      prisma.conversation.count({ where: baseWhere }),
+      prisma.conversation.count({
+        where: { ...baseWhere, isWindowOpen: true, isArchived: false },
+      }),
+      prisma.conversation.count({
+        where: { ...baseWhere, unreadCount: { gt: 0 } },
+      }),
+      prisma.conversation.count({
+        where: { ...baseWhere, isArchived: true },
+      }),
+    ]);
 
-    const conversation = await prisma.conversation.update({
-      where: { id: conversationId },
-      data: { assignedTo: assignUserId },
-    });
-
-    return conversation;
+    return { total, open, unread, archived };
   }
 
   /**
-   * Update conversation
+   * Get all labels
    */
-  async updateConversation(
-    organizationId: string,
-    conversationId: string,
-    input: UpdateConversationInput
-  ) {
-    await this.getConversation(conversationId, organizationId);
-
-    const conversation = await prisma.conversation.update({
-      where: { id: conversationId },
-      data: input,
+  async getAllLabels(organizationId: string) {
+    const conversations = await prisma.conversation.findMany({
+      where: { organizationId },
+      select: { labels: true },
     });
 
-    return conversation;
-  }
+    const allLabels = conversations.flatMap((c) => c.labels);
+    const uniqueLabels = [...new Set(allLabels)];
 
-  /**
-   * Delete conversation
-   */
-  async deleteConversation(organizationId: string, conversationId: string) {
-    await this.getConversation(conversationId, organizationId);
-
-    await prisma.conversation.delete({
-      where: { id: conversationId },
-    });
-
-    return { success: true, message: 'Conversation deleted' };
-  }
-
-  /**
-   * Bulk update conversations
-   */
-  async bulkUpdate(
-    organizationId: string,
-    conversationIds: string[],
-    updates: Partial<UpdateConversationInput>
-  ) {
-    const result = await prisma.conversation.updateMany({
-      where: {
-        id: { in: conversationIds },
-        organizationId,
-      },
-      data: updates,
-    });
-
-    return { updated: result.count };
+    return uniqueLabels.map((label) => ({
+      label,
+      count: allLabels.filter((l) => l === label).length,
+    }));
   }
 
   /**
@@ -529,49 +352,53 @@ class InboxService {
   }
 
   /**
-   * Get conversation stats
-   * Supports both 1-argument and 2-argument styles
+   * Bulk update conversations
    */
-  async getStats(organizationId: string, accountIdOrUserId?: string) {
-    const baseWhere: Prisma.ConversationWhereInput = { organizationId };
-
-    // If it looks like a phone number ID, filter by it
-    if (accountIdOrUserId && accountIdOrUserId.length < 30) {
-      baseWhere.assignedTo = accountIdOrUserId;
-    } else if (accountIdOrUserId) {
-      baseWhere.phoneNumberId = accountIdOrUserId;
-    }
-
-    const total = await prisma.conversation.count({ where: baseWhere });
-    const open = await prisma.conversation.count({
-      where: { ...baseWhere, isWindowOpen: true, isArchived: false },
-    });
-    const unread = await prisma.conversation.count({
-      where: { ...baseWhere, unreadCount: { gt: 0 } },
-    });
-    const archived = await prisma.conversation.count({
-      where: { ...baseWhere, isArchived: true },
+  async bulkUpdate(
+    organizationId: string,
+    conversationIds: string[],
+    updates: Partial<Prisma.ConversationUpdateInput>
+  ) {
+    const result = await prisma.conversation.updateMany({
+      where: {
+        id: { in: conversationIds },
+        organizationId,
+      },
+      data: updates,
     });
 
-    return { total, open, unread, archived };
+    return { updated: result.count };
   }
 
   /**
-   * Get all labels for organization
+   * Delete conversation
    */
-  async getAllLabels(organizationId: string) {
-    const conversations = await prisma.conversation.findMany({
-      where: { organizationId },
-      select: { labels: true },
+  async deleteConversation(organizationId: string, conversationId: string) {
+    await this.getConversationById(organizationId, conversationId);
+
+    await prisma.conversation.delete({
+      where: { id: conversationId },
     });
 
-    const allLabels = conversations.flatMap((c) => c.labels);
-    const uniqueLabels = [...new Set(allLabels)];
+    return { success: true, message: 'Conversation deleted' };
+  }
 
-    return uniqueLabels.map((label) => ({
-      label,
-      count: allLabels.filter((l) => l === label).length,
-    }));
+  /**
+   * Update conversation
+   */
+  async updateConversation(
+    organizationId: string,
+    conversationId: string,
+    updates: Partial<Prisma.ConversationUpdateInput>
+  ) {
+    await this.getConversationById(organizationId, conversationId);
+
+    const conversation = await prisma.conversation.update({
+      where: { id: conversationId },
+      data: updates,
+    });
+
+    return conversation;
   }
 
   /**
@@ -591,23 +418,10 @@ class InboxService {
     });
 
     if (!conversation) {
-      // Get default phone number
-      const phoneNumber = await prisma.phoneNumber.findFirst({
-        where: {
-          metaConnection: {
-            organizationId,
-            status: 'CONNECTED',
-          },
-          isActive: true,
-          isPrimary: true,
-        } as any,
-      });
-
       conversation = await prisma.conversation.create({
         data: {
           organizationId,
           contactId,
-          phoneNumberId: phoneNumber?.id,
           isWindowOpen: true,
           unreadCount: 0,
         },
@@ -618,44 +432,6 @@ class InboxService {
     }
 
     return conversation;
-  }
-
-  /**
-   * Send message (placeholder - implement with WhatsApp API)
-   */
-  async sendMessage(
-    organizationId: string,
-    userId: string,
-    conversationId: string,
-    input: SendMessageInput
-  ) {
-    const conversation = await this.getConversation(conversationId, organizationId);
-
-    // Create message in database
-    const message = await prisma.message.create({
-      data: {
-        conversationId,
-        direction: 'OUTBOUND',
-        type: input.type || 'TEXT',
-        content: input.content,
-        mediaUrl: input.mediaUrl,
-        status: 'PENDING',
-      },
-    });
-
-    // Update conversation
-    await prisma.conversation.update({
-      where: { id: conversationId },
-      data: {
-        lastMessageAt: new Date(),
-        lastMessagePreview: input.content?.substring(0, 100),
-      },
-    });
-
-    // TODO: Send via WhatsApp API here
-    // await whatsappService.sendMessage(...)
-
-    return message;
   }
 }
 
