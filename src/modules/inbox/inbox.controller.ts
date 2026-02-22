@@ -319,7 +319,7 @@ export class InboxController {
         throw new AppError('Organization context required', 400);
       }
 
-      const stats = await inboxService.getStats(organizationId, userId);
+      const stats = await inboxService.getStats(organizationId);
       return sendSuccess(res, stats, 'Stats fetched successfully');
     } catch (error) {
       next(error);

@@ -433,7 +433,42 @@ export class InboxService {
 
     return conversation;
   }
+
+  /**
+   * Send message
+   */
+  async sendMessage(
+    organizationId: string,
+    userId: string,
+    conversationId: string,
+    input: any
+  ) {
+    const conversation = await this.getConversationById(organizationId, conversationId);
+
+    // Create message in database
+    const message = (await prisma.message.create({
+      data: {
+        conversationId,
+        whatsappAccountId: conversation.phoneNumberId || 'default',
+        direction: 'OUTBOUND',
+        type: input.type || 'TEXT',
+        content: input.content,
+        mediaUrl: input.mediaUrl,
+        status: 'PENDING',
+      },
+    })) as any;
+
+    // Update conversation
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        lastMessageAt: new Date(),
+        lastMessagePreview: input.content?.substring(0, 100),
+      },
+    });
+
+    return message;
+  }
 }
 
 export const inboxService = new InboxService();
-export default inboxService;
