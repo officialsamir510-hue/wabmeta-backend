@@ -32,6 +32,7 @@ router.get('/stats', contactsController.getStats.bind(contactsController));
 router.get('/tags', contactsController.getTags.bind(contactsController));
 router.get('/export', contactsController.export.bind(contactsController));
 
+router.post('/refresh-profiles/batch', contactsController.refreshUnknownNames.bind(contactsController));
 router.post('/refresh-names', contactsController.refreshUnknownNames.bind(contactsController));
 
 // ============================================
