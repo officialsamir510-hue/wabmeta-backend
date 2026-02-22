@@ -1,20 +1,24 @@
-// src/modules/webhooks/webhook.routes.ts - FIXED
+// src/modules/webhooks/webhook.routes.ts - COMPLETE FIX
 
 import { Router, Request, Response } from 'express';
 import { webhookService } from './webhook.service';
 
 const router = Router();
 
+console.log('📦 Webhook routes module loaded');
+
 /**
  * GET /api/webhooks/meta
  * Webhook verification endpoint (for Meta setup)
  */
 router.get('/meta', (req: Request, res: Response) => {
+  console.log('📞 GET /api/webhooks/meta - Verification request');
+
   const mode = req.query['hub.mode'] as string;
   const token = req.query['hub.verify_token'] as string;
   const challenge = req.query['hub.challenge'] as string;
 
-  console.log('📞 Webhook verification request:', { mode, token });
+  console.log('Verification params:', { mode, token: token ? 'present' : 'missing', challenge: challenge ? 'present' : 'missing' });
 
   const result = webhookService.verifyWebhook(mode, token, challenge);
 
@@ -32,12 +36,13 @@ router.get('/meta', (req: Request, res: Response) => {
  * Receive WhatsApp webhooks
  */
 router.post('/meta', async (req: Request, res: Response) => {
-  try {
-    console.log('📥 Webhook POST received');
-    console.log('Body:', JSON.stringify(req.body, null, 2));
+  console.log('📥 POST /api/webhooks/meta - Webhook received');
 
+  try {
     // Respond immediately to Meta (required within 5 seconds)
     res.status(200).send('EVENT_RECEIVED');
+
+    console.log('📨 Processing webhook payload...');
 
     // Process webhook asynchronously
     const result = await webhookService.handleWebhook(req.body);
@@ -67,10 +72,11 @@ router.post('/meta', async (req: Request, res: Response) => {
 });
 
 /**
- * Legacy route support (if needed)
+ * Legacy /verify route (backward compatibility)
  */
 router.get('/verify', (req: Request, res: Response) => {
-  console.log('⚠️ /verify called - redirecting to /meta');
+  console.log('⚠️ GET /api/webhooks/verify called (legacy route)');
+
   const mode = req.query['hub.mode'] as string;
   const token = req.query['hub.verify_token'] as string;
   const challenge = req.query['hub.challenge'] as string;
@@ -83,5 +89,19 @@ router.get('/verify', (req: Request, res: Response) => {
     res.status(403).send('Forbidden');
   }
 });
+
+/**
+ * Test route to verify webhook router is loaded
+ */
+router.get('/test', (req: Request, res: Response) => {
+  console.log('✅ Webhook test route hit');
+  res.json({
+    success: true,
+    message: 'Webhook routes are working',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+console.log('✅ Webhook routes configured');
 
 export default router;

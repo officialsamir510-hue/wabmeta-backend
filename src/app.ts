@@ -1,4 +1,4 @@
-// src/app.ts - COMPLETE FINAL VERSION
+// src/app.ts - COMPLETE FINAL VERSION WITH WEBHOOK FIX
 
 import express, { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
@@ -25,6 +25,20 @@ import chatbotRoutes from './modules/chatbot/chatbot.routes';
 import inboxRoutes from './modules/inbox/inbox.routes';
 import billingRoutes from './modules/billing/billing.routes';
 import adminRoutes from './modules/admin/admin.routes';
+
+// ============================================
+// VERIFY IMPORTS
+// ============================================
+console.log('🔍 Verifying route imports...');
+console.log('  webhookRoutes:', typeof webhookRoutes, webhookRoutes !== undefined ? '✅ loaded' : '❌ MISSING');
+console.log('  authRoutes:', typeof authRoutes, authRoutes !== undefined ? '✅ loaded' : '❌ MISSING');
+console.log('  contactsRoutes:', typeof contactsRoutes, contactsRoutes !== undefined ? '✅ loaded' : '❌ MISSING');
+console.log('  campaignsRoutes:', typeof campaignsRoutes, campaignsRoutes !== undefined ? '✅ loaded' : '❌ MISSING');
+
+if (webhookRoutes === undefined) {
+  console.error('❌ CRITICAL: webhookRoutes failed to import!');
+  console.error('   Check: src/modules/webhooks/webhook.routes.ts');
+}
 
 const app: Application = express();
 
@@ -83,7 +97,7 @@ app.use(
       'x-organization-id',
       'Accept',
       'Origin',
-      'X-Hub-Signature-256', // For Meta webhook signature
+      'X-Hub-Signature-256',
     ],
     exposedHeaders: ['Content-Range', 'X-Content-Range', 'X-Total-Count'],
     maxAge: 600,
@@ -109,12 +123,13 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
-// Custom request logger (skip for webhook endpoints to reduce noise)
-app.use((req, res, next) => {
-  if (!req.path.includes('/webhooks/')) {
-    return requestLogger(req, res, next);
+// Custom request logger (skip webhook to reduce noise)
+app.use((req: Request, res: Response, next: NextFunction) => {
+  // Skip detailed logging for webhooks
+  if (req.path.includes('/webhooks/')) {
+    return next();
   }
-  next();
+  return requestLogger(req, res, next);
 });
 
 // ============================================
@@ -123,7 +138,7 @@ app.use((req, res, next) => {
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // ============================================
-// HEALTH CHECK
+// HEALTH CHECK ROUTES
 // ============================================
 app.get('/', (req: Request, res: Response) => {
   res.json({
@@ -145,55 +160,163 @@ app.get('/health', (req: Request, res: Response) => {
 });
 
 // ============================================
-// DEBUG MIDDLEWARE (TEMPORARY - for webhook debugging)
+// INLINE WEBHOOK HANDLERS (GUARANTEED TO WORK)
 // ============================================
-app.use('/api/webhooks', (req, res, next) => {
-  console.log(`🔔 Webhook ${req.method} ${req.path}`, {
-    query: req.query,
-    headers: {
-      'content-type': req.get('content-type'),
-      'x-hub-signature-256': req.get('x-hub-signature-256'),
-    },
-  });
-  next();
+
+// GET /api/webhooks/meta - Webhook Verification
+app.get('/api/webhooks/meta', (req: Request, res: Response) => {
+  console.log('📞 GET /api/webhooks/meta - Verification request');
+
+  const mode = req.query['hub.mode'] as string;
+  const token = req.query['hub.verify_token'] as string;
+  const challenge = req.query['hub.challenge'] as string;
+
+  console.log('  Params:', { mode, token: token ? 'present' : 'missing' });
+
+  const VERIFY_TOKEN =
+    process.env.META_VERIFY_TOKEN ||
+    process.env.WEBHOOK_VERIFY_TOKEN ||
+    'wabmeta_webhook_verify_2024';
+
+  if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+    console.log('✅ Webhook verified, sending challenge');
+    res.status(200).send(challenge);
+  } else {
+    console.error('❌ Webhook verification failed');
+    console.error(`  Expected token: ${VERIFY_TOKEN}`);
+    console.error(`  Received token: ${token}`);
+    res.status(403).send('Forbidden');
+  }
 });
 
+// POST /api/webhooks/meta - Receive WhatsApp Messages
+app.post('/api/webhooks/meta', async (req: Request, res: Response) => {
+  console.log('📥 POST /api/webhooks/meta - Webhook received');
+
+  // Respond immediately to Meta (required within 5 seconds)
+  res.status(200).send('EVENT_RECEIVED');
+
+  try {
+    // Import webhook service dynamically to avoid circular dependency issues
+    const { webhookService } = await import('./modules/webhooks/webhook.service');
+
+    console.log('📨 Processing webhook payload...');
+
+    // Process webhook
+    const result = await webhookService.handleWebhook(req.body);
+
+    // Log webhook
+    await webhookService.logWebhook(req.body, result.status, result.error || result.reason);
+
+    console.log('✅ Webhook processed:', result);
+  } catch (error: any) {
+    console.error('❌ Webhook processing error:', error.message);
+
+    // Try to log the error
+    try {
+      const { webhookService } = await import('./modules/webhooks/webhook.service');
+      await webhookService.logWebhook(req.body, 'failed', error.message);
+    } catch (logError) {
+      console.error('Failed to log webhook error:', logError);
+    }
+  }
+});
+
+// Test route for webhook
+app.get('/api/webhooks/test', (req: Request, res: Response) => {
+  console.log('✅ GET /api/webhooks/test - Test route hit');
+  res.json({
+    success: true,
+    message: 'Webhook routes are working!',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+console.log('✅ Inline webhook handlers registered');
+
 // ============================================
-// API ROUTES - CORRECT ORDER
+// API ROUTES
 // ============================================
 
 console.log('🔧 Registering API routes...');
 
-// ✅ PUBLIC ROUTES (NO AUTH) - MUST BE FIRST
-app.use('/api/webhooks', webhookRoutes);
-console.log('✅ Registered: /api/webhooks');
+try {
+  // Test route
+  app.get('/api/test', (req: Request, res: Response) => {
+    res.json({ success: true, message: 'API is working' });
+  });
+  console.log('  ✅ /api/test');
 
-app.use('/api/auth', authRoutes);
-console.log('✅ Registered: /api/auth');
+  // Public routes
+  app.use('/api/auth', authRoutes);
+  console.log('  ✅ /api/auth');
 
-// ✅ PROTECTED ROUTES (AUTH REQUIRED)
-app.use('/api/contacts', contactsRoutes);
-app.use('/api/campaigns', campaignsRoutes);
-app.use('/api/templates', templatesRoutes);
-app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/organizations', organizationsRoutes);
-app.use('/api/users', usersRoutes);
-app.use('/api/meta', metaRoutes);
-app.use('/api/whatsapp', whatsappRoutes);
-app.use('/api/chatbot', chatbotRoutes);
-app.use('/api/inbox', inboxRoutes);
-app.use('/api/billing', billingRoutes);
+  // Note: /api/webhooks is handled by inline handlers above
+  // But we still mount the router for any additional routes
+  if (webhookRoutes !== undefined) {
+    app.use('/api/webhooks', webhookRoutes);
+    console.log('  ✅ /api/webhooks (router)');
+  }
 
-// ✅ ADMIN ROUTES
-app.use('/api/admin', adminRoutes);
+  // Protected routes
+  app.use('/api/contacts', contactsRoutes);
+  console.log('  ✅ /api/contacts');
 
-console.log('✅ All API routes registered');
+  app.use('/api/campaigns', campaignsRoutes);
+  console.log('  ✅ /api/campaigns');
+
+  app.use('/api/templates', templatesRoutes);
+  console.log('  ✅ /api/templates');
+
+  app.use('/api/dashboard', dashboardRoutes);
+  console.log('  ✅ /api/dashboard');
+
+  app.use('/api/organizations', organizationsRoutes);
+  console.log('  ✅ /api/organizations');
+
+  app.use('/api/users', usersRoutes);
+  console.log('  ✅ /api/users');
+
+  app.use('/api/meta', metaRoutes);
+  console.log('  ✅ /api/meta');
+
+  app.use('/api/whatsapp', whatsappRoutes);
+  console.log('  ✅ /api/whatsapp');
+
+  app.use('/api/chatbot', chatbotRoutes);
+  console.log('  ✅ /api/chatbot');
+
+  app.use('/api/inbox', inboxRoutes);
+  console.log('  ✅ /api/inbox');
+
+  app.use('/api/billing', billingRoutes);
+  console.log('  ✅ /api/billing');
+
+  app.use('/api/admin', adminRoutes);
+  console.log('  ✅ /api/admin');
+
+  console.log('✅ All API routes registered successfully');
+} catch (error) {
+  console.error('❌ CRITICAL ERROR registering routes:', error);
+}
 
 // ============================================
 // 404 HANDLER
 // ============================================
 app.use((req: Request, res: Response) => {
   console.warn(`⚠️ 404: ${req.method} ${req.path}`);
+
+  // Special logging for webhook 404s (should not happen now)
+  if (req.path.includes('/webhooks/')) {
+    console.error('🔥 WEBHOOK 404 - THIS SHOULD NOT HAPPEN!');
+    console.error('Request details:', {
+      method: req.method,
+      path: req.path,
+      fullUrl: req.originalUrl,
+      query: req.query,
+    });
+  }
+
   res.status(404).json({
     success: false,
     message: `Route not found: ${req.method} ${req.path}`,
