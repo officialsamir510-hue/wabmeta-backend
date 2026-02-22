@@ -1,4 +1,4 @@
-// src/app.ts
+// src/app.ts - COMPLETE FIXED VERSION
 
 import express, { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
@@ -34,16 +34,18 @@ app.set('trust proxy', 1);
 // ============================================
 // SECURITY MIDDLEWARE
 // ============================================
-app.use(helmet({
-  contentSecurityPolicy: false,
-  crossOriginEmbedderPolicy: false,
-}));
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  })
+);
 
 // ============================================
-// CORS CONFIGURATION
+// CORS CONFIGURATION - FIXED
 // ============================================
 const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',')
+  ? process.env.ALLOWED_ORIGINS.split(',').map((origin) => origin.trim())
   : [
     'http://localhost:3000',
     'http://localhost:5173',
@@ -51,21 +53,45 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
     'https://www.wabmeta.com',
   ];
 
-app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl)
-    if (!origin) return callback(null, true);
+console.log('🔒 CORS Allowed Origins:', allowedOrigins);
 
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // Allow requests with no origin (mobile apps, curl, Postman)
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      // Check if origin is in allowed list
+      if (allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        console.warn(`⚠️ CORS blocked origin: ${origin}`);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'X-Organization-Id', // ✅ CRITICAL FIX
+      'x-organization-id', // ✅ CRITICAL FIX (lowercase variant)
+      'Accept',
+      'Origin',
+    ],
+    exposedHeaders: ['Content-Range', 'X-Content-Range', 'X-Total-Count'],
+    maxAge: 600, // Preflight cache: 10 minutes
+    optionsSuccessStatus: 204,
+  })
+);
+
+// ============================================
+// EXPLICIT PREFLIGHT HANDLER
+// ============================================
+app.options('*', cors());
 
 // ============================================
 // BODY PARSING
