@@ -1,4 +1,4 @@
-// src/modules/campaigns/campaigns.upload.service.ts
+// src/modules/campaigns/campaigns.upload.service.ts - COMPLETE FIXED
 
 import { Readable } from 'stream';
 import csv from 'csv-parser';
@@ -7,7 +7,7 @@ import { campaignSocketService } from './campaigns.socket';
 import prisma from '../../config/database';
 
 interface CsvRow {
-    phone: string;
+    phone?: string;
     name?: string;
     email?: string;
     firstName?: string;
@@ -16,17 +16,67 @@ interface CsvRow {
 }
 
 interface ValidationResult {
-    phone: string;
+    phone: string;          // ✅ normalized 10-digit
     name?: string;
+    firstName?: string;
+    lastName?: string;
+    email?: string;
     isValid: boolean;
     isDuplicate: boolean;
     error?: string;
 }
 
 export class CampaignUploadService {
-    /**
-     * ✅ Process CSV with real-time progress
-     */
+    // ----------------------------
+    // Helpers
+    // ----------------------------
+
+    private getValueByPossibleHeaders(row: CsvRow, headers: string[]): string {
+        // direct match
+        for (const h of headers) {
+            if (row[h] !== undefined && row[h] !== null) return String(row[h]);
+        }
+
+        // fallback: case-insensitive + BOM safe
+        const keys = Object.keys(row || {});
+        for (const key of keys) {
+            const k = key.replace(/^\uFEFF/, '').trim().toLowerCase();
+            if (headers.map(h => h.toLowerCase()).includes(k)) {
+                return String(row[key]);
+            }
+        }
+
+        return '';
+    }
+
+    private normalizeIndianPhone(value: any): string {
+        const raw = String(value ?? '').trim();
+        let cleaned = raw.replace(/[\s\-\(\)]/g, '');
+        cleaned = cleaned.replace(/[^0-9+]/g, '');
+
+        if (cleaned.startsWith('+91')) cleaned = cleaned.slice(3);
+        else if (cleaned.startsWith('91') && cleaned.length === 12) cleaned = cleaned.slice(2);
+
+        if (cleaned.startsWith('0') && cleaned.length === 11) cleaned = cleaned.slice(1);
+
+        return cleaned;
+    }
+
+    private isValidIndian10Digit(phone10: string): boolean {
+        return /^[6-9]\d{9}$/.test(phone10);
+    }
+
+    private normalizeEmail(value: any): string | undefined {
+        const s = String(value ?? '').trim();
+        if (!s) return undefined;
+        // basic email check
+        const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+        return ok ? s : undefined;
+    }
+
+    // ----------------------------
+    // Process CSV
+    // ----------------------------
     async processCsvFile(
         fileBuffer: Buffer,
         userId: string,
@@ -61,37 +111,39 @@ export class CampaignUploadService {
                 .on('end', async () => {
                     console.log(`📊 CSV parsed: ${totalRows} rows`);
 
-                    // ✅ Emit initial progress
-                    if (campaignSocketService) {
-                        campaignSocketService.emitCsvUploadProgress(userId, {
-                            uploadId,
-                            progress: 0,
-                            totalRows,
-                            processedRows: 0,
-                            validRows: 0,
-                            invalidRows: 0,
-                            duplicateRows: 0,
-                            status: 'processing',
-                        });
-                    }
-
-                    // Get existing phone numbers
-                    const existingContacts = await prisma.contact.findMany({
-                        where: { organizationId },
-                        select: { phone: true },
+                    // Emit initial progress
+                    campaignSocketService?.emitCsvUploadProgress?.(userId, {
+                        uploadId,
+                        progress: 0,
+                        totalRows,
+                        processedRows: 0,
+                        validRows: 0,
+                        invalidRows: 0,
+                        duplicateRows: 0,
+                        status: 'processing',
                     });
 
-                    const existingPhones = new Set(existingContacts.map((c) => c.phone));
-                    const seenPhones = new Set<string>();
+                    // ✅ Normalize existing phones to 10-digit
+                    const existingContacts = await prisma.contact.findMany({
+                        where: { organizationId },
+                        select: { phone: true, countryCode: true },
+                    });
 
-                    // Process each row
+                    const existingPhones10 = new Set<string>(
+                        existingContacts
+                            .map((c) => this.normalizeIndianPhone(c.phone))
+                            .filter((p) => p && p.length === 10)
+                    );
+
+                    const seenPhones10 = new Set<string>();
+
                     for (const row of rows) {
-                        const result = this.validateContact(row, existingPhones, seenPhones);
+                        const result = this.validateContact(row, existingPhones10, seenPhones10);
                         validationResults.push(result);
 
                         if (result.isValid && !result.isDuplicate) {
                             validRows++;
-                            seenPhones.add(result.phone);
+                            seenPhones10.add(result.phone);
                         } else if (result.isDuplicate) {
                             duplicateRows++;
                         } else {
@@ -100,68 +152,65 @@ export class CampaignUploadService {
 
                         processedRows++;
 
-                        // Emit progress every 10 rows
                         if (processedRows % 10 === 0 || processedRows === totalRows) {
                             const progress = Math.round((processedRows / totalRows) * 100);
 
-                            if (campaignSocketService) {
-                                campaignSocketService.emitCsvUploadProgress(userId, {
-                                    uploadId,
-                                    progress,
-                                    totalRows,
-                                    processedRows,
-                                    validRows,
-                                    invalidRows,
-                                    duplicateRows,
-                                    status: processedRows === totalRows ? 'completed' : 'processing',
-                                });
-                            }
+                            campaignSocketService?.emitCsvUploadProgress?.(userId, {
+                                uploadId,
+                                progress,
+                                totalRows,
+                                processedRows,
+                                validRows,
+                                invalidRows,
+                                duplicateRows,
+                                status: processedRows === totalRows ? 'completed' : 'processing',
+                            });
 
-                            // Emit validation batch
                             if (processedRows % 50 === 0 || processedRows === totalRows) {
                                 const batch = validationResults.slice(-50);
-                                if (campaignSocketService) {
-                                    campaignSocketService.emitContactValidation(userId, {
-                                        uploadId,
-                                        contacts: batch,
-                                    });
-                                }
+                                campaignSocketService?.emitContactValidation?.(userId, {
+                                    uploadId,
+                                    contacts: batch,
+                                });
                             }
                         }
                     }
 
-                    // ✅ Create contacts in database
-                    const validContactsData = validationResults
+                    // ✅ Create contacts in DB (only valid & not duplicate)
+                    const toCreate = validationResults
                         .filter((r) => r.isValid && !r.isDuplicate)
                         .map((r) => ({
                             organizationId,
-                            phone: r.phone,
-                            firstName: r.name || 'Unknown',
+                            phone: r.phone,              // ✅ store 10-digit
+                            countryCode: '+91',
+                            firstName: (r.firstName || r.name || 'Unknown').trim() || 'Unknown',
+                            lastName: r.lastName?.trim() || undefined,
+                            email: r.email || undefined, // ✅ optional
                             source: 'CSV_UPLOAD' as const,
                             status: 'ACTIVE' as const,
-                        }));
+                        }))
+                        .map((c) => {
+                            // remove undefined keys for createMany safety
+                            const clean: any = { ...c };
+                            Object.keys(clean).forEach((k) => clean[k] === undefined && delete clean[k]);
+                            return clean;
+                        });
 
-                    await prisma.contact.createMany({
-                        data: validContactsData,
-                        skipDuplicates: true,
-                    });
+                    if (toCreate.length > 0) {
+                        await prisma.contact.createMany({
+                            data: toCreate,
+                            skipDuplicates: true,
+                        });
+                    }
 
-                    // ✅ Fetch created contacts to get their IDs
+                    // Fetch created contacts
                     const createdContacts = await prisma.contact.findMany({
                         where: {
                             organizationId,
-                            phone: {
-                                in: validContactsData.map((c) => c.phone),
-                            },
+                            phone: { in: toCreate.map((c) => c.phone) },
                         },
-                        select: {
-                            id: true,
-                            phone: true,
-                            firstName: true,
-                        },
+                        select: { id: true, phone: true, firstName: true },
                     });
-
-                    console.log(`✅ Created/Found ${createdContacts.length} contacts`);
 
                     resolve({
                         uploadId,
@@ -169,28 +218,26 @@ export class CampaignUploadService {
                         validRows,
                         invalidRows,
                         duplicateRows,
-                        contacts: createdContacts.map(c => ({
+                        contacts: createdContacts.map((c) => ({
                             id: c.id,
                             phone: c.phone,
-                            firstName: c.firstName || 'Unknown'
+                            firstName: c.firstName || 'Unknown',
                         })),
                     });
                 })
                 .on('error', (error: any) => {
                     console.error('❌ CSV parsing error:', error);
 
-                    if (campaignSocketService) {
-                        campaignSocketService.emitCsvUploadProgress(userId, {
-                            uploadId,
-                            progress: 0,
-                            totalRows: 0,
-                            processedRows: 0,
-                            validRows: 0,
-                            invalidRows: 0,
-                            duplicateRows: 0,
-                            status: 'failed',
-                        });
-                    }
+                    campaignSocketService?.emitCsvUploadProgress?.(userId, {
+                        uploadId,
+                        progress: 0,
+                        totalRows: 0,
+                        processedRows: 0,
+                        validRows: 0,
+                        invalidRows: 0,
+                        duplicateRows: 0,
+                        status: 'failed',
+                    });
 
                     reject(error);
                 });
@@ -202,69 +249,79 @@ export class CampaignUploadService {
      */
     private validateContact(
         row: CsvRow,
-        existingPhones: Set<string>,
-        seenPhones: Set<string>
+        existingPhones10: Set<string>,
+        seenPhones10: Set<string>
     ): ValidationResult {
-        // Extract phone
-        const phone = (
-            row.phone ||
-            row.Phone ||
-            row.mobile ||
-            row.Mobile ||
-            row.number ||
-            row.Number ||
-            ''
-        ).toString().trim();
+        // ✅ More header support
+        const phoneRaw = this.getValueByPossibleHeaders(row, [
+            'phone',
+            'mobile',
+            'number',
+            'phone_number',
+            'phonenumber',
+            'phone number',
+            'whatsapp',
+            'whatsapp_number',
+        ]);
 
-        // Extract name
-        const name = (
-            row.name ||
-            row.Name ||
-            row.firstName ||
-            row.first_name ||
-            ''
-        ).toString().trim();
+        const nameRaw = this.getValueByPossibleHeaders(row, [
+            'name',
+            'fullname',
+            'full_name',
+            'firstName',
+            'first_name',
+        ]);
 
-        if (!phone) {
+        const firstNameRaw = this.getValueByPossibleHeaders(row, ['firstName', 'first_name']);
+        const lastNameRaw = this.getValueByPossibleHeaders(row, ['lastName', 'last_name']);
+        const emailRaw = this.getValueByPossibleHeaders(row, ['email', 'Email', 'mail']);
+
+        if (!phoneRaw || !String(phoneRaw).trim()) {
             return {
                 phone: '',
-                name,
+                name: nameRaw?.trim(),
                 isValid: false,
                 isDuplicate: false,
-                error: 'Phone number is required',
+                error: 'Phone number is required (header must be phone/mobile/number)',
             };
         }
 
-        // Clean phone
-        const cleanPhone = phone.replace(/[^0-9+]/g, '');
+        const phone10 = this.normalizeIndianPhone(phoneRaw);
 
-        if (cleanPhone.length < 10 || cleanPhone.length > 15) {
+        if (!this.isValidIndian10Digit(phone10)) {
             return {
-                phone: cleanPhone,
-                name,
+                phone: phone10,
+                name: nameRaw?.trim(),
+                firstName: firstNameRaw?.trim() || undefined,
+                lastName: lastNameRaw?.trim() || undefined,
+                email: this.normalizeEmail(emailRaw),
                 isValid: false,
                 isDuplicate: false,
-                error: 'Invalid phone number format',
+                error: 'Invalid Indian phone (must be 10 digits starting with 6-9)',
             };
         }
 
-        const formattedPhone = cleanPhone.startsWith('+') ? cleanPhone : `+${cleanPhone}`;
-
-        // Check duplicates
-        if (existingPhones.has(formattedPhone)) {
+        // Duplicate checks
+        if (existingPhones10.has(phone10)) {
             return {
-                phone: formattedPhone,
-                name,
+                phone: phone10,
+                name: nameRaw?.trim(),
+                firstName: firstNameRaw?.trim() || undefined,
+                lastName: lastNameRaw?.trim() || undefined,
+                email: this.normalizeEmail(emailRaw),
                 isValid: true,
                 isDuplicate: true,
                 error: 'Already exists in contacts',
             };
         }
 
-        if (seenPhones.has(formattedPhone)) {
+        if (seenPhones10.has(phone10)) {
             return {
-                phone: formattedPhone,
-                name,
+                phone: phone10,
+                name: nameRaw?.trim(),
+                firstName: firstNameRaw?.trim() || undefined,
+                lastName: lastNameRaw?.trim() || undefined,
+                email: this.normalizeEmail(emailRaw),
                 isValid: true,
                 isDuplicate: true,
                 error: 'Duplicate in uploaded file',
@@ -272,24 +329,20 @@ export class CampaignUploadService {
         }
 
         return {
-            phone: formattedPhone,
-            name,
+            phone: phone10,
+            name: nameRaw?.trim(),
+            firstName: firstNameRaw?.trim() || undefined,
+            lastName: lastNameRaw?.trim() || undefined,
+            email: this.normalizeEmail(emailRaw),
             isValid: true,
             isDuplicate: false,
         };
-
     }
 
-    /**
-     * Get CSV template headers
-     */
     getTemplateHeaders(): string[] {
         return ['phone', 'firstName', 'lastName', 'email', 'tags'];
     }
 
-    /**
-     * Validate CSV file
-     */
     async validateCsvFile(fileBuffer: Buffer): Promise<{
         totalRows: number;
         validRows: number;
@@ -299,12 +352,14 @@ export class CampaignUploadService {
         const rows: CsvRow[] = [];
         return new Promise((resolve, reject) => {
             const stream = Readable.from(fileBuffer);
+
             let totalRows = 0;
             let validRows = 0;
             let invalidRows = 0;
             let duplicateRows = 0;
-            const existingPhones = new Set<string>(); // Mock for validation only
-            const seenPhones = new Set<string>();
+
+            const existingPhones10 = new Set<string>(); // validation-only
+            const seenPhones10 = new Set<string>();
 
             stream
                 .pipe(csv())
@@ -314,22 +369,19 @@ export class CampaignUploadService {
                 })
                 .on('end', () => {
                     for (const row of rows) {
-                        const result = this.validateContact(row, existingPhones, seenPhones);
+                        const result = this.validateContact(row, existingPhones10, seenPhones10);
+
                         if (result.isValid && !result.isDuplicate) {
                             validRows++;
-                            seenPhones.add(result.phone);
+                            seenPhones10.add(result.phone);
                         } else if (result.isDuplicate) {
                             duplicateRows++;
                         } else {
                             invalidRows++;
                         }
                     }
-                    resolve({
-                        totalRows,
-                        validRows,
-                        invalidRows,
-                        duplicateRows
-                    });
+
+                    resolve({ totalRows, validRows, invalidRows, duplicateRows });
                 })
                 .on('error', (error: any) => reject(error));
         });
