@@ -469,6 +469,7 @@ model Conversation {
   isArchived            Boolean      @default(false)
   isRead                Boolean      @default(true)
   unreadCount           Int          @default(0)
+  isPinned              Boolean      @default(false)
   assignedTo            String?
   labels                String[]     @default([])
   createdAt             DateTime     @default(now())

@@ -1,4 +1,4 @@
-// src/modules/inbox/inbox.controller.ts
+// src/modules/inbox/inbox.controller.ts - COMPLETE (existing + labels/pin/media)
 
 import { Request, Response, NextFunction } from 'express';
 import { inboxService } from './inbox.service';
@@ -11,6 +11,9 @@ import {
   UpdateConversationInput,
 } from './inbox.types';
 
+import prisma from '../../config/database';
+import whatsappService from '../whatsapp/whatsapp.service';
+
 // Extended Request interface
 interface AuthRequest extends Request {
   user?: {
@@ -18,6 +21,7 @@ interface AuthRequest extends Request {
     email: string;
     organizationId?: string;
   };
+  file?: Express.Multer.File;
 }
 
 export class InboxController {
@@ -36,7 +40,12 @@ export class InboxController {
         limit: parseInt(req.query.limit as string) || 20,
         search: req.query.search as string,
         isArchived: req.query.isArchived === 'true',
-        isRead: req.query.isRead === 'true' ? true : req.query.isRead === 'false' ? false : undefined,
+        isRead:
+          req.query.isRead === 'true'
+            ? true
+            : req.query.isRead === 'false'
+              ? false
+              : undefined,
         assignedTo: req.query.assignedTo as string,
         labels: req.query.labels ? (req.query.labels as string).split(',') : undefined,
         sortBy: (req.query.sortBy as any) || 'lastMessageAt',
@@ -99,7 +108,7 @@ export class InboxController {
   }
 
   // ==========================================
-  // SEND MESSAGE
+  // SEND MESSAGE (existing)
   // ==========================================
   async sendMessage(req: AuthRequest, res: Response, next: NextFunction) {
     try {
@@ -128,9 +137,7 @@ export class InboxController {
   async markAsRead(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
-      if (!organizationId) {
-        throw new AppError('Organization context required', 400);
-      }
+      if (!organizationId) throw new AppError('Organization context required', 400);
 
       const { id } = req.params as { id: string };
       const conversation = await inboxService.markAsRead(organizationId, id);
@@ -141,14 +148,12 @@ export class InboxController {
   }
 
   // ==========================================
-  // ARCHIVE CONVERSATION
+  // ARCHIVE / UNARCHIVE
   // ==========================================
   async archiveConversation(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
-      if (!organizationId) {
-        throw new AppError('Organization context required', 400);
-      }
+      if (!organizationId) throw new AppError('Organization context required', 400);
 
       const { id } = req.params as { id: string };
       const conversation = await inboxService.archiveConversation(organizationId, id, true);
@@ -158,15 +163,10 @@ export class InboxController {
     }
   }
 
-  // ==========================================
-  // UNARCHIVE CONVERSATION
-  // ==========================================
   async unarchiveConversation(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
-      if (!organizationId) {
-        throw new AppError('Organization context required', 400);
-      }
+      if (!organizationId) throw new AppError('Organization context required', 400);
 
       const { id } = req.params as { id: string };
       const conversation = await inboxService.archiveConversation(organizationId, id, false);
@@ -182,9 +182,7 @@ export class InboxController {
   async assignConversation(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
-      if (!organizationId) {
-        throw new AppError('Organization context required', 400);
-      }
+      if (!organizationId) throw new AppError('Organization context required', 400);
 
       const { id } = req.params as { id: string };
       const { userId } = req.body;
@@ -201,9 +199,7 @@ export class InboxController {
   async updateConversation(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
-      if (!organizationId) {
-        throw new AppError('Organization context required', 400);
-      }
+      if (!organizationId) throw new AppError('Organization context required', 400);
 
       const { id } = req.params as { id: string };
       const input: UpdateConversationInput = req.body;
@@ -220,12 +216,15 @@ export class InboxController {
   async addLabels(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
-      if (!organizationId) {
-        throw new AppError('Organization context required', 400);
-      }
+      if (!organizationId) throw new AppError('Organization context required', 400);
 
       const { id } = req.params as { id: string };
       const { labels } = req.body;
+
+      if (!Array.isArray(labels)) {
+        throw new AppError('labels must be an array', 400);
+      }
+
       const conversation = await inboxService.addLabels(organizationId, id, labels);
       return sendSuccess(res, conversation, 'Labels added');
     } catch (error) {
@@ -239,9 +238,7 @@ export class InboxController {
   async removeLabel(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
-      if (!organizationId) {
-        throw new AppError('Organization context required', 400);
-      }
+      if (!organizationId) throw new AppError('Organization context required', 400);
 
       const { id, label } = req.params as { id: string; label: string };
       const conversation = await inboxService.removeLabel(organizationId, id, label);
@@ -257,9 +254,7 @@ export class InboxController {
   async deleteConversation(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
-      if (!organizationId) {
-        throw new AppError('Organization context required', 400);
-      }
+      if (!organizationId) throw new AppError('Organization context required', 400);
 
       const { id } = req.params as { id: string };
       const result = await inboxService.deleteConversation(organizationId, id);
@@ -275,9 +270,7 @@ export class InboxController {
   async bulkUpdate(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
-      if (!organizationId) {
-        throw new AppError('Organization context required', 400);
-      }
+      if (!organizationId) throw new AppError('Organization context required', 400);
 
       const { conversationIds, ...updates } = req.body;
       const result = await inboxService.bulkUpdate(organizationId, conversationIds, updates);
@@ -293,9 +286,7 @@ export class InboxController {
   async searchMessages(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
-      if (!organizationId) {
-        throw new AppError('Organization context required', 400);
-      }
+      if (!organizationId) throw new AppError('Organization context required', 400);
 
       const query = req.query.q as string;
       const page = parseInt(req.query.page as string) || 1;
@@ -314,10 +305,7 @@ export class InboxController {
   async getStats(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
-      const userId = req.user!.id;
-      if (!organizationId) {
-        throw new AppError('Organization context required', 400);
-      }
+      if (!organizationId) throw new AppError('Organization context required', 400);
 
       const stats = await inboxService.getStats(organizationId);
       return sendSuccess(res, stats, 'Stats fetched successfully');
@@ -332,9 +320,7 @@ export class InboxController {
   async getLabels(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
-      if (!organizationId) {
-        throw new AppError('Organization context required', 400);
-      }
+      if (!organizationId) throw new AppError('Organization context required', 400);
 
       const labels = await inboxService.getAllLabels(organizationId);
       return sendSuccess(res, labels, 'Labels fetched successfully');
@@ -349,9 +335,7 @@ export class InboxController {
   async startConversation(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
-      if (!organizationId) {
-        throw new AppError('Organization context required', 400);
-      }
+      if (!organizationId) throw new AppError('Organization context required', 400);
 
       const { contactId } = req.body;
       const conversation = await inboxService.getOrCreateConversation(organizationId, contactId);
@@ -360,7 +344,117 @@ export class InboxController {
       next(error);
     }
   }
+
+  // ==========================================
+  // ✅ NEW: PIN/UNPIN CONVERSATION
+  // PATCH /inbox/conversations/:id/pin
+  // body: { isPinned: boolean }
+  // ==========================================
+  async togglePin(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const organizationId = req.user!.organizationId;
+      if (!organizationId) throw new AppError('Organization context required', 400);
+
+      const { id } = req.params as { id: string };
+      const { isPinned } = req.body as { isPinned: boolean };
+
+      // Ensure conversation belongs to org
+      await inboxService.getConversationById(organizationId, id);
+
+      const updated = await prisma.conversation.update({
+        where: { id },
+        data: { isPinned: Boolean(isPinned) }, // IDE: restart TS server if this shows an error
+      });
+
+      return sendSuccess(res, updated, Boolean(isPinned) ? 'Conversation pinned' : 'Conversation unpinned');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ==========================================
+  // ✅ NEW: UPLOAD MEDIA
+  // POST /inbox/media/upload (multipart form-data: file)
+  // ==========================================
+  async uploadMedia(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const organizationId = req.user!.organizationId;
+      if (!organizationId) throw new AppError('Organization context required', 400);
+
+      if (!req.file) throw new AppError('File is required', 400);
+
+      const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'https') as string;
+      const host = req.get('host');
+
+      const url = `${proto}://${host}/uploads/media/${req.file.filename}`;
+
+      const mime = req.file.mimetype || '';
+      const mediaType =
+        mime.startsWith('image/') ? 'image'
+          : mime.startsWith('video/') ? 'video'
+            : mime.startsWith('audio/') ? 'audio'
+              : 'document';
+
+      return sendSuccess(
+        res,
+        {
+          url,
+          mediaType,
+          mimeType: mime,
+          filename: req.file.originalname,
+          size: req.file.size,
+        },
+        'File uploaded',
+        201
+      );
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ==========================================
+  // ✅ NEW: SEND MEDIA MESSAGE
+  // POST /inbox/conversations/:id/messages/media
+  // body: { mediaType: "image|video|audio|document", mediaUrl: string, caption?: string }
+  // ==========================================
+  async sendMediaMessage(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const organizationId = req.user!.organizationId;
+      if (!organizationId) throw new AppError('Organization context required', 400);
+
+      const { id } = req.params as { id: string };
+      const { mediaType, mediaUrl, caption } = req.body as {
+        mediaType: 'image' | 'video' | 'audio' | 'document';
+        mediaUrl: string;
+        caption?: string;
+      };
+
+      if (!mediaType || !mediaUrl) throw new AppError('mediaType and mediaUrl are required', 400);
+
+      // Validate conversation
+      const conversation = await inboxService.getConversationById(organizationId, id);
+
+      // Use default WA account
+      const account = await whatsappService.getDefaultAccount(organizationId);
+      if (!account?.id) {
+        throw new AppError('No WhatsApp account connected. Please connect WhatsApp first.', 400);
+      }
+
+      const result = await whatsappService.sendMediaMessage(
+        account.id,
+        conversation.contact.phone,
+        mediaType,
+        mediaUrl,
+        caption,
+        id,
+        organizationId
+      );
+
+      return sendSuccess(res, result, 'Media message sent successfully', 201);
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
-// Export singleton instance
 export const inboxController = new InboxController();

@@ -1,10 +1,15 @@
 "use strict";
-// src/modules/inbox/inbox.controller.ts
+// src/modules/inbox/inbox.controller.ts - COMPLETE (existing + labels/pin/media)
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.inboxController = exports.InboxController = void 0;
 const inbox_service_1 = require("./inbox.service");
 const response_1 = require("../../utils/response");
 const errorHandler_1 = require("../../middleware/errorHandler");
+const database_1 = __importDefault(require("../../config/database"));
+const whatsapp_service_1 = __importDefault(require("../whatsapp/whatsapp.service"));
 class InboxController {
     // ==========================================
     // GET CONVERSATIONS
@@ -20,7 +25,11 @@ class InboxController {
                 limit: parseInt(req.query.limit) || 20,
                 search: req.query.search,
                 isArchived: req.query.isArchived === 'true',
-                isRead: req.query.isRead === 'true' ? true : req.query.isRead === 'false' ? false : undefined,
+                isRead: req.query.isRead === 'true'
+                    ? true
+                    : req.query.isRead === 'false'
+                        ? false
+                        : undefined,
                 assignedTo: req.query.assignedTo,
                 labels: req.query.labels ? req.query.labels.split(',') : undefined,
                 sortBy: req.query.sortBy || 'lastMessageAt',
@@ -79,7 +88,7 @@ class InboxController {
         }
     }
     // ==========================================
-    // SEND MESSAGE
+    // SEND MESSAGE (existing)
     // ==========================================
     async sendMessage(req, res, next) {
         try {
@@ -106,9 +115,8 @@ class InboxController {
     async markAsRead(req, res, next) {
         try {
             const organizationId = req.user.organizationId;
-            if (!organizationId) {
+            if (!organizationId)
                 throw new errorHandler_1.AppError('Organization context required', 400);
-            }
             const { id } = req.params;
             const conversation = await inbox_service_1.inboxService.markAsRead(organizationId, id);
             return (0, response_1.sendSuccess)(res, conversation, 'Marked as read');
@@ -118,14 +126,13 @@ class InboxController {
         }
     }
     // ==========================================
-    // ARCHIVE CONVERSATION
+    // ARCHIVE / UNARCHIVE
     // ==========================================
     async archiveConversation(req, res, next) {
         try {
             const organizationId = req.user.organizationId;
-            if (!organizationId) {
+            if (!organizationId)
                 throw new errorHandler_1.AppError('Organization context required', 400);
-            }
             const { id } = req.params;
             const conversation = await inbox_service_1.inboxService.archiveConversation(organizationId, id, true);
             return (0, response_1.sendSuccess)(res, conversation, 'Conversation archived');
@@ -134,15 +141,11 @@ class InboxController {
             next(error);
         }
     }
-    // ==========================================
-    // UNARCHIVE CONVERSATION
-    // ==========================================
     async unarchiveConversation(req, res, next) {
         try {
             const organizationId = req.user.organizationId;
-            if (!organizationId) {
+            if (!organizationId)
                 throw new errorHandler_1.AppError('Organization context required', 400);
-            }
             const { id } = req.params;
             const conversation = await inbox_service_1.inboxService.archiveConversation(organizationId, id, false);
             return (0, response_1.sendSuccess)(res, conversation, 'Conversation unarchived');
@@ -157,9 +160,8 @@ class InboxController {
     async assignConversation(req, res, next) {
         try {
             const organizationId = req.user.organizationId;
-            if (!organizationId) {
+            if (!organizationId)
                 throw new errorHandler_1.AppError('Organization context required', 400);
-            }
             const { id } = req.params;
             const { userId } = req.body;
             const conversation = await inbox_service_1.inboxService.assignConversation(organizationId, id, userId);
@@ -175,9 +177,8 @@ class InboxController {
     async updateConversation(req, res, next) {
         try {
             const organizationId = req.user.organizationId;
-            if (!organizationId) {
+            if (!organizationId)
                 throw new errorHandler_1.AppError('Organization context required', 400);
-            }
             const { id } = req.params;
             const input = req.body;
             const conversation = await inbox_service_1.inboxService.updateConversation(organizationId, id, input);
@@ -193,11 +194,13 @@ class InboxController {
     async addLabels(req, res, next) {
         try {
             const organizationId = req.user.organizationId;
-            if (!organizationId) {
+            if (!organizationId)
                 throw new errorHandler_1.AppError('Organization context required', 400);
-            }
             const { id } = req.params;
             const { labels } = req.body;
+            if (!Array.isArray(labels)) {
+                throw new errorHandler_1.AppError('labels must be an array', 400);
+            }
             const conversation = await inbox_service_1.inboxService.addLabels(organizationId, id, labels);
             return (0, response_1.sendSuccess)(res, conversation, 'Labels added');
         }
@@ -211,9 +214,8 @@ class InboxController {
     async removeLabel(req, res, next) {
         try {
             const organizationId = req.user.organizationId;
-            if (!organizationId) {
+            if (!organizationId)
                 throw new errorHandler_1.AppError('Organization context required', 400);
-            }
             const { id, label } = req.params;
             const conversation = await inbox_service_1.inboxService.removeLabel(organizationId, id, label);
             return (0, response_1.sendSuccess)(res, conversation, 'Label removed');
@@ -228,9 +230,8 @@ class InboxController {
     async deleteConversation(req, res, next) {
         try {
             const organizationId = req.user.organizationId;
-            if (!organizationId) {
+            if (!organizationId)
                 throw new errorHandler_1.AppError('Organization context required', 400);
-            }
             const { id } = req.params;
             const result = await inbox_service_1.inboxService.deleteConversation(organizationId, id);
             return (0, response_1.sendSuccess)(res, result, result.message);
@@ -245,9 +246,8 @@ class InboxController {
     async bulkUpdate(req, res, next) {
         try {
             const organizationId = req.user.organizationId;
-            if (!organizationId) {
+            if (!organizationId)
                 throw new errorHandler_1.AppError('Organization context required', 400);
-            }
             const { conversationIds, ...updates } = req.body;
             const result = await inbox_service_1.inboxService.bulkUpdate(organizationId, conversationIds, updates);
             return (0, response_1.sendSuccess)(res, result, `${result.updated} conversations updated`);
@@ -262,9 +262,8 @@ class InboxController {
     async searchMessages(req, res, next) {
         try {
             const organizationId = req.user.organizationId;
-            if (!organizationId) {
+            if (!organizationId)
                 throw new errorHandler_1.AppError('Organization context required', 400);
-            }
             const query = req.query.q;
             const page = parseInt(req.query.page) || 1;
             const limit = parseInt(req.query.limit) || 20;
@@ -281,11 +280,9 @@ class InboxController {
     async getStats(req, res, next) {
         try {
             const organizationId = req.user.organizationId;
-            const userId = req.user.id;
-            if (!organizationId) {
+            if (!organizationId)
                 throw new errorHandler_1.AppError('Organization context required', 400);
-            }
-            const stats = await inbox_service_1.inboxService.getStats(organizationId, userId);
+            const stats = await inbox_service_1.inboxService.getStats(organizationId);
             return (0, response_1.sendSuccess)(res, stats, 'Stats fetched successfully');
         }
         catch (error) {
@@ -298,9 +295,8 @@ class InboxController {
     async getLabels(req, res, next) {
         try {
             const organizationId = req.user.organizationId;
-            if (!organizationId) {
+            if (!organizationId)
                 throw new errorHandler_1.AppError('Organization context required', 400);
-            }
             const labels = await inbox_service_1.inboxService.getAllLabels(organizationId);
             return (0, response_1.sendSuccess)(res, labels, 'Labels fetched successfully');
         }
@@ -314,9 +310,8 @@ class InboxController {
     async startConversation(req, res, next) {
         try {
             const organizationId = req.user.organizationId;
-            if (!organizationId) {
+            if (!organizationId)
                 throw new errorHandler_1.AppError('Organization context required', 400);
-            }
             const { contactId } = req.body;
             const conversation = await inbox_service_1.inboxService.getOrCreateConversation(organizationId, contactId);
             return (0, response_1.sendSuccess)(res, conversation, 'Conversation ready');
@@ -325,8 +320,90 @@ class InboxController {
             next(error);
         }
     }
+    // ==========================================
+    // ✅ NEW: PIN/UNPIN CONVERSATION
+    // PATCH /inbox/conversations/:id/pin
+    // body: { isPinned: boolean }
+    // ==========================================
+    async togglePin(req, res, next) {
+        try {
+            const organizationId = req.user.organizationId;
+            if (!organizationId)
+                throw new errorHandler_1.AppError('Organization context required', 400);
+            const { id } = req.params;
+            const { isPinned } = req.body;
+            // Ensure conversation belongs to org
+            await inbox_service_1.inboxService.getConversationById(organizationId, id);
+            const updated = await database_1.default.conversation.update({
+                where: { id },
+                data: { isPinned: Boolean(isPinned) },
+            });
+            return (0, response_1.sendSuccess)(res, updated, Boolean(isPinned) ? 'Conversation pinned' : 'Conversation unpinned');
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    // ==========================================
+    // ✅ NEW: UPLOAD MEDIA
+    // POST /inbox/media/upload (multipart form-data: file)
+    // ==========================================
+    async uploadMedia(req, res, next) {
+        try {
+            const organizationId = req.user.organizationId;
+            if (!organizationId)
+                throw new errorHandler_1.AppError('Organization context required', 400);
+            if (!req.file)
+                throw new errorHandler_1.AppError('File is required', 400);
+            const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'https');
+            const host = req.get('host');
+            const url = `${proto}://${host}/uploads/media/${req.file.filename}`;
+            const mime = req.file.mimetype || '';
+            const mediaType = mime.startsWith('image/') ? 'image'
+                : mime.startsWith('video/') ? 'video'
+                    : mime.startsWith('audio/') ? 'audio'
+                        : 'document';
+            return (0, response_1.sendSuccess)(res, {
+                url,
+                mediaType,
+                mimeType: mime,
+                filename: req.file.originalname,
+                size: req.file.size,
+            }, 'File uploaded', 201);
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    // ==========================================
+    // ✅ NEW: SEND MEDIA MESSAGE
+    // POST /inbox/conversations/:id/messages/media
+    // body: { mediaType: "image|video|audio|document", mediaUrl: string, caption?: string }
+    // ==========================================
+    async sendMediaMessage(req, res, next) {
+        try {
+            const organizationId = req.user.organizationId;
+            if (!organizationId)
+                throw new errorHandler_1.AppError('Organization context required', 400);
+            const { id } = req.params;
+            const { mediaType, mediaUrl, caption } = req.body;
+            if (!mediaType || !mediaUrl)
+                throw new errorHandler_1.AppError('mediaType and mediaUrl are required', 400);
+            // Validate conversation
+            const conversation = await inbox_service_1.inboxService.getConversationById(organizationId, id);
+            // Use default WA account
+            const account = await whatsapp_service_1.default.getDefaultAccount(organizationId);
+            if (!account?.id) {
+                throw new errorHandler_1.AppError('No WhatsApp account connected. Please connect WhatsApp first.', 400);
+            }
+            const result = await whatsapp_service_1.default.sendMediaMessage(account.id, conversation.contact.phone, mediaType, mediaUrl, caption, id, organizationId);
+            return (0, response_1.sendSuccess)(res, result, 'Media message sent successfully', 201);
+        }
+        catch (error) {
+            next(error);
+        }
+    }
 }
 exports.InboxController = InboxController;
-// Export singleton instance
 exports.inboxController = new InboxController();
 //# sourceMappingURL=inbox.controller.js.map

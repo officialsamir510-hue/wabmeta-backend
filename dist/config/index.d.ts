@@ -34,12 +34,28 @@ export declare const config: {
         readonly appId: string;
         readonly appSecret: string;
         readonly webhookVerifyToken: string;
+        readonly configId: string;
+        readonly redirectUri: string;
+        readonly graphApiVersion: string;
+    };
+    readonly google: {
+        readonly clientId: string;
+        readonly clientSecret: string;
+        readonly redirectUri: string;
     };
     readonly email: {
         readonly enabled: boolean;
         readonly resendApiKey: string;
         readonly from: string;
         readonly fromName: string;
+        readonly smtp: {
+            readonly host: string;
+            readonly port: number;
+            readonly auth: {
+                readonly user: string;
+                readonly pass: string;
+            };
+        };
     };
     readonly razorpay: {
         readonly keyId: string;

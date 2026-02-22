@@ -1,17 +1,9 @@
 import { Prisma } from '@prisma/client';
-import { ConversationsQueryInput, MessagesQueryInput, SendMessageInput, UpdateConversationInput } from './inbox.types';
-type ConversationFilter = 'all' | 'unread' | 'archived' | 'open';
-declare class InboxService {
+export declare class InboxService {
     /**
-     * Get conversations for an organization
-     * Supports both old 3-argument style and new 2-argument style
+     * Get conversations with flexible query support
      */
-    getConversations(organizationId: string, accountIdOrQuery?: string | ConversationsQueryInput, options?: {
-        filter?: ConversationFilter;
-        search?: string;
-        page?: number;
-        limit?: number;
-    }): Promise<{
+    getConversations(organizationId: string, query?: any): Promise<{
         conversations: {
             contact: {
                 name: string;
@@ -22,6 +14,7 @@ declare class InboxService {
                 lastName: string | null;
                 phone: string;
                 avatar: string | null;
+                whatsappProfileName: string | null;
             };
             organizationId: string;
             id: string;
@@ -41,62 +34,15 @@ declare class InboxService {
             assignedTo: string | null;
             labels: string[];
         }[];
-        pagination: {
-            page: number;
-            limit: number;
-            total: number;
-            totalPages: number;
-        };
         meta: {
-            page: number;
-            limit: number;
+            page: any;
+            limit: any;
             total: number;
             totalPages: number;
         };
     }>;
     /**
-     * Get single conversation by ID
-     */
-    getConversation(conversationId: string, organizationId?: string): Promise<{
-        contact: {
-            email: string | null;
-            organizationId: string;
-            tags: string[];
-            id: string;
-            firstName: string | null;
-            lastName: string | null;
-            phone: string;
-            avatar: string | null;
-            status: import(".prisma/client").$Enums.ContactStatus;
-            createdAt: Date;
-            updatedAt: Date;
-            lastMessageAt: Date | null;
-            countryCode: string;
-            customFields: Prisma.JsonValue;
-            messageCount: number;
-            source: string | null;
-        };
-    } & {
-        organizationId: string;
-        id: string;
-        createdAt: Date;
-        updatedAt: Date;
-        lastMessageAt: Date | null;
-        contactId: string;
-        phoneNumberId: string | null;
-        lastMessagePreview: string | null;
-        lastCustomerMessageAt: Date | null;
-        windowExpiresAt: Date | null;
-        isWindowOpen: boolean;
-        lastBotMessageAt: Date | null;
-        isArchived: boolean;
-        isRead: boolean;
-        unreadCount: number;
-        assignedTo: string | null;
-        labels: string[];
-    }>;
-    /**
-     * Get conversation by ID (alias for controller compatibility)
+     * Get single conversation
      */
     getConversationById(organizationId: string, conversationId: string): Promise<{
         contact: {
@@ -113,6 +59,10 @@ declare class InboxService {
             updatedAt: Date;
             lastMessageAt: Date | null;
             countryCode: string;
+            whatsappProfileName: string | null;
+            whatsappProfileFetched: boolean;
+            lastProfileFetchAt: Date | null;
+            profileFetchAttempts: number;
             customFields: Prisma.JsonValue;
             messageCount: number;
             source: string | null;
@@ -137,13 +87,9 @@ declare class InboxService {
         labels: string[];
     }>;
     /**
-     * Get messages for a conversation
-     * Supports both 2-argument and 3-argument styles
+     * Get messages for conversation
      */
-    getMessages(conversationIdOrOrgId: string, optionsOrConversationId?: string | MessagesQueryInput | {
-        before?: string;
-        limit?: number;
-    }, query?: MessagesQueryInput): Promise<{
+    getMessages(organizationId: string, conversationId: string, query?: any): Promise<{
         messages: {
             type: import(".prisma/client").$Enums.MessageType;
             id: string;
@@ -172,24 +118,17 @@ declare class InboxService {
             statusUpdatedAt: Date | null;
             conversationId: string;
         }[];
-        pagination: {
-            page: number;
-            limit: number;
-            total: number;
-            totalPages: number;
-        };
         meta: {
-            page: number;
-            limit: number;
+            page: any;
+            limit: any;
             total: number;
             totalPages: number;
         };
     }>;
     /**
      * Mark conversation as read
-     * Supports both 1-argument and 2-argument styles
      */
-    markAsRead(conversationIdOrOrgId: string, userIdOrConversationId?: string): Promise<{
+    markAsRead(organizationId: string, conversationId: string): Promise<{
         organizationId: string;
         id: string;
         createdAt: Date;
@@ -209,31 +148,7 @@ declare class InboxService {
         labels: string[];
     }>;
     /**
-     * Update archive status
-     * For routes.ts compatibility
-     */
-    updateArchiveStatus(conversationId: string, isArchived: boolean): Promise<{
-        organizationId: string;
-        id: string;
-        createdAt: Date;
-        updatedAt: Date;
-        lastMessageAt: Date | null;
-        contactId: string;
-        phoneNumberId: string | null;
-        lastMessagePreview: string | null;
-        lastCustomerMessageAt: Date | null;
-        windowExpiresAt: Date | null;
-        isWindowOpen: boolean;
-        lastBotMessageAt: Date | null;
-        isArchived: boolean;
-        isRead: boolean;
-        unreadCount: number;
-        assignedTo: string | null;
-        labels: string[];
-    }>;
-    /**
-     * Archive conversation
-     * For controller.ts compatibility
+     * Archive/Unarchive conversation
      */
     archiveConversation(organizationId: string, conversationId: string, isArchived: boolean): Promise<{
         organizationId: string;
@@ -255,10 +170,31 @@ declare class InboxService {
         labels: string[];
     }>;
     /**
-     * Update labels
-     * Supports both 2-argument and 3-argument styles
+     * Assign conversation to user
      */
-    updateLabels(conversationIdOrOrgId: string, labelsOrConversationId: string[] | string, labels?: string[]): Promise<{
+    assignConversation(organizationId: string, conversationId: string, userId: string | null): Promise<{
+        organizationId: string;
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        lastMessageAt: Date | null;
+        contactId: string;
+        phoneNumberId: string | null;
+        lastMessagePreview: string | null;
+        lastCustomerMessageAt: Date | null;
+        windowExpiresAt: Date | null;
+        isWindowOpen: boolean;
+        lastBotMessageAt: Date | null;
+        isArchived: boolean;
+        isRead: boolean;
+        unreadCount: number;
+        assignedTo: string | null;
+        labels: string[];
+    }>;
+    /**
+     * Update conversation labels
+     */
+    updateLabels(organizationId: string, conversationId: string, labels: string[]): Promise<{
         organizationId: string;
         id: string;
         createdAt: Date;
@@ -322,63 +258,21 @@ declare class InboxService {
         labels: string[];
     }>;
     /**
-     * Assign conversation
-     * Supports both 2-argument and 3-argument styles
+     * Get inbox stats
      */
-    assignConversation(conversationIdOrOrgId: string, userIdOrConversationId: string | null, userId?: string | null): Promise<{
-        organizationId: string;
-        id: string;
-        createdAt: Date;
-        updatedAt: Date;
-        lastMessageAt: Date | null;
-        contactId: string;
-        phoneNumberId: string | null;
-        lastMessagePreview: string | null;
-        lastCustomerMessageAt: Date | null;
-        windowExpiresAt: Date | null;
-        isWindowOpen: boolean;
-        lastBotMessageAt: Date | null;
-        isArchived: boolean;
-        isRead: boolean;
-        unreadCount: number;
-        assignedTo: string | null;
-        labels: string[];
+    getStats(organizationId: string): Promise<{
+        total: number;
+        open: number;
+        unread: number;
+        archived: number;
     }>;
     /**
-     * Update conversation
+     * Get all labels
      */
-    updateConversation(organizationId: string, conversationId: string, input: UpdateConversationInput): Promise<{
-        organizationId: string;
-        id: string;
-        createdAt: Date;
-        updatedAt: Date;
-        lastMessageAt: Date | null;
-        contactId: string;
-        phoneNumberId: string | null;
-        lastMessagePreview: string | null;
-        lastCustomerMessageAt: Date | null;
-        windowExpiresAt: Date | null;
-        isWindowOpen: boolean;
-        lastBotMessageAt: Date | null;
-        isArchived: boolean;
-        isRead: boolean;
-        unreadCount: number;
-        assignedTo: string | null;
-        labels: string[];
-    }>;
-    /**
-     * Delete conversation
-     */
-    deleteConversation(organizationId: string, conversationId: string): Promise<{
-        success: boolean;
-        message: string;
-    }>;
-    /**
-     * Bulk update conversations
-     */
-    bulkUpdate(organizationId: string, conversationIds: string[], updates: Partial<UpdateConversationInput>): Promise<{
-        updated: number;
-    }>;
+    getAllLabels(organizationId: string): Promise<{
+        label: string;
+        count: number;
+    }[]>;
     /**
      * Search messages
      */
@@ -399,6 +293,10 @@ declare class InboxService {
                     updatedAt: Date;
                     lastMessageAt: Date | null;
                     countryCode: string;
+                    whatsappProfileName: string | null;
+                    whatsappProfileFetched: boolean;
+                    lastProfileFetchAt: Date | null;
+                    profileFetchAttempts: number;
                     customFields: Prisma.JsonValue;
                     messageCount: number;
                     source: string | null;
@@ -458,22 +356,40 @@ declare class InboxService {
         };
     }>;
     /**
-     * Get conversation stats
-     * Supports both 1-argument and 2-argument styles
+     * Bulk update conversations
      */
-    getStats(organizationId: string, accountIdOrUserId?: string): Promise<{
-        total: number;
-        open: number;
-        unread: number;
-        archived: number;
+    bulkUpdate(organizationId: string, conversationIds: string[], updates: Partial<Prisma.ConversationUpdateInput>): Promise<{
+        updated: number;
     }>;
     /**
-     * Get all labels for organization
+     * Delete conversation
      */
-    getAllLabels(organizationId: string): Promise<{
-        label: string;
-        count: number;
-    }[]>;
+    deleteConversation(organizationId: string, conversationId: string): Promise<{
+        success: boolean;
+        message: string;
+    }>;
+    /**
+     * Update conversation
+     */
+    updateConversation(organizationId: string, conversationId: string, updates: Partial<Prisma.ConversationUpdateInput>): Promise<{
+        organizationId: string;
+        id: string;
+        createdAt: Date;
+        updatedAt: Date;
+        lastMessageAt: Date | null;
+        contactId: string;
+        phoneNumberId: string | null;
+        lastMessagePreview: string | null;
+        lastCustomerMessageAt: Date | null;
+        windowExpiresAt: Date | null;
+        isWindowOpen: boolean;
+        lastBotMessageAt: Date | null;
+        isArchived: boolean;
+        isRead: boolean;
+        unreadCount: number;
+        assignedTo: string | null;
+        labels: string[];
+    }>;
     /**
      * Get or create conversation
      */
@@ -492,6 +408,10 @@ declare class InboxService {
             updatedAt: Date;
             lastMessageAt: Date | null;
             countryCode: string;
+            whatsappProfileName: string | null;
+            whatsappProfileFetched: boolean;
+            lastProfileFetchAt: Date | null;
+            profileFetchAttempts: number;
             customFields: Prisma.JsonValue;
             messageCount: number;
             source: string | null;
@@ -516,37 +436,9 @@ declare class InboxService {
         labels: string[];
     }>;
     /**
-     * Send message (placeholder - implement with WhatsApp API)
+     * Send message
      */
-    sendMessage(organizationId: string, userId: string, conversationId: string, input: SendMessageInput): Promise<{
-        type: import(".prisma/client").$Enums.MessageType;
-        id: string;
-        status: import(".prisma/client").$Enums.MessageStatus;
-        createdAt: Date;
-        updatedAt: Date;
-        waMessageId: string | null;
-        whatsappAccountId: string | null;
-        templateId: string | null;
-        sentAt: Date | null;
-        deliveredAt: Date | null;
-        readAt: Date | null;
-        failedAt: Date | null;
-        failureReason: string | null;
-        retryCount: number;
-        templateParams: Prisma.JsonValue | null;
-        templateName: string | null;
-        wamId: string | null;
-        direction: import(".prisma/client").$Enums.MessageDirection;
-        content: string | null;
-        mediaUrl: string | null;
-        mediaType: string | null;
-        mediaMimeType: string | null;
-        replyToMessageId: string | null;
-        metadata: Prisma.JsonValue | null;
-        statusUpdatedAt: Date | null;
-        conversationId: string;
-    }>;
+    sendMessage(organizationId: string, userId: string, conversationId: string, input: any): Promise<any>;
 }
 export declare const inboxService: InboxService;
-export default inboxService;
 //# sourceMappingURL=inbox.service.d.ts.map

@@ -1,43 +1,5 @@
-src/modules/auth/auth.service.ts(27,46): error TS2339: Property 'google' does not exist on type '{ readonly app: { readonly name: "WabMeta"; readonly env: "development" | "production" | "test"; readonly port: number; readonly isDevelopment: boolean; readonly isProduction: boolean; }; ... 12 more ...; readonly razorpay: { ...; }; }'.
-src/modules/auth/auth.service.ts(603,26): error TS2339: Property 'google' does not exist on type '{ readonly app: { readonly name: "WabMeta"; readonly env: "development" | "production" | "test"; readonly port: number; readonly isDevelopment: boolean; readonly isProduction: boolean; }; ... 12 more ...; readonly razorpay: { ...; }; }'.
-src/modules/contacts/contacts.service.ts(159,15): error TS2353: Object literal may only specify known properties, and 'whatsappProfileName' does not exist in type '(Without<ContactUpdateInput, ContactUncheckedUpdateInput> & ContactUncheckedUpdateInput) | (Without<...> & ContactUpdateInput)'.
-src/modules/contacts/contacts.service.ts(176,13): error TS2353: Object literal may only specify known properties, and 'whatsappProfileName' does not exist in type 'Without<ContactCreateInput, ContactUncheckedCreateInput> & ContactUncheckedCreateInput'.
-src/modules/contacts/contacts.service.ts(218,13): error TS2353: Object literal may only specify known properties, and 'whatsappProfileFetched' does not exist in type 'ContactWhereInput'.
-src/modules/contacts/contacts.service.ts(278,9): error TS2353: Object literal may only specify known properties, and 'whatsappProfileFetched' does not exist in type 'Without<ContactCreateInput, ContactUncheckedCreateInput> & ContactUncheckedCreateInput'.
-src/modules/contacts/contacts.service.ts(337,49): error TS2339: Property 'whatsappProfileFetched' does not exist on type 'ContactWhereInput'.
-src/modules/contacts/contacts.service.ts(713,57): error TS2353: Object literal may only specify known properties, and 'whatsappProfileFetched' does not exist in type 'ContactWhereInput'.
-src/modules/contacts/contacts.service.ts(772,33): error TS2339: Property 'whatsappProfileFetched' does not exist on type '{ email: string | null; organizationId: string; tags: string[]; id: string; firstName: string | null; lastName: string | null; phone: string; avatar: string | null; status: ContactStatus; ... 6 more ...; source: string | null; }'.
-src/modules/contacts/contacts.service.ts(773,29): error TS2339: Property 'whatsappProfileName' does not exist on type '{ email: string | null; organizationId: string; tags: string[]; id: string; firstName: string | null; lastName: string | null; phone: string; avatar: string | null; status: ContactStatus; ... 6 more ...; source: string | null; }'.
-src/modules/meta/meta.api.ts(19,37): error TS2339: Property 'graphApiVersion' does not exist on type '{ readonly appId: string; readonly appSecret: string; readonly webhookVerifyToken: string; }'.
-src/modules/meta/meta.api.ts(76,59): error TS2339: Property 'redirectUri' does not exist on type '{ readonly appId: string; readonly appSecret: string; readonly webhookVerifyToken: string; }'.
-src/modules/meta/meta.api.ts(82,37): error TS2339: Property 'redirectUri' does not exist on type '{ readonly appId: string; readonly appSecret: string; readonly webhookVerifyToken: string; }'.
-src/modules/meta/meta.service.ts(40,33): error TS2339: Property 'graphApiVersion' does not exist on type '{ readonly appId: string; readonly appSecret: string; readonly webhookVerifyToken: string; }'.
-src/modules/meta/meta.service.ts(45,30): error TS2339: Property 'configId' does not exist on type '{ readonly appId: string; readonly appSecret: string; readonly webhookVerifyToken: string; }'.
-src/modules/meta/meta.service.ts(49,33): error TS2339: Property 'redirectUri' does not exist on type '{ readonly appId: string; readonly appSecret: string; readonly webhookVerifyToken: string; }'.
-src/modules/meta/meta.service.ts(61,46): error TS2339: Property 'configId' does not exist on type '{ readonly appId: string; readonly appSecret: string; readonly webhookVerifyToken: string; }'.
-src/modules/meta/meta.service.ts(69,29): error TS2339: Property 'configId' does not exist on type '{ readonly appId: string; readonly appSecret: string; readonly webhookVerifyToken: string; }'.
-src/modules/meta/meta.service.ts(70,28): error TS2339: Property 'graphApiVersion' does not exist on type '{ readonly appId: string; readonly appSecret: string; readonly webhookVerifyToken: string; }'.
-src/modules/meta/meta.service.ts(71,32): error TS2339: Property 'redirectUri' does not exist on type '{ readonly appId: string; readonly appSecret: string; readonly webhookVerifyToken: string; }'.
-src/modules/meta/meta.service.ts(80,19): error TS2339: Property 'configId' does not exist on type '{ readonly appId: string; readonly appSecret: string; readonly webhookVerifyToken: string; }'.
-src/modules/meta/meta.service.ts(81,19): error TS2339: Property 'redirectUri' does not exist on type '{ readonly appId: string; readonly appSecret: string; readonly webhookVerifyToken: string; }'.
-src/modules/meta/meta.service.ts(87,34): error TS2339: Property 'configId' does not exist on type '{ readonly appId: string; readonly appSecret: string; readonly webhookVerifyToken: string; }'.
-src/modules/meta/meta.service.ts(88,37): error TS2339: Property 'redirectUri' does not exist on type '{ readonly appId: string; readonly appSecret: string; readonly webhookVerifyToken: string; }'.
-src/modules/meta/meta.service.ts(89,31): error TS2339: Property 'graphApiVersion' does not exist on type '{ readonly appId: string; readonly appSecret: string; readonly webhookVerifyToken: string; }'.
-src/modules/whatsapp/whatsapp.api.ts(7,38): error TS2339: Property 'graphApiVersion' does not exist on type '{ readonly appId: string; readonly appSecret: string; readonly webhookVerifyToken: string; }'.
-src/socket.ts(26,7): error TS2769: No overload matches this call.
-  Overload 1 of 3, '(srv?: number | TServerInstance | undefined, opts?: Partial<ServerOptions> | undefined): Server<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, any>', gave the following error.
-    Type 'readonly [string, "https://wabmeta.com", "http://localhost:3000"]' is not assignable to type 'StaticOrigin | CustomOrigin | undefined'.
-      The type 'readonly [string, "https://wabmeta.com", "http://localhost:3000"]' is 'readonly' and cannot be assigned to the mutable type '(string | boolean | RegExp)[]'.
-  Overload 2 of 3, '(srv: number | TServerInstance | Partial<ServerOptions> | undefined, opts?: Partial<ServerOptions> | undefined): Server<...>', gave the following error.
-    Type 'readonly [string, "https://wabmeta.com", "http://localhost:3000"]' is not assignable to type 'StaticOrigin | CustomOrigin | undefined'.
-      The type 'readonly [string, "https://wabmeta.com", "http://localhost:3000"]' is 'readonly' and cannot be assigned to the mutable type '(string | boolean | RegExp)[]'.
-src/socket.ts(206,35): error TS2339: Property 'webhookEvents' does not exist on type 'typeof import("C:/Users/Sameer Thakur/wabmeta-backend/src/modules/webhooks/webhook.service")'.
-src/utils/email.ts(8,22): error TS2339: Property 'smtp' does not exist on type '{ readonly enabled: boolean; readonly resendApiKey: string; readonly from: string; readonly fromName: string; }'.
-src/utils/email.ts(9,22): error TS2339: Property 'smtp' does not exist on type '{ readonly enabled: boolean; readonly resendApiKey: string; readonly from: string; readonly fromName: string; }'.
-src/utils/email.ts(10,24): error TS2339: Property 'smtp' does not exist on type '{ readonly enabled: boolean; readonly resendApiKey: string; readonly from: string; readonly fromName: string; }'.
-src/utils/email.ts(11,30): error TS2339: Property 'smtp' does not exist on type '{ readonly enabled: boolean; readonly resendApiKey: string; readonly from: string; readonly fromName: string; }'.
-src/utils/email.ts(11,65): error TS2339: Property 'smtp' does not exist on type '{ readonly enabled: boolean; readonly resendApiKey: string; readonly from: string; readonly fromName: string; }'.
-src/utils/email.ts(304,23): error TS2339: Property 'smtp' does not exist on type '{ readonly enabled: boolean; readonly resendApiKey: string; readonly from: string; readonly fromName: string; }'.
-src/utils/email.ts(304,55): error TS2339: Property 'smtp' does not exist on type '{ readonly enabled: boolean; readonly resendApiKey: string; readonly from: string; readonly fromName: string; }'.
-src/utils/email.ts(394,23): error TS2339: Property 'smtp' does not exist on type '{ readonly enabled: boolean; readonly resendApiKey: string; readonly from: string; readonly fromName: string; }'.
-src/utils/email.ts(394,55): error TS2339: Property 'smtp' does not exist on type '{ readonly enabled: boolean; readonly resendApiKey: string; readonly from: string; readonly fromName: string; }'.
+﻿src/modules/inbox/inbox.controller.ts(366,17): error TS2353: Object literal may only specify known properties, and 'isPinned' does not exist in type '(Without<ConversationUpdateInput, ConversationUncheckedUpdateInput> & ConversationUncheckedUpdateInput) | (Without<...> & ConversationUpdateInput)'.
+src/modules/inbox/inbox.media.ts(33,66): error TS2503: Cannot find namespace 'multer'.
+src/modules/inbox/inbox.media.ts(54,5): error TS2322: Type '(req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => any' is not assignable to type '(req: Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>, file: File, callback: FileFilterCallback) => void'.
+  Types of parameters 'file' and 'file' are incompatible.
+    Property 'stream' is missing in type 'File' but required in type 'Express.Multer.File'.

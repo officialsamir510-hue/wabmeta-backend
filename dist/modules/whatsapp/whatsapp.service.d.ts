@@ -81,6 +81,10 @@ declare class WhatsAppService {
                     updatedAt: Date;
                     lastMessageAt: Date | null;
                     countryCode: string;
+                    whatsappProfileName: string | null;
+                    whatsappProfileFetched: boolean;
+                    lastProfileFetchAt: Date | null;
+                    profileFetchAttempts: number;
                     customFields: import("@prisma/client/runtime/library").JsonValue;
                     messageCount: number;
                     source: string | null;
@@ -155,6 +159,10 @@ declare class WhatsAppService {
                     updatedAt: Date;
                     lastMessageAt: Date | null;
                     countryCode: string;
+                    whatsappProfileName: string | null;
+                    whatsappProfileFetched: boolean;
+                    lastProfileFetchAt: Date | null;
+                    profileFetchAttempts: number;
                     customFields: import("@prisma/client/runtime/library").JsonValue;
                     messageCount: number;
                     source: string | null;
@@ -229,6 +237,10 @@ declare class WhatsAppService {
                     updatedAt: Date;
                     lastMessageAt: Date | null;
                     countryCode: string;
+                    whatsappProfileName: string | null;
+                    whatsappProfileFetched: boolean;
+                    lastProfileFetchAt: Date | null;
+                    profileFetchAttempts: number;
                     customFields: import("@prisma/client/runtime/library").JsonValue;
                     messageCount: number;
                     source: string | null;
@@ -303,6 +315,10 @@ declare class WhatsAppService {
                     updatedAt: Date;
                     lastMessageAt: Date | null;
                     countryCode: string;
+                    whatsappProfileName: string | null;
+                    whatsappProfileFetched: boolean;
+                    lastProfileFetchAt: Date | null;
+                    profileFetchAttempts: number;
                     customFields: import("@prisma/client/runtime/library").JsonValue;
                     messageCount: number;
                     source: string | null;

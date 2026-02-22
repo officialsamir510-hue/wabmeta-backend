@@ -1,67 +1,117 @@
 "use strict";
-// src/modules/campaigns/campaigns.socket.ts
+// src/modules/campaigns/campaigns.socket.ts - COMPLETE
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.initializeCampaignSocket = exports.campaignSocketService = exports.CampaignSocketService = void 0;
+exports.campaignSocketService = exports.initializeCampaignSocket = void 0;
+let io = null;
+/**
+ * Initialize campaign socket service with Socket.IO instance
+ */
+const initializeCampaignSocket = (socketServer) => {
+    io = socketServer;
+    console.log('✅ Campaign Socket Service initialized');
+};
+exports.initializeCampaignSocket = initializeCampaignSocket;
+/**
+ * Campaign Socket Service Class
+ */
 class CampaignSocketService {
-    io;
-    constructor(io) {
-        this.io = io;
-    }
     /**
-     * Emit campaign status update to specific organization
+     * Emit campaign status update
      */
     emitCampaignUpdate(organizationId, campaignId, data) {
-        this.io.to(`org:${organizationId}`).emit('campaign:update', {
+        if (!io) {
+            console.warn('⚠️ Socket.IO not initialized - cannot emit campaign:update');
+            return;
+        }
+        const payload = {
             campaignId,
+            organizationId,
             ...data,
             timestamp: new Date().toISOString(),
-        });
-        console.log(`📢 Campaign update emitted to org:${organizationId}`, {
+        };
+        // Emit to multiple rooms for redundancy
+        io.to(`org:${organizationId}`).emit('campaign:update', payload);
+        io.to(`campaign:${campaignId}`).emit('campaign:update', payload);
+        io.to(`org:${organizationId}:campaigns`).emit('campaign:update', payload);
+        console.log(`📡 [SOCKET] campaign:update → org:${organizationId}`, {
             campaignId,
             status: data.status,
+            message: data.message,
         });
     }
     /**
-     * Emit campaign progress update
+     * Emit campaign progress updates
      */
-    emitCampaignProgress(organizationId, campaignId, progress) {
-        this.io.to(`org:${organizationId}`).emit('campaign:progress', {
+    emitCampaignProgress(organizationId, campaignId, data) {
+        if (!io) {
+            console.warn('⚠️ Socket.IO not initialized - cannot emit campaign:progress');
+            return;
+        }
+        const payload = {
             campaignId,
-            ...progress,
+            organizationId,
+            ...data,
             timestamp: new Date().toISOString(),
-        });
-        console.log(`📊 Campaign progress: ${progress.percentage}%`, {
-            campaignId,
-            sent: progress.sent,
-            total: progress.total,
-        });
+        };
+        io.to(`org:${organizationId}`).emit('campaign:progress', payload);
+        io.to(`campaign:${campaignId}`).emit('campaign:progress', payload);
+        io.to(`org:${organizationId}:campaigns`).emit('campaign:progress', payload);
+        // Only log every 10% to reduce noise
+        if (data.percentage % 10 === 0) {
+            console.log(`📊 [SOCKET] campaign:progress → ${data.percentage}% (${data.sent}/${data.total})`);
+        }
     }
     /**
-     * Emit campaign contact status update
+     * Emit individual contact status update
      */
-    emitContactStatus(organizationId, campaignId, contactUpdate) {
-        this.io.to(`org:${organizationId}`).emit('campaign:contact:status', {
+    emitContactStatus(organizationId, campaignId, data) {
+        if (!io) {
+            console.warn('⚠️ Socket.IO not initialized - cannot emit campaign:contact');
+            return;
+        }
+        const payload = {
             campaignId,
-            ...contactUpdate,
+            organizationId,
+            ...data,
             timestamp: new Date().toISOString(),
-        });
+        };
+        io.to(`org:${organizationId}`).emit('campaign:contact', payload);
+        io.to(`campaign:${campaignId}`).emit('campaign:contact', payload);
+        io.to(`campaign:${campaignId}`).emit('campaign:contact:status', payload);
+        if (data.status === 'FAILED') {
+            console.warn(`❌ [SOCKET] Contact failed: ${data.phone} - ${data.error || 'Unknown error'}`);
+        }
     }
     /**
-     * Emit campaign completed event
+     * Emit campaign completion event
      */
     emitCampaignCompleted(organizationId, campaignId, stats) {
-        this.io.to(`org:${organizationId}`).emit('campaign:completed', {
+        if (!io) {
+            console.warn('⚠️ Socket.IO not initialized - cannot emit campaign:completed');
+            return;
+        }
+        const payload = {
             campaignId,
+            organizationId,
             ...stats,
             timestamp: new Date().toISOString(),
+        };
+        io.to(`org:${organizationId}`).emit('campaign:completed', payload);
+        io.to(`campaign:${campaignId}`).emit('campaign:completed', payload);
+        io.to(`org:${organizationId}:campaigns`).emit('campaign:completed', payload);
+        console.log(`🎉 [SOCKET] Campaign completed: ${campaignId}`, {
+            sent: stats.sentCount,
+            failed: stats.failedCount,
+            total: stats.totalRecipients,
         });
-        console.log(`✅ Campaign ${campaignId} completed`, stats);
     }
     /**
      * Emit campaign error
      */
     emitCampaignError(organizationId, campaignId, error) {
-        this.io.to(`org:${organizationId}`).emit('campaign:error', {
+        if (!io)
+            return;
+        io.to(`org:${organizationId}`).emit('campaign:error', {
             campaignId,
             ...error,
             timestamp: new Date().toISOString(),
@@ -72,7 +122,9 @@ class CampaignSocketService {
      * Emit CSV upload progress
      */
     emitCsvUploadProgress(userId, data) {
-        this.io.to(`user:${userId}`).emit('csv:upload:progress', {
+        if (!io)
+            return;
+        io.to(`user:${userId}`).emit('csv:upload:progress', {
             ...data,
             timestamp: new Date().toISOString(),
         });
@@ -81,23 +133,26 @@ class CampaignSocketService {
      * Emit contact validation results
      */
     emitContactValidation(userId, data) {
-        this.io.to(`user:${userId}`).emit('csv:validation:batch', {
+        if (!io)
+            return;
+        io.to(`user:${userId}`).emit('csv:validation:batch', {
             ...data,
             timestamp: new Date().toISOString(),
         });
     }
     /**
-     * Get active socket count for organization
+     * Check if socket is initialized
      */
-    getActiveConnections(organizationId) {
-        const room = this.io.sockets.adapter.rooms.get(`org:${organizationId}`);
-        return room ? room.size : 0;
+    isInitialized() {
+        return io !== null;
+    }
+    /**
+     * Get Socket.IO instance (for advanced usage)
+     */
+    getIO() {
+        return io;
     }
 }
-exports.CampaignSocketService = CampaignSocketService;
-const initializeCampaignSocket = (io) => {
-    exports.campaignSocketService = new CampaignSocketService(io);
-    return exports.campaignSocketService;
-};
-exports.initializeCampaignSocket = initializeCampaignSocket;
+exports.campaignSocketService = new CampaignSocketService();
+exports.default = exports.campaignSocketService;
 //# sourceMappingURL=campaigns.socket.js.map

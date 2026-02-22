@@ -1,361 +1,339 @@
 "use strict";
-// src/modules/webhooks/webhook.service.ts
+// src/modules/webhooks/webhook.service.ts - COMPLETE FINAL (NO getIO CIRCULAR) + webhookEvents
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.webhookService = exports.WebhookService = void 0;
+exports.webhookService = exports.WebhookService = exports.webhookEvents = void 0;
 const database_1 = __importDefault(require("../../config/database"));
 const contacts_service_1 = require("../contacts/contacts.service");
+const events_1 = require("events");
+// ✅ Socket.ts will subscribe to this
+exports.webhookEvents = new events_1.EventEmitter();
+exports.webhookEvents.setMaxListeners(100);
 class WebhookService {
-    /**
-     * Extract WhatsApp profile data from webhook payload
-     */
+    // -----------------------------
+    // Helpers
+    // -----------------------------
+    extractValue(payload) {
+        return payload?.entry?.[0]?.changes?.[0]?.value;
+    }
     extractProfile(payload) {
         try {
-            const entry = payload.entry?.[0];
-            const changes = entry?.changes?.[0];
-            const value = changes?.value;
-            if (!value?.messages?.[0])
+            const value = this.extractValue(payload);
+            const msg = value?.messages?.[0];
+            if (!msg)
                 return null;
-            const message = value.messages[0];
-            const contact = value.contacts?.[0];
-            // Extract 10-digit phone from waId (format: 919876543210)
-            let phone = message.from;
-            if (phone.startsWith('91') && phone.length === 12) {
-                phone = phone.substring(2); // Remove country code
-            }
+            const contact = value?.contacts?.[0];
+            const waId = String(msg.from || '');
+            // waId format: 9198XXXXXXXX
+            let phone10 = waId;
+            if (phone10.startsWith('91') && phone10.length === 12)
+                phone10 = phone10.substring(2);
             return {
-                waId: message.from,
+                waId,
                 profileName: contact?.profile?.name || 'Unknown',
-                phone,
+                phone10,
             };
         }
-        catch (error) {
-            console.error('Error extracting profile from webhook:', error);
+        catch (e) {
+            console.error('extractProfile error:', e);
             return null;
         }
     }
-    /**
-     * Validate if number is Indian
-     */
     isIndianNumber(waId) {
-        // waId format: 919876543210 (12 digits starting with 91)
-        return waId.startsWith('91') && waId.length === 12;
+        return typeof waId === 'string' && waId.startsWith('91') && waId.length === 12;
     }
-    /**
-     * Extract message data from webhook
-     */
-    extractMessageData(payload) {
-        try {
-            const entry = payload.entry?.[0];
-            const changes = entry?.changes?.[0];
-            const value = changes?.value;
-            if (!value)
-                return null;
-            return {
-                messages: value.messages || [],
-                statuses: value.statuses || [],
-                metadata: value.metadata,
-            };
-        }
-        catch (error) {
-            console.error('Error extracting message data:', error);
-            return null;
-        }
+    mapMessageType(typeRaw) {
+        const t = String(typeRaw || '').toLowerCase();
+        const map = {
+            text: 'TEXT',
+            image: 'IMAGE',
+            video: 'VIDEO',
+            audio: 'AUDIO',
+            document: 'DOCUMENT',
+            sticker: 'STICKER',
+            location: 'LOCATION',
+            contacts: 'CONTACT', // WhatsApp "contacts" => Prisma "CONTACT"
+            interactive: 'INTERACTIVE',
+            button: 'INTERACTIVE',
+            list: 'INTERACTIVE',
+            template: 'TEMPLATE',
+        };
+        return map[t] || 'TEXT';
     }
-    /**
-     * Handle incoming WhatsApp webhook
-     */
+    buildContentAndMedia(message) {
+        const type = String(message?.type || 'text').toLowerCase();
+        if (type === 'text')
+            return { content: message?.text?.body || '', mediaUrl: null };
+        if (type === 'image')
+            return { content: message?.image?.caption || '[Image]', mediaUrl: message?.image?.id || null };
+        if (type === 'video')
+            return { content: message?.video?.caption || '[Video]', mediaUrl: message?.video?.id || null };
+        if (type === 'document')
+            return { content: message?.document?.filename || '[Document]', mediaUrl: message?.document?.id || null };
+        if (type === 'audio')
+            return { content: '[Audio]', mediaUrl: message?.audio?.id || null };
+        if (type === 'sticker')
+            return { content: '[Sticker]', mediaUrl: message?.sticker?.id || null };
+        if (type === 'location')
+            return { content: '[Location]', mediaUrl: null };
+        if (type === 'contacts')
+            return { content: '[Contact]', mediaUrl: null };
+        return { content: `[${type}]`, mediaUrl: null };
+    }
+    async findOrCreateContact(organizationId, phone10) {
+        // Robust matching
+        const variants = [phone10, `+91${phone10}`, `91${phone10}`];
+        let contact = await database_1.default.contact.findFirst({
+            where: {
+                organizationId,
+                OR: variants.map((p) => ({ phone: p })),
+            },
+        });
+        if (!contact) {
+            contact = await database_1.default.contact.create({
+                data: {
+                    organizationId,
+                    phone: phone10,
+                    countryCode: '+91',
+                    firstName: 'Unknown',
+                    status: 'ACTIVE',
+                    source: 'WHATSAPP_INBOUND',
+                },
+            });
+        }
+        return contact;
+    }
+    // -----------------------------
+    // Main Handler
+    // -----------------------------
     async handleWebhook(payload) {
         try {
             console.log('📨 Webhook received');
-            // Extract profile data
-            const profileData = this.extractProfile(payload);
-            if (!profileData) {
-                console.log('⚠️ No profile data in webhook');
+            const profile = this.extractProfile(payload);
+            if (!profile)
                 return { status: 'ignored', reason: 'No profile data' };
+            if (!this.isIndianNumber(profile.waId)) {
+                return { status: 'rejected', reason: 'Only Indian numbers (+91) are allowed' };
             }
-            const { waId, profileName, phone } = profileData;
-            // Validate Indian number only
-            if (!this.isIndianNumber(waId)) {
-                console.log(`⛔ Rejected non-Indian number: ${waId}`);
-                return {
-                    status: 'rejected',
-                    reason: 'Only Indian numbers (+91) are allowed'
-                };
-            }
-            console.log(`✅ Valid Indian number: ${phone}, Name: ${profileName}`);
-            // Find WhatsApp account by phone number ID
-            const phoneNumberId = payload.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id;
-            if (!phoneNumberId) {
-                console.error('❌ No phone_number_id in webhook');
+            const value = this.extractValue(payload);
+            const phoneNumberId = value?.metadata?.phone_number_id;
+            if (!phoneNumberId)
                 return { status: 'error', reason: 'No phone_number_id' };
-            }
             const account = await database_1.default.whatsAppAccount.findFirst({
                 where: { phoneNumberId },
-                include: { organization: true },
             });
-            if (!account) {
-                console.error(`❌ WhatsApp account not found for phone_number_id: ${phoneNumberId}`);
+            if (!account)
                 return { status: 'error', reason: 'Account not found' };
+            // Update contact name from webhook
+            if (profile.profileName && profile.profileName !== 'Unknown') {
+                await contacts_service_1.contactsService.updateContactFromWebhook(profile.phone10, profile.profileName, account.organizationId);
             }
-            // Update or create contact with REAL WhatsApp name
-            if (profileName && profileName !== 'Unknown') {
-                await contacts_service_1.contactsService.updateContactFromWebhook(phone, profileName, account.organizationId);
-                console.log(`✅ Contact updated/created: ${profileName}`);
+            // Messages
+            const messages = value?.messages || [];
+            for (const msg of messages) {
+                await this.processIncomingMessage(msg, account.organizationId, account.id, account.phoneNumberId);
             }
-            // Process message
-            const messageData = this.extractMessageData(payload);
-            if (messageData) {
-                // Handle incoming messages
-                if (messageData.messages.length > 0) {
-                    for (const message of messageData.messages) {
-                        await this.processIncomingMessage(message, account);
-                    }
-                }
-                // Handle status updates (sent, delivered, read)
-                if (messageData.statuses.length > 0) {
-                    for (const status of messageData.statuses) {
-                        await this.processStatusUpdate(status, account);
-                    }
-                }
+            // Statuses
+            const statuses = value?.statuses || [];
+            for (const st of statuses) {
+                await this.processStatusUpdate(st, account.organizationId, account.id);
             }
-            return { status: 'processed', profileName };
+            return { status: 'processed', profileName: profile.profileName };
         }
-        catch (error) {
-            console.error('❌ Webhook processing error:', error);
-            return {
-                status: 'error',
-                error: error.message
-            };
+        catch (e) {
+            console.error('❌ Webhook processing error:', e);
+            return { status: 'error', error: e.message };
         }
     }
-    /**
-     * Process incoming message
-     */
-    async processIncomingMessage(message, account) {
+    // -----------------------------
+    // Incoming message processing
+    // -----------------------------
+    async processIncomingMessage(message, organizationId, whatsappAccountId, phoneNumberId) {
         try {
-            const { from, id: messageId, timestamp, type, text, image, video, document, audio } = message;
-            // Normalize phone (remove country code)
-            let normalizedPhone = from;
-            if (from.startsWith('91') && from.length === 12) {
-                normalizedPhone = from.substring(2);
-            }
-            // Find contact
-            let contact = await database_1.default.contact.findFirst({
-                where: {
-                    organizationId: account.organizationId,
-                    phone: normalizedPhone,
-                },
-            });
-            if (!contact) {
-                console.log(`Contact not found for incoming message: ${normalizedPhone}`);
-                return;
-            }
+            const waFrom = String(message?.from || '');
+            const waMessageId = String(message?.id || '');
+            const typeRaw = String(message?.type || 'text');
+            const ts = Number(message?.timestamp || Date.now() / 1000);
+            const messageTime = new Date(ts * 1000);
+            let phone10 = waFrom;
+            if (phone10.startsWith('91') && phone10.length === 12)
+                phone10 = phone10.substring(2);
+            const contact = await this.findOrCreateContact(organizationId, phone10);
             // Find or create conversation
             let conversation = await database_1.default.conversation.findFirst({
-                where: {
-                    organizationId: account.organizationId,
-                    contactId: contact.id,
-                },
+                where: { organizationId, contactId: contact.id },
             });
             if (!conversation) {
                 conversation = await database_1.default.conversation.create({
                     data: {
-                        organizationId: account.organizationId,
+                        organizationId,
                         contactId: contact.id,
-                        phoneNumberId: account.phoneNumberId,
-                        lastMessageAt: new Date(parseInt(timestamp) * 1000),
+                        phoneNumberId,
                         isWindowOpen: true,
-                        windowExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+                        windowExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+                        unreadCount: 0,
+                        isRead: true,
+                        lastMessageAt: messageTime,
                     },
                 });
             }
-            // Determine message content
-            let content = null;
-            let mediaUrl = null;
-            if (type === 'text' && text) {
-                content = text.body;
-            }
-            else if (type === 'image' && image) {
-                mediaUrl = image.id;
-                content = image.caption || '[Image]';
-            }
-            else if (type === 'video' && video) {
-                mediaUrl = video.id;
-                content = video.caption || '[Video]';
-            }
-            else if (type === 'document' && document) {
-                mediaUrl = document.id;
-                content = document.filename || '[Document]';
-            }
-            else if (type === 'audio' && audio) {
-                mediaUrl = audio.id;
-                content = '[Audio]';
-            }
+            const { content, mediaUrl } = this.buildContentAndMedia(message);
+            const msgType = this.mapMessageType(typeRaw);
             // Save message
-            await database_1.default.message.create({
+            const savedMessage = await database_1.default.message.create({
                 data: {
                     conversationId: conversation.id,
-                    whatsappAccountId: account.id,
-                    waMessageId: messageId,
-                    wamId: messageId,
+                    whatsappAccountId,
+                    waMessageId,
+                    wamId: waMessageId,
                     direction: 'INBOUND',
-                    type: type.toUpperCase(),
+                    type: msgType,
                     content,
                     mediaUrl,
                     status: 'DELIVERED',
-                    sentAt: new Date(parseInt(timestamp) * 1000),
-                    deliveredAt: new Date(parseInt(timestamp) * 1000),
-                    createdAt: new Date(parseInt(timestamp) * 1000),
+                    sentAt: messageTime,
+                    deliveredAt: messageTime,
+                    createdAt: messageTime,
                 },
             });
             // Update conversation
-            await database_1.default.conversation.update({
+            const updatedConversation = await database_1.default.conversation.update({
                 where: { id: conversation.id },
                 data: {
-                    lastMessageAt: new Date(parseInt(timestamp) * 1000),
-                    lastMessagePreview: content?.substring(0, 100) || `[${type}]`,
-                    lastCustomerMessageAt: new Date(parseInt(timestamp) * 1000),
+                    lastMessageAt: messageTime,
+                    lastMessagePreview: (content || `[${typeRaw}]`).substring(0, 100),
+                    lastCustomerMessageAt: messageTime,
                     unreadCount: { increment: 1 },
                     isRead: false,
+                    isWindowOpen: true,
                     windowExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
                 },
+                include: {
+                    contact: {
+                        select: {
+                            id: true,
+                            phone: true,
+                            firstName: true,
+                            lastName: true,
+                            avatar: true,
+                            whatsappProfileName: true,
+                        },
+                    },
+                },
             });
-            // Update contact message count
+            // Update contact stats
             await database_1.default.contact.update({
                 where: { id: contact.id },
                 data: {
-                    lastMessageAt: new Date(parseInt(timestamp) * 1000),
+                    lastMessageAt: messageTime,
                     messageCount: { increment: 1 },
                 },
             });
-            console.log(`✅ Incoming message saved: ${messageId}`);
-        }
-        catch (error) {
-            console.error('Error processing incoming message:', error);
-        }
-    }
-    /**
-     * Process status update
-     */
-    async processStatusUpdate(status, account) {
-        try {
-            const { id: messageId, status: messageStatus, timestamp } = status;
-            const message = await database_1.default.message.findFirst({
-                where: {
-                    waMessageId: messageId,
-                    whatsappAccountId: account.id,
+            console.log(`✅ Incoming message saved: ${savedMessage.id} wa:${waMessageId}`);
+            // ✅ Emit events (socket.ts will broadcast)
+            exports.webhookEvents.emit('newMessage', {
+                organizationId,
+                conversationId: updatedConversation.id,
+                message: {
+                    id: savedMessage.id,
+                    conversationId: updatedConversation.id,
+                    waMessageId: savedMessage.waMessageId,
+                    direction: savedMessage.direction,
+                    type: savedMessage.type,
+                    content: savedMessage.content,
+                    mediaUrl: savedMessage.mediaUrl,
+                    status: savedMessage.status,
+                    createdAt: savedMessage.createdAt,
                 },
             });
-            if (!message) {
-                console.log(`Message not found for status update: ${messageId}`);
+            exports.webhookEvents.emit('conversationUpdated', {
+                organizationId,
+                conversation: {
+                    id: updatedConversation.id,
+                    lastMessageAt: updatedConversation.lastMessageAt,
+                    lastMessagePreview: updatedConversation.lastMessagePreview,
+                    unreadCount: updatedConversation.unreadCount,
+                    isRead: updatedConversation.isRead,
+                    isArchived: updatedConversation.isArchived,
+                    contact: updatedConversation.contact,
+                },
+            });
+        }
+        catch (e) {
+            console.error('processIncomingMessage error:', e);
+        }
+    }
+    // -----------------------------
+    // Status update processing
+    // -----------------------------
+    async processStatusUpdate(statusObj, organizationId, whatsappAccountId) {
+        try {
+            const waMessageId = String(statusObj?.id || '');
+            const st = String(statusObj?.status || '').toLowerCase();
+            const ts = Number(statusObj?.timestamp || Date.now() / 1000);
+            const statusTime = new Date(ts * 1000);
+            const message = await database_1.default.message.findFirst({
+                where: { waMessageId, whatsappAccountId },
+            });
+            if (!message)
                 return;
-            }
-            const updateData = {
-                status: messageStatus.toUpperCase(),
-                statusUpdatedAt: new Date(parseInt(timestamp) * 1000),
-            };
-            if (messageStatus === 'sent') {
-                updateData.sentAt = new Date(parseInt(timestamp) * 1000);
-            }
-            else if (messageStatus === 'delivered') {
-                updateData.deliveredAt = new Date(parseInt(timestamp) * 1000);
-            }
-            else if (messageStatus === 'read') {
-                updateData.readAt = new Date(parseInt(timestamp) * 1000);
-            }
-            else if (messageStatus === 'failed') {
-                updateData.failedAt = new Date(parseInt(timestamp) * 1000);
-                updateData.failureReason = status.errors?.[0]?.message || 'Unknown error';
-            }
+            let newStatus = 'SENT';
+            if (st === 'sent')
+                newStatus = 'SENT';
+            if (st === 'delivered')
+                newStatus = 'DELIVERED';
+            if (st === 'read')
+                newStatus = 'READ';
+            if (st === 'failed')
+                newStatus = 'FAILED';
             await database_1.default.message.update({
                 where: { id: message.id },
-                data: updateData,
-            });
-            // Update campaign contact status if applicable
-            if (message.conversationId) {
-                const conversation = await database_1.default.conversation.findUnique({
-                    where: { id: message.conversationId },
-                    include: { contact: true },
-                });
-                if (conversation) {
-                    const campaignContact = await database_1.default.campaignContact.findFirst({
-                        where: {
-                            waMessageId: messageId,
-                            contactId: conversation.contact.id,
-                        },
-                    });
-                    if (campaignContact) {
-                        await database_1.default.campaignContact.update({
-                            where: { id: campaignContact.id },
-                            data: {
-                                status: messageStatus.toUpperCase(),
-                                ...(messageStatus === 'sent' && { sentAt: updateData.sentAt }),
-                                ...(messageStatus === 'delivered' && { deliveredAt: updateData.deliveredAt }),
-                                ...(messageStatus === 'read' && { readAt: updateData.readAt }),
-                                ...(messageStatus === 'failed' && {
-                                    failedAt: updateData.failedAt,
-                                    failureReason: updateData.failureReason,
-                                }),
-                            },
-                        });
-                        // Update campaign stats
-                        const campaign = await database_1.default.campaign.findUnique({
-                            where: { id: campaignContact.campaignId },
-                        });
-                        if (campaign) {
-                            const statsUpdate = {};
-                            if (messageStatus === 'sent') {
-                                statsUpdate.sentCount = { increment: 1 };
-                            }
-                            else if (messageStatus === 'delivered') {
-                                statsUpdate.deliveredCount = { increment: 1 };
-                            }
-                            else if (messageStatus === 'read') {
-                                statsUpdate.readCount = { increment: 1 };
-                            }
-                            else if (messageStatus === 'failed') {
-                                statsUpdate.failedCount = { increment: 1 };
-                            }
-                            if (Object.keys(statsUpdate).length > 0) {
-                                await database_1.default.campaign.update({
-                                    where: { id: campaign.id },
-                                    data: statsUpdate,
-                                });
-                            }
+                data: {
+                    status: newStatus,
+                    statusUpdatedAt: statusTime,
+                    ...(st === 'sent' ? { sentAt: statusTime } : {}),
+                    ...(st === 'delivered' ? { deliveredAt: statusTime } : {}),
+                    ...(st === 'read' ? { readAt: statusTime } : {}),
+                    ...(st === 'failed'
+                        ? {
+                            failedAt: statusTime,
+                            failureReason: statusObj?.errors?.[0]?.message || 'Unknown error',
                         }
-                    }
-                }
-            }
-            console.log(`✅ Message status updated: ${messageId} → ${messageStatus}`);
+                        : {}),
+                },
+            });
+            exports.webhookEvents.emit('messageStatus', {
+                organizationId,
+                conversationId: message.conversationId,
+                messageId: message.id,
+                waMessageId,
+                status: newStatus,
+                timestamp: statusTime.toISOString(),
+            });
+            console.log(`✅ Status updated wa:${waMessageId} -> ${newStatus}`);
         }
-        catch (error) {
-            console.error('Error processing status update:', error);
+        catch (e) {
+            console.error('processStatusUpdate error:', e);
         }
     }
-    /**
-     * Verify webhook (for Meta setup)
-     */
+    // -----------------------------
+    // Verify webhook
+    // -----------------------------
     verifyWebhook(mode, token, challenge) {
-        const VERIFY_TOKEN = process.env.META_VERIFY_TOKEN ||
-            process.env.WEBHOOK_VERIFY_TOKEN ||
-            'wabmeta_webhook_token';
-        if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-            console.log('✅ Webhook verified successfully');
+        const VERIFY_TOKEN = process.env.META_VERIFY_TOKEN || process.env.WEBHOOK_VERIFY_TOKEN || 'wabmeta_webhook_verify_2024';
+        if (mode === 'subscribe' && token === VERIFY_TOKEN)
             return challenge;
-        }
-        console.error('❌ Webhook verification failed');
-        console.error(`Expected token: ${VERIFY_TOKEN}, Received: ${token}`);
         return null;
     }
-    /**
-     * Log webhook for debugging
-     */
+    // -----------------------------
+    // Log webhook
+    // -----------------------------
     async logWebhook(payload, status, error) {
         try {
-            const phoneNumberId = payload.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id;
+            const value = this.extractValue(payload);
+            const phoneNumberId = value?.metadata?.phone_number_id;
             let organizationId = null;
             if (phoneNumberId) {
                 const account = await database_1.default.whatsAppAccount.findFirst({
@@ -364,23 +342,30 @@ class WebhookService {
                 });
                 organizationId = account?.organizationId || null;
             }
+            // webhookLog enum: PENDING/PROCESSING/SUCCESS/FAILED
+            const mapped = status === 'processed' ? 'SUCCESS' :
+                status === 'error' ? 'FAILED' :
+                    status === 'rejected' ? 'FAILED' :
+                        status === 'ignored' ? 'SUCCESS' :
+                            'SUCCESS';
             await database_1.default.webhookLog.create({
                 data: {
                     organizationId,
                     source: 'whatsapp',
-                    eventType: payload.entry?.[0]?.changes?.[0]?.field || 'unknown',
+                    eventType: payload?.entry?.[0]?.changes?.[0]?.field || 'unknown',
                     payload,
-                    status: status.toUpperCase(),
+                    status: mapped,
                     processedAt: new Date(),
                     errorMessage: error || null,
                 },
             });
         }
-        catch (err) {
-            console.error('Error logging webhook:', err);
+        catch (e) {
+            console.error('logWebhook error:', e);
         }
     }
 }
 exports.WebhookService = WebhookService;
 exports.webhookService = new WebhookService();
+exports.default = exports.webhookService;
 //# sourceMappingURL=webhook.service.js.map

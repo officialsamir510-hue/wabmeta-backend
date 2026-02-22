@@ -56,6 +56,15 @@ exports.config = {
         appId: getEnv('META_APP_ID'),
         appSecret: getEnv('META_APP_SECRET'),
         webhookVerifyToken: getEnv('META_VERIFY_TOKEN', getEnv('WEBHOOK_VERIFY_TOKEN', 'webhook-token')),
+        configId: getEnv('META_CONFIG_ID'),
+        redirectUri: getEnv('META_REDIRECT_URI', 'https://wabmeta.com/meta/callback'),
+        graphApiVersion: getEnv('META_GRAPH_API_VERSION', 'v21.0'),
+    },
+    // Google OAuth
+    google: {
+        clientId: getEnv('GOOGLE_CLIENT_ID'),
+        clientSecret: getEnv('GOOGLE_CLIENT_SECRET'),
+        redirectUri: getEnv('GOOGLE_REDIRECT_URI', 'https://wabmeta.com/api/v1/auth/google/callback'),
     },
     // Email
     email: {
@@ -63,6 +72,14 @@ exports.config = {
         resendApiKey: getEnv('RESEND_API_KEY'),
         from: getEnv('EMAIL_FROM', 'onboarding@resend.dev'),
         fromName: getEnv('EMAIL_FROM_NAME', 'WabMeta'),
+        smtp: {
+            host: getEnv('SMTP_HOST'),
+            port: parseInt(getEnv('SMTP_PORT', '587'), 10),
+            auth: {
+                user: getEnv('SMTP_USER'),
+                pass: getEnv('SMTP_PASS'),
+            }
+        },
     },
     // Razorpay
     razorpay: {

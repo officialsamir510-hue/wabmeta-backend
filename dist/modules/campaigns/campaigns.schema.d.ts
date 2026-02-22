@@ -306,10 +306,10 @@ export declare const getCampaignsSchema: z.ZodObject<{
         limit: number;
         sortBy: "name" | "scheduledAt" | "createdAt" | "sentCount";
         sortOrder: "asc" | "desc";
-        status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "SCHEDULED" | "RUNNING" | "FAILED" | undefined;
+        status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
         search?: string | undefined;
     }, {
-        status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "SCHEDULED" | "RUNNING" | "FAILED" | undefined;
+        status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
         search?: string | undefined;
@@ -322,12 +322,12 @@ export declare const getCampaignsSchema: z.ZodObject<{
         limit: number;
         sortBy: "name" | "scheduledAt" | "createdAt" | "sentCount";
         sortOrder: "asc" | "desc";
-        status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "SCHEDULED" | "RUNNING" | "FAILED" | undefined;
+        status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
         search?: string | undefined;
     };
 }, {
     query: {
-        status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "SCHEDULED" | "RUNNING" | "FAILED" | undefined;
+        status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
         search?: string | undefined;

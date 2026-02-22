@@ -1,15 +1,24 @@
-import { Server as SocketIOServer } from 'socket.io';
-export declare class CampaignSocketService {
-    private io;
-    constructor(io: SocketIOServer);
+import { Server as SocketServer } from 'socket.io';
+/**
+ * Initialize campaign socket service with Socket.IO instance
+ */
+export declare const initializeCampaignSocket: (socketServer: SocketServer) => void;
+/**
+ * Campaign Socket Service Class
+ */
+declare class CampaignSocketService {
     /**
-     * Emit campaign status update to specific organization
+     * Emit campaign status update
      */
-    emitCampaignUpdate(organizationId: string, campaignId: string, data: any): void;
+    emitCampaignUpdate(organizationId: string, campaignId: string, data: {
+        status: string;
+        message: string;
+        totalContacts?: number;
+    }): void;
     /**
-     * Emit campaign progress update
+     * Emit campaign progress updates
      */
-    emitCampaignProgress(organizationId: string, campaignId: string, progress: {
+    emitCampaignProgress(organizationId: string, campaignId: string, data: {
         sent: number;
         failed: number;
         total: number;
@@ -17,9 +26,9 @@ export declare class CampaignSocketService {
         status: string;
     }): void;
     /**
-     * Emit campaign contact status update
+     * Emit individual contact status update
      */
-    emitContactStatus(organizationId: string, campaignId: string, contactUpdate: {
+    emitContactStatus(organizationId: string, campaignId: string, data: {
         contactId: string;
         phone: string;
         status: string;
@@ -27,7 +36,7 @@ export declare class CampaignSocketService {
         error?: string;
     }): void;
     /**
-     * Emit campaign completed event
+     * Emit campaign completion event
      */
     emitCampaignCompleted(organizationId: string, campaignId: string, stats: {
         sentCount: number;
@@ -64,10 +73,14 @@ export declare class CampaignSocketService {
         contacts: any[];
     }): void;
     /**
-     * Get active socket count for organization
+     * Check if socket is initialized
      */
-    getActiveConnections(organizationId: string): number;
+    isInitialized(): boolean;
+    /**
+     * Get Socket.IO instance (for advanced usage)
+     */
+    getIO(): SocketServer | null;
 }
-export declare let campaignSocketService: CampaignSocketService;
-export declare const initializeCampaignSocket: (io: SocketIOServer) => CampaignSocketService;
+export declare const campaignSocketService: CampaignSocketService;
+export default campaignSocketService;
 //# sourceMappingURL=campaigns.socket.d.ts.map
