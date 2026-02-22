@@ -9,13 +9,11 @@ const database_1 = __importDefault(require("../../config/database"));
 class DashboardService {
     async getDashboardStats(userId, organizationId) {
         try {
-            const [totalContacts, totalCampaigns, totalTemplates, totalConversations, messagesStats] = await Promise.all([
-                database_1.default.contact.count({ where: { organizationId } }),
-                database_1.default.campaign.count({ where: { organizationId } }),
-                database_1.default.template.count({ where: { organizationId } }),
-                database_1.default.conversation.count({ where: { organizationId } }),
-                this.getMessageStats(organizationId)
-            ]);
+            const totalContacts = await database_1.default.contact.count({ where: { organizationId } });
+            const totalCampaigns = await database_1.default.campaign.count({ where: { organizationId } });
+            const totalTemplates = await database_1.default.template.count({ where: { organizationId } });
+            const totalConversations = await database_1.default.conversation.count({ where: { organizationId } });
+            const messagesStats = await this.getMessageStats(organizationId);
             return {
                 totalContacts,
                 totalCampaigns,
@@ -33,32 +31,30 @@ class DashboardService {
         try {
             const today = new Date();
             today.setHours(0, 0, 0, 0);
-            const [contactsToday, messagesToday, campaignsActive, unreadConversations] = await Promise.all([
-                database_1.default.contact.count({
-                    where: {
-                        organizationId,
-                        createdAt: { gte: today }
-                    }
-                }),
-                database_1.default.message.count({
-                    where: {
-                        conversation: { organizationId },
-                        createdAt: { gte: today }
-                    }
-                }),
-                database_1.default.campaign.count({
-                    where: {
-                        organizationId,
-                        status: 'RUNNING'
-                    }
-                }),
-                database_1.default.conversation.count({
-                    where: {
-                        organizationId,
-                        unreadCount: { gt: 0 }
-                    }
-                })
-            ]);
+            const contactsToday = await database_1.default.contact.count({
+                where: {
+                    organizationId,
+                    createdAt: { gte: today }
+                }
+            });
+            const messagesToday = await database_1.default.message.count({
+                where: {
+                    conversation: { organizationId },
+                    createdAt: { gte: today }
+                }
+            });
+            const campaignsActive = await database_1.default.campaign.count({
+                where: {
+                    organizationId,
+                    status: 'RUNNING'
+                }
+            });
+            const unreadConversations = await database_1.default.conversation.count({
+                where: {
+                    organizationId,
+                    unreadCount: { gt: 0 }
+                }
+            });
             return {
                 contactsToday,
                 messagesToday,

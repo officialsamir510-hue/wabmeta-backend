@@ -230,7 +230,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     tagNames: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
                 }, z.ZodTypeAny, "passthrough">>;
             }, "strip", z.ZodTypeAny, {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -239,11 +239,11 @@ export declare const createChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -264,7 +264,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -281,7 +281,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     x: number;
                 };
             }, {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -290,11 +290,11 @@ export declare const createChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -315,7 +315,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -392,7 +392,7 @@ export declare const createChatbotSchema: z.ZodObject<{
             }>>;
         }, "strip", z.ZodTypeAny, {
             nodes: {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -401,11 +401,11 @@ export declare const createChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -426,7 +426,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -463,7 +463,7 @@ export declare const createChatbotSchema: z.ZodObject<{
             } | undefined;
         }, {
             nodes: {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -472,11 +472,11 @@ export declare const createChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -497,7 +497,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -540,7 +540,7 @@ export declare const createChatbotSchema: z.ZodObject<{
         description?: string | undefined;
         flowData?: {
             nodes: {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -549,11 +549,11 @@ export declare const createChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -574,7 +574,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -618,7 +618,7 @@ export declare const createChatbotSchema: z.ZodObject<{
         isDefault?: boolean | undefined;
         flowData?: {
             nodes: {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -627,11 +627,11 @@ export declare const createChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -652,7 +652,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -700,7 +700,7 @@ export declare const createChatbotSchema: z.ZodObject<{
         description?: string | undefined;
         flowData?: {
             nodes: {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -709,11 +709,11 @@ export declare const createChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -734,7 +734,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -780,7 +780,7 @@ export declare const createChatbotSchema: z.ZodObject<{
         isDefault?: boolean | undefined;
         flowData?: {
             nodes: {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -789,11 +789,11 @@ export declare const createChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -814,7 +814,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -1093,7 +1093,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     tagNames: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
                 }, z.ZodTypeAny, "passthrough">>;
             }, "strip", z.ZodTypeAny, {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -1102,11 +1102,11 @@ export declare const updateChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1127,7 +1127,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -1144,7 +1144,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     x: number;
                 };
             }, {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -1153,11 +1153,11 @@ export declare const updateChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1178,7 +1178,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -1255,7 +1255,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
             }>>;
         }, "strip", z.ZodTypeAny, {
             nodes: {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -1264,11 +1264,11 @@ export declare const updateChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1289,7 +1289,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -1326,7 +1326,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
             } | undefined;
         }, {
             nodes: {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -1335,11 +1335,11 @@ export declare const updateChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1360,7 +1360,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -1408,7 +1408,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
         isDefault?: boolean | undefined;
         flowData?: {
             nodes: {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -1417,11 +1417,11 @@ export declare const updateChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1442,7 +1442,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -1488,7 +1488,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
         isDefault?: boolean | undefined;
         flowData?: {
             nodes: {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -1497,11 +1497,11 @@ export declare const updateChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1522,7 +1522,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -1570,7 +1570,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
         isDefault?: boolean | undefined;
         flowData?: {
             nodes: {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -1579,11 +1579,11 @@ export declare const updateChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1604,7 +1604,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -1655,7 +1655,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
         isDefault?: boolean | undefined;
         flowData?: {
             nodes: {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -1664,11 +1664,11 @@ export declare const updateChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -1689,7 +1689,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -1750,13 +1750,13 @@ export declare const getChatbotsSchema: z.ZodObject<{
         limit: number;
         sortBy: "name" | "status" | "createdAt";
         sortOrder: "asc" | "desc";
-        search?: string | undefined;
         status?: "ACTIVE" | "DRAFT" | "PAUSED" | undefined;
-    }, {
         search?: string | undefined;
+    }, {
         status?: "ACTIVE" | "DRAFT" | "PAUSED" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
+        search?: string | undefined;
         sortBy?: "name" | "status" | "createdAt" | undefined;
         sortOrder?: "asc" | "desc" | undefined;
     }>;
@@ -1766,15 +1766,15 @@ export declare const getChatbotsSchema: z.ZodObject<{
         limit: number;
         sortBy: "name" | "status" | "createdAt";
         sortOrder: "asc" | "desc";
-        search?: string | undefined;
         status?: "ACTIVE" | "DRAFT" | "PAUSED" | undefined;
+        search?: string | undefined;
     };
 }, {
     query: {
-        search?: string | undefined;
         status?: "ACTIVE" | "DRAFT" | "PAUSED" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
+        search?: string | undefined;
         sortBy?: "name" | "status" | "createdAt" | undefined;
         sortOrder?: "asc" | "desc" | undefined;
     };
@@ -2132,7 +2132,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     tagNames: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
                 }, z.ZodTypeAny, "passthrough">>;
             }, "strip", z.ZodTypeAny, {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -2141,11 +2141,11 @@ export declare const saveFlowSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2166,7 +2166,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -2183,7 +2183,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     x: number;
                 };
             }, {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -2192,11 +2192,11 @@ export declare const saveFlowSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2217,7 +2217,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -2294,7 +2294,7 @@ export declare const saveFlowSchema: z.ZodObject<{
             }>>;
         }, "strip", z.ZodTypeAny, {
             nodes: {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -2303,11 +2303,11 @@ export declare const saveFlowSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2328,7 +2328,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -2365,7 +2365,7 @@ export declare const saveFlowSchema: z.ZodObject<{
             } | undefined;
         }, {
             nodes: {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -2374,11 +2374,11 @@ export declare const saveFlowSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2399,7 +2399,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -2438,7 +2438,7 @@ export declare const saveFlowSchema: z.ZodObject<{
     }, "strip", z.ZodTypeAny, {
         flowData: {
             nodes: {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -2447,11 +2447,11 @@ export declare const saveFlowSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2472,7 +2472,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -2511,7 +2511,7 @@ export declare const saveFlowSchema: z.ZodObject<{
     }, {
         flowData: {
             nodes: {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -2520,11 +2520,11 @@ export declare const saveFlowSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2545,7 +2545,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -2586,7 +2586,7 @@ export declare const saveFlowSchema: z.ZodObject<{
     body: {
         flowData: {
             nodes: {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -2595,11 +2595,11 @@ export declare const saveFlowSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2620,7 +2620,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;
@@ -2664,7 +2664,7 @@ export declare const saveFlowSchema: z.ZodObject<{
     body: {
         flowData: {
             nodes: {
-                type: "message" | "end" | "action" | "tag" | "assign" | "condition" | "delay" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -2673,11 +2673,11 @@ export declare const saveFlowSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    mediaUrl?: string | undefined;
                     errorMessage?: string | undefined;
+                    mediaUrl?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
-                    messageType?: "text" | "list" | "image" | "video" | "document" | "buttons" | undefined;
+                    messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
                     listSections?: {
                         rows: {
                             id: string;
@@ -2698,7 +2698,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     actionValue?: string | undefined;
                     delayDuration?: number | undefined;
                     apiUrl?: string | undefined;
-                    apiMethod?: "DELETE" | "GET" | "POST" | "PUT" | undefined;
+                    apiMethod?: "GET" | "DELETE" | "POST" | "PUT" | undefined;
                     apiHeaders?: Record<string, string> | undefined;
                     apiBody?: string | undefined;
                     apiResponseVariable?: string | undefined;

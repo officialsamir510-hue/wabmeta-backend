@@ -303,15 +303,15 @@ export declare const sendMediaMessageSchema: z.ZodObject<{
         to: string;
         whatsappAccountId: string;
         mediaUrl: string;
-        caption?: string | undefined;
         filename?: string | undefined;
+        caption?: string | undefined;
     }, {
         type: "image" | "video" | "document" | "audio";
         to: string;
         whatsappAccountId: string;
         mediaUrl: string;
-        caption?: string | undefined;
         filename?: string | undefined;
+        caption?: string | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     body: {
@@ -319,8 +319,8 @@ export declare const sendMediaMessageSchema: z.ZodObject<{
         to: string;
         whatsappAccountId: string;
         mediaUrl: string;
-        caption?: string | undefined;
         filename?: string | undefined;
+        caption?: string | undefined;
     };
 }, {
     body: {
@@ -328,8 +328,8 @@ export declare const sendMediaMessageSchema: z.ZodObject<{
         to: string;
         whatsappAccountId: string;
         mediaUrl: string;
-        caption?: string | undefined;
         filename?: string | undefined;
+        caption?: string | undefined;
     };
 }>;
 export declare const sendInteractiveMessageSchema: z.ZodObject<{
@@ -384,7 +384,7 @@ export declare const sendInteractiveMessageSchema: z.ZodObject<{
         to: string;
         whatsappAccountId: string;
         bodyText: string;
-        interactiveType: "list" | "button";
+        interactiveType: "button" | "list";
         footerText?: string | undefined;
         buttons?: {
             id: string;
@@ -403,7 +403,7 @@ export declare const sendInteractiveMessageSchema: z.ZodObject<{
         to: string;
         whatsappAccountId: string;
         bodyText: string;
-        interactiveType: "list" | "button";
+        interactiveType: "button" | "list";
         footerText?: string | undefined;
         buttons?: {
             id: string;
@@ -424,7 +424,7 @@ export declare const sendInteractiveMessageSchema: z.ZodObject<{
         to: string;
         whatsappAccountId: string;
         bodyText: string;
-        interactiveType: "list" | "button";
+        interactiveType: "button" | "list";
         footerText?: string | undefined;
         buttons?: {
             id: string;
@@ -445,7 +445,7 @@ export declare const sendInteractiveMessageSchema: z.ZodObject<{
         to: string;
         whatsappAccountId: string;
         bodyText: string;
-        interactiveType: "list" | "button";
+        interactiveType: "button" | "list";
         footerText?: string | undefined;
         buttons?: {
             id: string;

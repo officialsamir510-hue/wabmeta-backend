@@ -3,185 +3,109 @@
 import { z } from 'zod';
 import { ContactStatus } from '@prisma/client';
 
-// ============================================
-// VALIDATORS
-// ============================================
+// Indian phone number validation regex
+const indianPhoneRegex = /^(\+91|91)?[6-9]\d{9}$/;
 
-const phoneSchema = z
-  .string()
+// Phone schema with validation and normalization
+const phoneSchema = z.string()
   .min(10, 'Phone number must be at least 10 digits')
-  .max(15, 'Phone number is too long')
-  .regex(/^[0-9]+$/, 'Phone number must contain only digits');
-
-const countryCodeSchema = z
-  .string()
-  .regex(/^\+[1-9]\d{0,3}$/, 'Invalid country code (e.g., +91)')
-  .default('+91');
-
-const emailSchema = z
-  .string()
-  .email('Invalid email address')
-  .optional()
-  .nullable();
-
-const nameSchema = z
-  .string()
-  .max(50, 'Name is too long')
-  .optional()
-  .nullable();
-
-const tagsSchema = z
-  .array(z.string().max(30))
-  .max(20, 'Maximum 20 tags allowed')
-  .optional()
-  .default([]);
-
-const colorSchema = z
-  .string()
-  .regex(/^#[0-9A-Fa-f]{6}$/, 'Invalid color format')
-  .optional();
+  .regex(indianPhoneRegex, 'Only Indian phone numbers (+91) starting with 6-9 are allowed')
+  .transform(phone => {
+    // Normalize to 10-digit format
+    let cleaned = phone.replace(/[\s\-\(\)]/g, '');
+    if (cleaned.startsWith('+91')) {
+      return cleaned.substring(3);
+    } else if (cleaned.startsWith('91')) {
+      return cleaned.substring(2);
+    }
+    return cleaned;
+  });
 
 // ============================================
-// REQUEST SCHEMAS
+// CONTACT SCHEMAS
 // ============================================
 
 export const createContactSchema = z.object({
   body: z.object({
     phone: phoneSchema,
-    countryCode: countryCodeSchema,
-    firstName: nameSchema,
-    lastName: nameSchema,
-    email: emailSchema,
-    tags: tagsSchema,
+    countryCode: z.string().optional().default('+91'),
+    firstName: z.string().optional(),
+    lastName: z.string().optional(),
+    email: z.string().email().optional().or(z.literal('')),
+    tags: z.array(z.string()).optional().default([]),
     customFields: z.record(z.any()).optional().default({}),
-    groupIds: z.array(z.string()).optional().default([]),
+    groupIds: z.array(z.string()).optional(),
   }),
 });
 
 export const updateContactSchema = z.object({
-  params: z.object({
-    id: z.string().min(1, 'Contact ID is required'),
-  }),
   body: z.object({
     phone: phoneSchema.optional(),
-    countryCode: countryCodeSchema.optional(),
-    firstName: nameSchema,
-    lastName: nameSchema,
-    email: emailSchema,
-    tags: tagsSchema,
+    countryCode: z.string().optional(),
+    firstName: z.string().optional(),
+    lastName: z.string().optional(),
+    email: z.string().email().optional().or(z.literal('')),
+    tags: z.array(z.string()).optional(),
     customFields: z.record(z.any()).optional(),
     status: z.nativeEnum(ContactStatus).optional(),
   }),
 });
 
-export const getContactsSchema = z.object({
-  query: z.object({
-    page: z.string().regex(/^\d+$/).transform(Number).optional().default('1'),
-    limit: z.string().regex(/^\d+$/).transform(Number).optional().default('20'),
-    search: z.string().optional(),
-    status: z.nativeEnum(ContactStatus).optional(),
-    tags: z.string().optional(), // comma-separated
-    groupId: z.string().optional(),
-    sortBy: z.enum(['createdAt', 'firstName', 'lastName', 'lastMessageAt']).optional().default('createdAt'),
-    sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
-  }),
-});
-
-export const getContactByIdSchema = z.object({
-  params: z.object({
-    id: z.string().min(1, 'Contact ID is required'),
-  }),
-});
-
-export const deleteContactSchema = z.object({
-  params: z.object({
-    id: z.string().min(1, 'Contact ID is required'),
-  }),
-});
-
 export const importContactsSchema = z.object({
   body: z.object({
-    contacts: z.array(z.object({
-      phone: phoneSchema,
-      countryCode: countryCodeSchema.optional(),
-      firstName: nameSchema,
-      lastName: nameSchema,
-      email: emailSchema,
-      tags: tagsSchema,
-      customFields: z.record(z.any()).optional(),
-    })).min(1, 'At least one contact is required').max(10000, 'Maximum 10000 contacts per import'),
+    contacts: z.array(
+      z.object({
+        phone: z.string().regex(indianPhoneRegex, 'Invalid Indian phone number'),
+        firstName: z.string().optional(),
+        lastName: z.string().optional(),
+        email: z.string().email().optional().or(z.literal('')),
+        tags: z.array(z.string()).optional(),
+        customFields: z.record(z.any()).optional(),
+      })
+    ).min(1, 'At least one contact is required'),
     groupId: z.string().optional(),
-    tags: tagsSchema,
+    tags: z.array(z.string()).optional(),
     skipDuplicates: z.boolean().optional().default(true),
   }),
 });
 
-export const bulkUpdateContactsSchema = z.object({
+export const bulkUpdateSchema = z.object({
   body: z.object({
     contactIds: z.array(z.string()).min(1, 'At least one contact ID is required'),
-    tags: tagsSchema.optional(),
+    tags: z.array(z.string()).optional(),
     groupIds: z.array(z.string()).optional(),
     status: z.nativeEnum(ContactStatus).optional(),
   }),
 });
 
-export const bulkDeleteContactsSchema = z.object({
+export const bulkDeleteSchema = z.object({
   body: z.object({
     contactIds: z.array(z.string()).min(1, 'At least one contact ID is required'),
   }),
 });
 
-// Contact Groups Schemas
+// ============================================
+// CONTACT GROUP SCHEMAS
+// ============================================
+
 export const createContactGroupSchema = z.object({
   body: z.object({
-    name: z.string().min(1, 'Group name is required').max(50, 'Group name is too long'),
-    description: z.string().max(200, 'Description is too long').optional(),
-    color: colorSchema,
+    name: z.string().min(1, 'Group name is required'),
+    description: z.string().optional(),
+    color: z.string().optional(),
   }),
 });
 
 export const updateContactGroupSchema = z.object({
-  params: z.object({
-    groupId: z.string().min(1, 'Group ID is required'),
-  }),
   body: z.object({
-    name: z.string().min(1).max(50).optional(),
-    description: z.string().max(200).optional().nullable(),
-    color: colorSchema,
+    name: z.string().min(1).optional(),
+    description: z.string().optional(),
+    color: z.string().optional(),
   }),
 });
 
 export const addContactsToGroupSchema = z.object({
-  params: z.object({
-    groupId: z.string().min(1, 'Group ID is required'),
-  }),
   body: z.object({
     contactIds: z.array(z.string()).min(1, 'At least one contact ID is required'),
   }),
 });
-
-export const removeContactsFromGroupSchema = z.object({
-  params: z.object({
-    groupId: z.string().min(1, 'Group ID is required'),
-  }),
-  body: z.object({
-    contactIds: z.array(z.string()).min(1, 'At least one contact ID is required'),
-  }),
-});
-
-export const deleteContactGroupSchema = z.object({
-  params: z.object({
-    groupId: z.string().min(1, 'Group ID is required'),
-  }),
-});
-
-// ============================================
-// TYPE EXPORTS
-// ============================================
-
-export type CreateContactSchema = z.infer<typeof createContactSchema>;
-export type UpdateContactSchema = z.infer<typeof updateContactSchema>;
-export type GetContactsSchema = z.infer<typeof getContactsSchema>;
-export type ImportContactsSchema = z.infer<typeof importContactsSchema>;
-export type BulkUpdateContactsSchema = z.infer<typeof bulkUpdateContactsSchema>;
-export type CreateContactGroupSchema = z.infer<typeof createContactGroupSchema>;

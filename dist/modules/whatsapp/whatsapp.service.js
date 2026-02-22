@@ -1,5 +1,5 @@
 "use strict";
-// src/modules/whatsapp/whatsapp.service.ts
+// 📁 src/modules/whatsapp/whatsapp.service.ts - COMPLETE FINAL VERSION
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -27,24 +27,20 @@ class WhatsAppService {
             value.startsWith('EAAI'));
     }
     /**
-     * ✅ NEW: Extract plain text content from message payload
+     * Extract plain text content from message payload
      */
     extractMessageContent(type, content) {
         if (typeof content === 'string') {
             return content;
         }
-        // Extract text from different message types
         switch (type.toLowerCase()) {
             case 'text':
-                // Handle nested structure: { text: { body: "message" } }
                 if (content?.text?.body) {
                     return content.text.body;
                 }
-                // Handle direct body
                 if (content?.body) {
                     return content.body;
                 }
-                // Fallback to stringified content
                 return JSON.stringify(content);
             case 'template':
                 const templateName = content?.template?.name || 'Unknown Template';
@@ -75,7 +71,7 @@ class WhatsAppService {
         }
     }
     /**
-     * Get account with safe token decryption - ✅ FIXED VERSION
+     * Get account with safe token decryption
      */
     async getAccountWithToken(accountId) {
         const account = await database_1.default.whatsAppAccount.findUnique({
@@ -95,16 +91,13 @@ class WhatsAppService {
             throw new Error('No access token found for this account');
         }
         console.log(`🔐 Decrypting token for account ${accountId}...`);
-        // ✅ SAFE DECRYPT - handles both encrypted and plain text tokens
         let accessToken = null;
         try {
-            // Check if token is already a plain Meta token
             if (this.looksLikeAccessToken(account.accessToken)) {
                 console.log(`📝 Token is already plain text (starts with EAA)`);
                 accessToken = account.accessToken;
             }
             else {
-                // Try to decrypt
                 console.log(`🔓 Attempting to decrypt token...`);
                 accessToken = (0, encryption_1.safeDecrypt)(account.accessToken);
             }
@@ -117,12 +110,8 @@ class WhatsAppService {
             console.error(`❌ Token is null after decryption attempt`);
             throw new Error('Failed to decrypt access token. Please reconnect your WhatsApp account.');
         }
-        // ✅ Verify it's a valid Meta token after decryption
         if (!this.looksLikeAccessToken(accessToken)) {
             console.error(`❌ Decrypted token doesn't look like a Meta token`);
-            console.error(`   Expected to start with: EAA`);
-            console.error(`   Got (masked): ${(0, encryption_1.maskToken)(accessToken)}`);
-            // Try to use it anyway if it's not empty, but log warning
             console.warn('⚠️ Token format suspicious, attempting to use anyway...');
         }
         console.log(`✅ Token ready: ${(0, encryption_1.maskToken)(accessToken)}`);
@@ -132,7 +121,6 @@ class WhatsAppService {
      * Format phone number for WhatsApp API
      */
     formatPhoneNumber(phone) {
-        // Remove all non-numeric characters
         return phone.replace(/[^0-9]/g, '');
     }
     /**
@@ -142,7 +130,6 @@ class WhatsAppService {
         const formattedPhone = phone.startsWith('+')
             ? phone
             : `+${this.formatPhoneNumber(phone)}`;
-        // Try finding by exact match or just digits match
         const cleanPhone = this.formatPhoneNumber(phone);
         let contact = await database_1.default.contact.findFirst({
             where: {
@@ -210,6 +197,55 @@ class WhatsAppService {
         }
         return conversation;
     }
+    /**
+     * Map string type to MessageType enum
+     */
+    mapMessageType(type) {
+        const map = {
+            text: client_1.MessageType.TEXT,
+            template: client_1.MessageType.TEMPLATE,
+            image: client_1.MessageType.IMAGE,
+            video: client_1.MessageType.VIDEO,
+            audio: client_1.MessageType.AUDIO,
+            document: client_1.MessageType.DOCUMENT,
+            location: client_1.MessageType.LOCATION,
+            sticker: client_1.MessageType.STICKER,
+            contacts: client_1.MessageType.CONTACT,
+            button: client_1.MessageType.INTERACTIVE,
+            list: client_1.MessageType.INTERACTIVE,
+            interactive: client_1.MessageType.INTERACTIVE,
+        };
+        return map[type.toLowerCase()] || client_1.MessageType.TEXT;
+    }
+    // ============================================
+    // CONTACT VALIDATION
+    // ============================================
+    /**
+     * Check if a phone number has WhatsApp
+     */
+    async checkContact(accountId, phone) {
+        try {
+            const { account, accessToken } = await this.getAccountWithToken(accountId);
+            const formattedPhone = this.formatPhoneNumber(phone);
+            console.log(`📞 Checking contact: ${formattedPhone}`);
+            const result = await meta_api_1.metaApi.checkContact(account.phoneNumberId, accessToken, formattedPhone);
+            const contact = result?.contacts?.[0];
+            const status = contact?.status || 'unknown';
+            console.log(`📞 Contact check result: ${status}`);
+            return {
+                valid: status === 'valid',
+                waId: contact?.wa_id,
+                status,
+            };
+        }
+        catch (error) {
+            console.error('❌ Contact check error:', error.message);
+            return {
+                valid: false,
+                status: 'error',
+            };
+        }
+    }
     // ============================================
     // MESSAGE SENDING METHODS
     // ============================================
@@ -227,7 +263,7 @@ class WhatsAppService {
         });
     }
     /**
-     * Send a template message - ✅ FIXED VERSION
+     * Send a template message
      */
     async sendTemplateMessage(options) {
         const { accountId, to, templateName, templateLanguage, components, conversationId, organizationId, } = options;
@@ -271,7 +307,7 @@ class WhatsAppService {
         });
     }
     /**
-     * Core send message function - ✅ FIXED VERSION WITH CONTENT EXTRACTION
+     * Core send message function - WITH CONTACT CHECK
      */
     async sendMessage(options) {
         const { accountId, to, type, content, conversationId } = options;
@@ -280,15 +316,49 @@ class WhatsAppService {
         console.log(`   To: ${to}`);
         console.log(`   Account ID: ${accountId}`);
         try {
-            // ✅ Get account with decrypted token
             const { account, accessToken } = await this.getAccountWithToken(accountId);
-            // Use provided organizationId or get from account
             const organizationId = options.organizationId || account.organizationId;
             console.log(`   Organization ID: ${organizationId}`);
             console.log(`   Phone Number ID: ${account.phoneNumberId}`);
-            // Format phone number
             const formattedTo = this.formatPhoneNumber(to);
             console.log(`   Formatted Phone: ${formattedTo}`);
+            // ✅ Check if contact has WhatsApp BEFORE sending
+            let contactValid = true;
+            try {
+                console.log('📞 Checking if contact has WhatsApp...');
+                const contactCheck = await meta_api_1.metaApi.checkContact(account.phoneNumberId, accessToken, formattedTo);
+                console.log('📞 CONTACT CHECK:', JSON.stringify(contactCheck, null, 2));
+                const status = contactCheck?.contacts?.[0]?.status;
+                if (status && status !== 'valid') {
+                    contactValid = false;
+                    const errorMsg = `Recipient does not have WhatsApp or number is invalid (status: ${status})`;
+                    console.error(`❌ ${errorMsg}`);
+                    if (conversationId) {
+                        const failedContent = this.extractMessageContent(type, content);
+                        await database_1.default.message.create({
+                            data: {
+                                conversationId,
+                                whatsappAccountId: accountId,
+                                direction: client_1.MessageDirection.OUTBOUND,
+                                type: this.mapMessageType(type),
+                                content: failedContent,
+                                status: client_1.MessageStatus.FAILED,
+                                failureReason: errorMsg,
+                                sentAt: new Date(),
+                                failedAt: new Date(),
+                            },
+                        });
+                    }
+                    throw new Error(errorMsg);
+                }
+                console.log('✅ Contact has WhatsApp - proceeding with send');
+            }
+            catch (checkError) {
+                if (!contactValid) {
+                    throw checkError;
+                }
+                console.warn('⚠️ Contact check failed, continuing anyway:', checkError.message);
+            }
             // Prepare message payload
             const messagePayload = {
                 messaging_product: 'whatsapp',
@@ -298,28 +368,28 @@ class WhatsAppService {
                 ...content,
             };
             console.log(`   Payload type:`, type);
-            // ✅ Send via Meta API with decrypted token
+            // Send via Meta API
             const result = await meta_api_1.metaApi.sendMessage(account.phoneNumberId, accessToken, formattedTo, messagePayload);
             console.log(`✅ Message sent successfully!`);
             console.log(`   Message ID: ${result.messageId}`);
             // Get or create contact
             const contact = await this.getOrCreateContact(organizationId, to);
-            // ✅ Extract clean content for preview and storage
+            // Extract clean content
             const messageContent = this.extractMessageContent(type, content);
             const messagePreview = messageContent.substring(0, 100);
             console.log(`   Message Content: ${messageContent.substring(0, 50)}...`);
             // Get or create conversation
             const conversation = await this.getOrCreateConversation(organizationId, contact.id, account.phoneNumberId, messagePreview, conversationId);
-            // ✅ Save message to database with clean content
+            // Save message to database
             const message = await database_1.default.message.create({
                 data: {
                     conversationId: conversation.id,
                     whatsappAccountId: accountId,
                     wamId: result.messageId,
-                    waMessageId: result.messageId, // Duplicate for backward compatibility
+                    waMessageId: result.messageId,
                     direction: client_1.MessageDirection.OUTBOUND,
                     type: this.mapMessageType(type),
-                    content: messageContent, // ✅ Now saves clean text instead of JSON
+                    content: messageContent,
                     status: client_1.MessageStatus.SENT,
                     sentAt: new Date(),
                 },
@@ -331,10 +401,7 @@ class WhatsAppService {
                     },
                 },
             });
-            console.log(`💾 Message saved to DB:`, {
-                id: message.id,
-                content: messageContent.substring(0, 50) + '...',
-            });
+            console.log(`💾 Message saved to DB: ${message.id}`);
             console.log(`📤 ========== SEND MESSAGE END ==========\n`);
             return {
                 success: true,
@@ -347,7 +414,6 @@ class WhatsAppService {
                 error: error.message,
                 response: error.response?.data,
             });
-            // ✅ Save failed message with clean content
             if (conversationId) {
                 try {
                     const failedContent = this.extractMessageContent(type, content);
@@ -357,10 +423,11 @@ class WhatsAppService {
                             whatsappAccountId: accountId,
                             direction: client_1.MessageDirection.OUTBOUND,
                             type: this.mapMessageType(type),
-                            content: failedContent, // ✅ Clean content for failed messages too
+                            content: failedContent,
                             status: client_1.MessageStatus.FAILED,
                             failureReason: error.response?.data?.error?.message || error.message,
                             sentAt: new Date(),
+                            failedAt: new Date(),
                         },
                     });
                 }
@@ -369,7 +436,6 @@ class WhatsAppService {
                 }
             }
             console.log(`📤 ========== SEND MESSAGE END (ERROR) ==========\n`);
-            // Extract meaningful error message
             const errorMessage = error.response?.data?.error?.message ||
                 error.response?.data?.message ||
                 error.message ||
@@ -381,7 +447,7 @@ class WhatsAppService {
     // CAMPAIGN METHODS
     // ============================================
     /**
-     * Send bulk campaign messages - ✅ FIXED VERSION
+     * Send bulk campaign messages - WITH CONTACT CHECK
      */
     async sendCampaignMessages(campaignId, batchSize = 50, delayMs = 1000) {
         console.log(`\n📢 ========== CAMPAIGN START ==========`);
@@ -408,7 +474,6 @@ class WhatsAppService {
         }
         console.log(`   Template: ${campaign.template.name}`);
         console.log(`   Recipients: ${campaign.campaignContacts.length}`);
-        // ✅ Get decrypted access token
         let accessToken;
         try {
             const tokenResult = await this.getAccountWithToken(campaign.whatsappAccount.id);
@@ -416,12 +481,9 @@ class WhatsAppService {
         }
         catch (error) {
             console.error('❌ Failed to get access token for campaign:', error);
-            // Update campaign with failure
             await database_1.default.campaign.update({
                 where: { id: campaignId },
-                data: {
-                    status: 'FAILED',
-                },
+                data: { status: 'FAILED' },
             });
             throw new Error('Failed to get access token for campaign. Please reconnect WhatsApp account.');
         }
@@ -432,10 +494,27 @@ class WhatsAppService {
         };
         for (const recipient of campaign.campaignContacts) {
             try {
+                const formattedPhone = this.formatPhoneNumber(recipient.contact.phone);
+                // ✅ Check contact BEFORE sending
+                try {
+                    console.log(`📞 Checking contact: ${formattedPhone}`);
+                    const contactCheck = await meta_api_1.metaApi.checkContact(campaign.whatsappAccount.phoneNumberId, accessToken, formattedPhone);
+                    console.log('📞 CONTACT CHECK:', JSON.stringify(contactCheck));
+                    const status = contactCheck?.contacts?.[0]?.status;
+                    if (status && status !== 'valid') {
+                        throw new Error(`Recipient WhatsApp check failed: ${status}`);
+                    }
+                    console.log('✅ Contact validated');
+                }
+                catch (checkError) {
+                    // If contact check explicitly fails, mark as failed
+                    if (checkError.message.includes('WhatsApp check failed')) {
+                        throw checkError;
+                    }
+                    console.warn('⚠️ Contact check failed:', checkError.message);
+                }
                 // Build template components
                 const components = this.buildTemplateComponents(campaign.template, {});
-                // Format phone number
-                const formattedPhone = this.formatPhoneNumber(recipient.contact.phone);
                 // Send message
                 const messagePayload = {
                     messaging_product: 'whatsapp',
@@ -463,13 +542,11 @@ class WhatsAppService {
                 const errorMessage = error.response?.data?.error?.message ||
                     error.response?.data?.message ||
                     error.message;
-                // Update contact status
                 await this.updateContactStatus(campaignId, recipient.contactId, client_1.MessageStatus.FAILED, undefined, errorMessage);
                 results.failed++;
                 results.errors.push(`${recipient.contact.phone}: ${errorMessage}`);
             }
         }
-        // Check if campaign is complete
         await this.checkCampaignCompletion(campaignId);
         console.log(`📢 ========== CAMPAIGN END ==========`);
         console.log(`   Sent: ${results.sent}`);
@@ -481,7 +558,6 @@ class WhatsAppService {
      */
     async updateContactStatus(campaignId, contactId, status, waMessageId, failureReason) {
         const now = new Date();
-        // Build update data dynamically
         const updateData = {
             status,
             updatedAt: now,
@@ -489,7 +565,6 @@ class WhatsAppService {
         if (waMessageId) {
             updateData.waMessageId = waMessageId;
         }
-        // Add timestamp based on status
         switch (status) {
             case client_1.MessageStatus.SENT:
                 updateData.sentAt = now;
@@ -507,7 +582,6 @@ class WhatsAppService {
                 }
                 break;
         }
-        // Update CampaignContact
         await database_1.default.campaignContact.updateMany({
             where: {
                 campaignId,
@@ -515,7 +589,6 @@ class WhatsAppService {
             },
             data: updateData,
         });
-        // Update Campaign Counts
         const countFieldMap = {
             SENT: 'sentCount',
             DELIVERED: 'deliveredCount',
@@ -533,7 +606,7 @@ class WhatsAppService {
         }
     }
     /**
-     * Check if campaign is complete and update status
+     * Check if campaign is complete
      */
     async checkCampaignCompletion(campaignId) {
         const remainingRecipients = await database_1.default.campaignContact.count({
@@ -558,32 +631,6 @@ class WhatsAppService {
             return true;
         }
         return false;
-    }
-    // ============================================
-    // MESSAGE STATUS METHODS
-    // ============================================
-    /**
-     * Mark message as read - ✅ FIXED VERSION
-     */
-    async markAsRead(accountId, messageId) {
-        try {
-            const { account, accessToken } = await this.getAccountWithToken(accountId);
-            await meta_api_1.metaApi.markMessageAsRead(account.phoneNumberId, accessToken, messageId);
-            // Also update DB
-            await database_1.default.message.updateMany({
-                where: { wamId: messageId },
-                data: {
-                    status: client_1.MessageStatus.READ,
-                    readAt: new Date()
-                }
-            });
-            console.log(`✅ Marked message ${messageId} as read`);
-            return { success: true };
-        }
-        catch (error) {
-            console.error('❌ Failed to mark as read:', error);
-            return { success: false, error: error.message };
-        }
     }
     // ============================================
     // TEMPLATE HELPER METHODS
@@ -660,18 +707,12 @@ class WhatsAppService {
         }
         return components;
     }
-    /**
-     * Extract variable placeholders from template text
-     */
     extractVariablesFromText(text) {
         if (!text)
             return [];
         const matches = text.match(/\{\{(\d+)\}\}/g) || [];
         return matches.map((_, index) => `var_${index + 1}`);
     }
-    /**
-     * Extract and replace variables in text
-     */
     extractVariables(text, variables) {
         const matches = text.match(/\{\{(\d+)\}\}/g) || [];
         return matches.map((match, index) => ({
@@ -680,61 +721,33 @@ class WhatsAppService {
         }));
     }
     // ============================================
-    // UTILITY METHODS
+    // MESSAGE STATUS METHODS
     // ============================================
     /**
-     * Generate message preview for conversation list
+     * Mark message as read
      */
-    getMessagePreview(type, content) {
-        switch (type) {
-            case 'text':
-                return content.text?.body?.substring(0, 100) || '';
-            case 'template':
-                return `📋 Template: ${content.template?.name}`;
-            case 'image':
-                return '📷 Image';
-            case 'video':
-                return '🎥 Video';
-            case 'audio':
-                return '🎵 Audio';
-            case 'document':
-                return '📄 Document';
-            case 'location':
-                return '📍 Location';
-            case 'sticker':
-                return '🎭 Sticker';
-            case 'contacts':
-                return '👤 Contact';
-            default:
-                return 'Message';
+    async markAsRead(accountId, messageId) {
+        try {
+            const { account, accessToken } = await this.getAccountWithToken(accountId);
+            await meta_api_1.metaApi.markMessageAsRead(account.phoneNumberId, accessToken, messageId);
+            await database_1.default.message.updateMany({
+                where: { wamId: messageId },
+                data: {
+                    status: client_1.MessageStatus.READ,
+                    readAt: new Date()
+                }
+            });
+            console.log(`✅ Marked message ${messageId} as read`);
+            return { success: true };
+        }
+        catch (error) {
+            console.error('❌ Failed to mark as read:', error);
+            return { success: false, error: error.message };
         }
     }
-    /**
-     * Map string type to MessageType enum
-     */
-    mapMessageType(type) {
-        const map = {
-            text: client_1.MessageType.TEXT,
-            template: client_1.MessageType.TEMPLATE,
-            image: client_1.MessageType.IMAGE,
-            video: client_1.MessageType.VIDEO,
-            audio: client_1.MessageType.AUDIO,
-            document: client_1.MessageType.DOCUMENT,
-            location: client_1.MessageType.LOCATION,
-            sticker: client_1.MessageType.STICKER,
-            contacts: client_1.MessageType.CONTACT,
-            button: client_1.MessageType.INTERACTIVE,
-            list: client_1.MessageType.INTERACTIVE,
-            interactive: client_1.MessageType.INTERACTIVE,
-        };
-        return map[type.toLowerCase()] || client_1.MessageType.TEXT;
-    }
     // ============================================
-    // ACCOUNT MANAGEMENT METHODS
+    // ACCOUNT MANAGEMENT
     // ============================================
-    /**
-     * Get default WhatsApp account for organization
-     */
     async getDefaultAccount(organizationId) {
         const account = await database_1.default.whatsAppAccount.findFirst({
             where: {
@@ -744,7 +757,6 @@ class WhatsAppService {
             },
         });
         if (!account) {
-            // Fallback to any connected account
             return database_1.default.whatsAppAccount.findFirst({
                 where: {
                     organizationId,
@@ -755,13 +767,9 @@ class WhatsAppService {
         }
         return account;
     }
-    /**
-     * Validate account has required permissions - ✅ FIXED VERSION
-     */
     async validateAccount(accountId) {
         try {
             const { accessToken } = await this.getAccountWithToken(accountId);
-            // Test token validity with Meta API
             const isValid = await meta_api_1.metaApi.isTokenValid(accessToken);
             if (!isValid) {
                 return {
@@ -779,7 +787,6 @@ class WhatsAppService {
         }
     }
 }
-// Export singleton instance
 exports.whatsappService = new WhatsAppService();
 exports.default = exports.whatsappService;
 //# sourceMappingURL=whatsapp.service.js.map

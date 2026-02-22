@@ -41,6 +41,13 @@ const formatContact = (contact: any): ContactResponse => ({
   source: contact.source,
   lastMessageAt: contact.lastMessageAt,
   messageCount: contact.messageCount,
+  // WhatsApp Profile Fields
+  whatsappProfileFetched: contact.whatsappProfileFetched || false,
+  lastProfileFetchAt: contact.lastProfileFetchAt,
+  profileFetchAttempts: contact.profileFetchAttempts || 0,
+  whatsappProfileName: contact.whatsappProfileName,
+  whatsappAbout: contact.whatsappAbout,
+  whatsappProfilePicUrl: contact.whatsappProfilePicUrl,
   createdAt: contact.createdAt,
   updatedAt: contact.updatedAt,
 });
@@ -70,19 +77,166 @@ const formatContactGroup = (group: any): ContactGroupResponse => ({
 // ============================================
 
 export class ContactsService {
-  // ==========================================
-  // CREATE CONTACT (✅ FIXED normalization + duplicate check)
-  // ==========================================
-  async create(organizationId: string, input: CreateContactInput): Promise<ContactResponse> {
-    const national10 = normalizeINNational10(input.phone);
 
-    if (!national10) {
-      throw new AppError('Invalid phone number. Please enter a valid 10-digit Indian number.', 400);
+  // ==========================================
+  // PHONE VALIDATION HELPERS
+  // ==========================================
+
+  /**
+   * Validate Indian phone number (10 digits starting with 6-9)
+   */
+  private validateIndianPhone(phone: string): boolean {
+    const cleaned = phone.replace(/[\s\-\(\)]/g, '');
+    const indianPhoneRegex = /^[6-9]\d{9}$/;
+    return indianPhoneRegex.test(cleaned);
+  }
+
+  /**
+   * Normalize phone to 10-digit format
+   */
+  private normalizeToTenDigits(phone: string): string {
+    const cleaned = phone.replace(/[\s\-\(\)]/g, '');
+
+    if (cleaned.startsWith('+91')) {
+      return cleaned.substring(3);
+    } else if (cleaned.startsWith('91')) {
+      return cleaned.substring(2);
     }
 
+    return cleaned;
+  }
+
+  /**
+   * Validate and normalize phone (throws error if invalid)
+   */
+  private validateAndNormalizePhone(phone: string): string {
+    const normalized = this.normalizeToTenDigits(phone);
+
+    if (!this.validateIndianPhone(normalized)) {
+      throw new AppError(
+        'Only Indian phone numbers (+91) starting with 6-9 are allowed',
+        400
+      );
+    }
+
+    return normalized;
+  }
+
+  // ==========================================
+  // WHATSAPP NAME FETCHING
+  // ==========================================
+
+  /**
+   * Update contact from webhook (auto name fetch)
+   */
+  async updateContactFromWebhook(
+    phone: string,
+    profileName: string,
+    organizationId: string
+  ): Promise<ContactResponse | null> {
+    try {
+      const normalized = this.validateAndNormalizePhone(phone);
+      const variants = buildINPhoneVariants(phone);
+
+      let contact = await prisma.contact.findFirst({
+        where: {
+          organizationId,
+          OR: variants.map((p) => ({ phone: p })),
+        },
+      });
+
+      if (contact) {
+        // Update if name is Unknown or different
+        if (
+          !contact.firstName ||
+          contact.firstName === 'Unknown' ||
+          (profileName && profileName !== 'Unknown' && contact.firstName !== profileName)
+        ) {
+          contact = await prisma.contact.update({
+            where: { id: contact.id },
+            data: {
+              firstName: profileName,
+              whatsappProfileName: profileName,
+              phone: normalized,
+              whatsappProfileFetched: true,
+              lastProfileFetchAt: new Date(),
+              updatedAt: new Date(),
+            },
+          });
+          console.log(`✅ Updated contact: ${contact.phone} → ${profileName}`);
+        }
+      } else {
+        // Create new contact from webhook
+        contact = await prisma.contact.create({
+          data: {
+            organizationId,
+            phone: normalized,
+            countryCode: '+91',
+            firstName: profileName,
+            whatsappProfileName: profileName,
+            source: 'whatsapp',
+            status: 'ACTIVE',
+            whatsappProfileFetched: true,
+            lastProfileFetchAt: new Date(),
+          },
+        });
+        console.log(`✅ Created contact from webhook: ${profileName}`);
+
+        // Update subscription usage
+        const subscription = await prisma.subscription.findFirst({
+          where: { organizationId },
+        });
+        if (subscription) {
+          await prisma.subscription.update({
+            where: { id: subscription.id },
+            data: { contactsUsed: { increment: 1 } },
+          });
+        }
+      }
+
+      return formatContact(contact);
+    } catch (error) {
+      console.error('Error updating contact from webhook:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Refresh unknown contact names
+   */
+  async refreshUnknownNames(organizationId: string): Promise<{
+    total: number;
+    updated: number;
+    message: string;
+  }> {
+    const unknownContacts = await prisma.contact.findMany({
+      where: {
+        organizationId,
+        OR: [
+          { firstName: null },
+          { firstName: 'Unknown' },
+          { whatsappProfileFetched: false },
+        ],
+      },
+      take: 100,
+    });
+
+    return {
+      total: unknownContacts.length,
+      updated: 0,
+      message: 'Names will be updated automatically when contacts send messages',
+    };
+  }
+
+  // ==========================================
+  // CREATE CONTACT
+  // ==========================================
+
+  async create(organizationId: string, input: CreateContactInput): Promise<ContactResponse> {
+    const national10 = this.validateAndNormalizePhone(input.phone);
     const variants = buildINPhoneVariants(input.phone);
 
-    // ✅ Duplicate check across legacy formats
+    // Duplicate check
     const existing = await prisma.contact.findFirst({
       where: {
         organizationId,
@@ -109,18 +263,20 @@ export class ContactsService {
       }
     }
 
-    // ✅ Store canonical: phone = national 10 digits, countryCode = +91
+    // Create contact
     const contact = await prisma.contact.create({
       data: {
         organizationId,
         phone: national10,
-        countryCode: input.countryCode || '+91',
-        firstName: input.firstName,
+        countryCode: '+91',
+        firstName: input.firstName || 'Unknown',
         lastName: input.lastName,
         email: input.email,
         tags: input.tags || [],
         customFields: input.customFields || {},
         source: 'manual',
+        whatsappProfileFetched: !!input.firstName,
+        profileFetchAttempts: 0,
       },
     });
 
@@ -149,6 +305,7 @@ export class ContactsService {
   // ==========================================
   // GET CONTACTS LIST
   // ==========================================
+
   async getList(organizationId: string, query: ContactsQueryInput): Promise<ContactsListResponse> {
     const {
       page = 1,
@@ -159,10 +316,10 @@ export class ContactsService {
       groupId,
       sortBy = 'createdAt',
       sortOrder = 'desc',
+      hasWhatsAppProfile,
     } = query;
 
     const skip = (page - 1) * limit;
-
     const where: Prisma.ContactWhereInput = { organizationId };
 
     if (search) {
@@ -176,10 +333,8 @@ export class ContactsService {
 
     if (status) where.status = status;
     if (tags && tags.length > 0) where.tags = { hasSome: tags };
-
-    if (groupId) {
-      where.groupMemberships = { some: { groupId } };
-    }
+    if (groupId) where.groupMemberships = { some: { groupId } };
+    if (hasWhatsAppProfile !== undefined) where.whatsappProfileFetched = hasWhatsAppProfile;
 
     const [contacts, total] = await Promise.all([
       prisma.contact.findMany({
@@ -200,6 +355,7 @@ export class ContactsService {
   // ==========================================
   // GET CONTACT BY ID
   // ==========================================
+
   async getById(organizationId: string, contactId: string): Promise<ContactWithGroups> {
     const contact = await prisma.contact.findFirst({
       where: { id: contactId, organizationId },
@@ -217,8 +373,9 @@ export class ContactsService {
   }
 
   // ==========================================
-  // UPDATE CONTACT (✅ FIXED normalization + duplicate check)
+  // UPDATE CONTACT
   // ==========================================
+
   async update(
     organizationId: string,
     contactId: string,
@@ -230,12 +387,10 @@ export class ContactsService {
 
     if (!existing) throw new AppError('Contact not found', 404);
 
-    if (input.phone) {
-      const national10 = normalizeINNational10(input.phone);
-      if (!national10) {
-        throw new AppError('Invalid phone number. Please enter a valid 10-digit Indian number.', 400);
-      }
+    let normalizedPhone: string | undefined;
 
+    if (input.phone) {
+      normalizedPhone = this.validateAndNormalizePhone(input.phone);
       const variants = buildINPhoneVariants(input.phone);
 
       const duplicate = await prisma.contact.findFirst({
@@ -251,18 +406,25 @@ export class ContactsService {
       }
     }
 
+    const updateData: any = {
+      phone: normalizedPhone,
+      countryCode: input.countryCode || '+91',
+      firstName: input.firstName,
+      lastName: input.lastName,
+      email: input.email,
+      tags: input.tags,
+      customFields: input.customFields,
+      status: input.status,
+    };
+
+    if (input.firstName && input.firstName !== 'Unknown') {
+      updateData.whatsappProfileFetched = true;
+      updateData.lastProfileFetchAt = new Date();
+    }
+
     const updated = await prisma.contact.update({
       where: { id: contactId },
-      data: {
-        phone: input.phone ? (normalizeINNational10(input.phone) as string) : undefined,
-        countryCode: input.countryCode,
-        firstName: input.firstName,
-        lastName: input.lastName,
-        email: input.email,
-        tags: input.tags,
-        customFields: input.customFields,
-        status: input.status,
-      },
+      data: updateData,
     });
 
     return formatContact(updated);
@@ -271,6 +433,7 @@ export class ContactsService {
   // ==========================================
   // DELETE CONTACT
   // ==========================================
+
   async delete(organizationId: string, contactId: string): Promise<{ message: string }> {
     const contact = await prisma.contact.findFirst({
       where: { id: contactId, organizationId },
@@ -292,8 +455,9 @@ export class ContactsService {
   }
 
   // ==========================================
-  // IMPORT CONTACTS (✅ FIXED normalization + duplicate prevention)
+  // IMPORT CONTACTS
   // ==========================================
+
   async import(organizationId: string, input: ImportContactsInput): Promise<ImportContactsResponse> {
     const { contacts, groupId, tags = [], skipDuplicates = true } = input;
 
@@ -304,7 +468,6 @@ export class ContactsService {
     if (groupId) {
       const group = await prisma.contactGroup.findFirst({
         where: { id: groupId, organizationId },
-        select: { id: true },
       });
       if (!group) throw new AppError('Contact group not found', 404);
     }
@@ -326,59 +489,62 @@ export class ContactsService {
     }
 
     const sliced = contacts.slice(0, availableSlots);
+    const validContacts: any[] = [];
+    const errors: any[] = [];
 
-    // Normalize all to national10
-    const normalized = sliced.map((c) => {
-      const phone10 = normalizeINNational10(c.phone);
-      const countryCode = c.countryCode || '+91';
+    // Validate each contact
+    for (let i = 0; i < sliced.length; i++) {
+      const c = sliced[i];
 
-      const email = c.email ? String(c.email).trim() : null;
-      const safeEmail = email && email.length > 0 ? email : null;
+      try {
+        const normalized = this.validateAndNormalizePhone(c.phone);
 
-      const mergedTags = Array.from(
-        new Set([...(c.tags || []), ...(tags || [])].map((t) => String(t).trim()).filter(Boolean))
-      );
+        const mergedTags = Array.from(
+          new Set([...(c.tags || []), ...tags])
+        );
 
-      return {
-        organizationId,
-        phone: phone10,
-        countryCode,
-        firstName: c.firstName || null,
-        lastName: c.lastName || null,
-        email: safeEmail,
-        tags: mergedTags,
-        customFields: c.customFields || {},
-        status: 'ACTIVE' as ContactStatus,
-        source: 'import',
-      };
-    });
-
-    const valid = normalized.filter((c) => c.phone && /^\d{10}$/.test(String(c.phone)));
-    const invalidCount = normalized.length - valid.length;
-
-    if (valid.length === 0) {
-      throw new AppError('No valid contacts found after normalization', 400);
+        validContacts.push({
+          organizationId,
+          phone: normalized,
+          countryCode: '+91',
+          firstName: c.firstName || 'Unknown',
+          lastName: c.lastName || null,
+          email: c.email || null,
+          tags: mergedTags,
+          customFields: c.customFields || {},
+          status: 'ACTIVE' as ContactStatus,
+          source: 'import',
+          whatsappProfileFetched: false,
+        });
+      } catch (error: any) {
+        errors.push({
+          row: i + 1,
+          phone: c.phone,
+          error: error.message || 'Invalid Indian phone number',
+        });
+      }
     }
 
-    // Deduplicate within upload
-    const seen = new Set<string>();
-    const unique = valid.filter((c) => {
-      const key = `${organizationId}:${c.phone}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    }) as Array<Exclude<(typeof valid)[number], { phone: null }>>;
+    if (validContacts.length === 0) {
+      throw new AppError(
+        'No valid Indian phone numbers found. Only +91 numbers starting with 6-9 are allowed.',
+        400
+      );
+    }
 
-    // ✅ Prevent duplicates against legacy DB formats
+    // Remove duplicates within batch
+    const seen = new Set<string>();
+    const unique = validContacts.filter((c) => {
+      if (seen.has(c.phone)) return false;
+      seen.add(c.phone);
+      return true;
+    });
+
+    // Check existing in database
     const candidatePhones = new Set<string>();
     for (const u of unique) {
-      const n10 = u.phone as string;
-      candidatePhones.add(n10);
-      candidatePhones.add(`91${n10}`);
-      candidatePhones.add(`9191${n10}`);
-      candidatePhones.add(`+${n10}`);
-      candidatePhones.add(`+91${n10}`);
-      candidatePhones.add(`+9191${n10}`);
+      const variants = buildINPhoneVariants(u.phone);
+      variants.forEach(v => candidatePhones.add(v));
     }
 
     const existing = await prisma.contact.findMany({
@@ -395,24 +561,22 @@ export class ContactsService {
       if (canon) existingCanon.add(canon);
     }
 
-    const toInsert = unique.filter((u) => !existingCanon.has(u.phone as string));
+    const toInsert = unique.filter((u) => !existingCanon.has(u.phone));
 
+    // Insert contacts
     const createdRes = await prisma.contact.createMany({
-      data: toInsert.map((u) => ({
-        ...u,
-        phone: u.phone as string, // 10-digit canonical
-      })),
+      data: toInsert,
       skipDuplicates,
     });
 
     const imported = createdRes.count;
-    const skipped = unique.length - imported; // includes legacy duplicates + db duplicates
-    const errors: any[] = [];
+    const skipped = unique.length - imported;
 
+    // Add to group if specified
     let addedToGroup = 0;
     if (groupId && imported > 0) {
       try {
-        const phones = toInsert.map((c) => c.phone as string);
+        const phones = toInsert.map((c) => c.phone);
         const createdContacts = await prisma.contact.findMany({
           where: { organizationId, phone: { in: phones }, source: 'import' },
           select: { id: true },
@@ -431,6 +595,7 @@ export class ContactsService {
       }
     }
 
+    // Update subscription
     if (org?.subscription && imported > 0) {
       await prisma.subscription.update({
         where: { id: org.subscription.id },
@@ -443,14 +608,14 @@ export class ContactsService {
       total: contacts.length,
       imported,
       skipped,
-      invalid: invalidCount,
+      failed: errors.length,
       addedToGroup,
     });
 
     return {
       imported,
       skipped,
-      failed: invalidCount,
+      failed: errors.length,
       errors: errors.slice(0, 50),
     };
   }
@@ -458,6 +623,7 @@ export class ContactsService {
   // ==========================================
   // BULK UPDATE CONTACTS
   // ==========================================
+
   async bulkUpdate(
     organizationId: string,
     input: BulkUpdateContactsInput
@@ -506,6 +672,7 @@ export class ContactsService {
   // ==========================================
   // BULK DELETE CONTACTS
   // ==========================================
+
   async bulkDelete(
     organizationId: string,
     contactIds: string[]
@@ -531,22 +698,36 @@ export class ContactsService {
   // ==========================================
   // GET CONTACT STATS
   // ==========================================
+
   async getStats(organizationId: string): Promise<ContactStats> {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    const total = await prisma.contact.count({ where: { organizationId } });
-    const active = await prisma.contact.count({ where: { organizationId, status: 'ACTIVE' } });
-    const blocked = await prisma.contact.count({ where: { organizationId, status: 'BLOCKED' } });
-    const unsubscribed = await prisma.contact.count({ where: { organizationId, status: 'UNSUBSCRIBED' } });
-    const recentlyAdded = await prisma.contact.count({ where: { organizationId, createdAt: { gte: sevenDaysAgo } } });
-    const withMessages = await prisma.contact.count({ where: { organizationId, messageCount: { gt: 0 } } });
+    const [total, active, blocked, unsubscribed, recentlyAdded, withMessages, whatsappVerified] =
+      await Promise.all([
+        prisma.contact.count({ where: { organizationId } }),
+        prisma.contact.count({ where: { organizationId, status: 'ACTIVE' } }),
+        prisma.contact.count({ where: { organizationId, status: 'BLOCKED' } }),
+        prisma.contact.count({ where: { organizationId, status: 'UNSUBSCRIBED' } }),
+        prisma.contact.count({ where: { organizationId, createdAt: { gte: sevenDaysAgo } } }),
+        prisma.contact.count({ where: { organizationId, messageCount: { gt: 0 } } }),
+        prisma.contact.count({ where: { organizationId, whatsappProfileFetched: true } }),
+      ]);
 
-    return { total, active, blocked, unsubscribed, recentlyAdded, withMessages };
+    return {
+      total,
+      active,
+      blocked,
+      unsubscribed,
+      recentlyAdded,
+      withMessages,
+      whatsappVerified,
+    };
   }
 
   // ==========================================
   // GET ALL TAGS
   // ==========================================
+
   async getAllTags(organizationId: string): Promise<{ tag: string; count: number }[]> {
     const contacts = await prisma.contact.findMany({
       where: { organizationId },
@@ -568,6 +749,7 @@ export class ContactsService {
   // ==========================================
   // EXPORT CONTACTS
   // ==========================================
+
   async export(organizationId: string, groupId?: string): Promise<any[]> {
     const where: Prisma.ContactWhereInput = { organizationId };
     if (groupId) where.groupMemberships = { some: { groupId } };
@@ -587,12 +769,14 @@ export class ContactsService {
       tags: (contact.tags || []).join(', '),
       status: contact.status,
       source: contact.source || '',
+      whatsappVerified: contact.whatsappProfileFetched ? 'Yes' : 'No',
+      whatsappName: contact.whatsappProfileName || '',
       createdAt: contact.createdAt.toISOString(),
     }));
   }
 
   // ==========================================
-  // CONTACT GROUPS (same as your existing code)
+  // CONTACT GROUPS
   // ==========================================
 
   async createGroup(

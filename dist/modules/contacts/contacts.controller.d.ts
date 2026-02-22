@@ -12,6 +12,7 @@ export declare class ContactsController {
     getStats(req: AuthRequest, res: Response, next: NextFunction): Promise<void>;
     getTags(req: AuthRequest, res: Response, next: NextFunction): Promise<void>;
     export(req: AuthRequest, res: Response, next: NextFunction): Promise<void>;
+    refreshUnknownNames(req: AuthRequest, res: Response, next: NextFunction): Promise<void>;
     createGroup(req: AuthRequest, res: Response, next: NextFunction): Promise<void>;
     getGroups(req: AuthRequest, res: Response, next: NextFunction): Promise<void>;
     getGroupById(req: AuthRequest, res: Response, next: NextFunction): Promise<void>;

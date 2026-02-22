@@ -1,5 +1,29 @@
 import { CreateContactInput, UpdateContactInput, ImportContactsInput, BulkUpdateContactsInput, ContactsQueryInput, ContactResponse, ContactWithGroups, ContactsListResponse, ImportContactsResponse, ContactStats, CreateContactGroupInput, UpdateContactGroupInput, ContactGroupResponse } from './contacts.types';
 export declare class ContactsService {
+    /**
+     * Validate Indian phone number (10 digits starting with 6-9)
+     */
+    private validateIndianPhone;
+    /**
+     * Normalize phone to 10-digit format
+     */
+    private normalizeToTenDigits;
+    /**
+     * Validate and normalize phone (throws error if invalid)
+     */
+    private validateAndNormalizePhone;
+    /**
+     * Update contact from webhook (auto name fetch)
+     */
+    updateContactFromWebhook(phone: string, profileName: string, organizationId: string): Promise<ContactResponse | null>;
+    /**
+     * Refresh unknown contact names
+     */
+    refreshUnknownNames(organizationId: string): Promise<{
+        total: number;
+        updated: number;
+        message: string;
+    }>;
     create(organizationId: string, input: CreateContactInput): Promise<ContactResponse>;
     getList(organizationId: string, query: ContactsQueryInput): Promise<ContactsListResponse>;
     getById(organizationId: string, contactId: string): Promise<ContactWithGroups>;

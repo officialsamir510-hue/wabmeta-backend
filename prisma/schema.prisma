@@ -267,9 +267,13 @@ model Contact {
   countryCode      String               @default("+91")
   firstName        String?
   lastName         String?
-  email            String?
-  avatar           String?
-  customFields     Json                 @default("{}")
+  email                  String?
+  avatar                 String?
+  whatsappProfileName    String?
+  whatsappProfileFetched Boolean              @default(false)
+  lastProfileFetchAt     DateTime?
+  profileFetchAttempts   Int                  @default(0)
+  customFields           Json                 @default("{}")
   tags             String[]             @default([])
   status           ContactStatus        @default(ACTIVE)
   lastMessageAt    DateTime?

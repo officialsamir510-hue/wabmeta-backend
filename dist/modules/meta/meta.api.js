@@ -1,5 +1,5 @@
 "use strict";
-// 📁 src/modules/meta/meta.api.ts - COMPLETE META API CLIENT
+// 📁 src/modules/meta/meta.api.ts - COMPLETE META API CLIENT WITH PROFILE METHODS
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -235,9 +235,6 @@ class MetaApiClient {
     // ============================================
     // PHONE NUMBER METHODS
     // ============================================
-    /**
-     * ✅ FIXED: Get phone numbers with proper snake_case mapping
-     */
     async getPhoneNumbers(wabaId, accessToken) {
         try {
             console.log(`[Meta API] Fetching phone numbers for WABA ${wabaId}...`);
@@ -247,7 +244,6 @@ class MetaApiClient {
                     fields: 'id,verified_name,display_phone_number,quality_rating,code_verification_status,platform_type,throughput,status,name_status,messaging_limit_tier',
                 },
             });
-            // ✅ Map snake_case API response to camelCase TypeScript
             const phoneNumbers = (response.data.data || []).map((phone) => ({
                 id: phone.id,
                 verifiedName: phone.verified_name,
@@ -265,6 +261,29 @@ class MetaApiClient {
         }
         catch (error) {
             throw this.handleError(error, 'Failed to get phone numbers');
+        }
+    }
+    async getPhoneNumberDetails(phoneNumberId, accessToken) {
+        try {
+            console.log(`[Meta API] Fetching phone number details for ${phoneNumberId}...`);
+            const response = await this.client.get(`/${phoneNumberId}`, {
+                params: {
+                    access_token: accessToken,
+                    fields: 'id,verified_name,display_phone_number,quality_rating,code_verification_status,name_status',
+                },
+            });
+            const data = response.data;
+            return {
+                id: data.id,
+                verifiedName: data.verified_name,
+                displayPhoneNumber: data.display_phone_number,
+                qualityRating: data.quality_rating,
+                codeVerificationStatus: data.code_verification_status,
+                nameStatus: data.name_status,
+            };
+        }
+        catch (error) {
+            throw this.handleError(error, 'Failed to get phone number details');
         }
     }
     async registerPhoneNumber(phoneNumberId, accessToken) {
@@ -287,6 +306,184 @@ class MetaApiClient {
                 return true;
             }
             throw this.handleError(error, 'Failed to register phone number');
+        }
+    }
+    // ============================================
+    // WHATSAPP PROFILE METHODS
+    // ============================================
+    /**
+     * ✅ Extract WhatsApp profile from incoming webhook
+     * This is the MOST RELIABLE method to get real names
+     * Called when processing incoming messages
+     */
+    extractProfileFromWebhook(webhookData) {
+        try {
+            const entry = webhookData.entry?.[0];
+            const changes = entry?.changes?.[0];
+            const value = changes?.value;
+            if (!value)
+                return null;
+            // From incoming message
+            if (value.messages?.[0]) {
+                const message = value.messages[0];
+                const contact = value.contacts?.[0];
+                return {
+                    waId: message.from,
+                    profileName: contact?.profile?.name || 'Unknown',
+                    phone: message.from.startsWith('+') ? message.from : '+' + message.from,
+                };
+            }
+            // From status update (also contains contact info sometimes)
+            if (value.statuses?.[0]) {
+                const status = value.statuses[0];
+                const contact = value.contacts?.[0];
+                if (contact) {
+                    return {
+                        waId: status.recipient_id,
+                        profileName: contact?.profile?.name || 'Unknown',
+                        phone: status.recipient_id.startsWith('+')
+                            ? status.recipient_id
+                            : '+' + status.recipient_id,
+                    };
+                }
+            }
+            return null;
+        }
+        catch (error) {
+            console.error('[Meta API] Error extracting profile from webhook:', error);
+            return null;
+        }
+    }
+    /**
+     * ✅ Get WhatsApp contact profile
+     * Uses the Contacts API to check if number exists and get profile
+     */
+    async getContactProfile(phoneNumberId, accessToken, phone) {
+        try {
+            const cleanPhone = phone.replace(/[^0-9]/g, '');
+            console.log(`[Meta API] Fetching profile for: ${cleanPhone.substring(0, 5)}...`);
+            const response = await this.client.post(`/${phoneNumberId}/contacts`, {
+                messaging_product: 'whatsapp',
+                blocking: 'wait',
+                force_check: true,
+                contacts: [cleanPhone],
+            }, {
+                headers: { Authorization: `Bearer ${accessToken}` },
+            });
+            const contact = response.data.contacts?.[0];
+            if (!contact) {
+                return { exists: false };
+            }
+            const result = {
+                exists: contact.status === 'valid',
+                waId: contact.wa_id,
+                status: contact.status,
+                profileName: undefined,
+            };
+            console.log(`[Meta API] Contact ${contact.status}: ${contact.wa_id}`);
+            return result;
+        }
+        catch (error) {
+            console.error('[Meta API] Failed to get contact profile:', error.response?.data || error.message);
+            return { exists: false };
+        }
+    }
+    /**
+     * ✅ Batch check multiple contacts
+     * Check up to 50 contacts at once
+     */
+    async batchCheckContacts(phoneNumberId, accessToken, phones) {
+        try {
+            const cleanPhones = phones
+                .map(p => p.replace(/[^0-9]/g, ''))
+                .filter(p => p.length >= 10)
+                .slice(0, 50);
+            if (cleanPhones.length === 0) {
+                return [];
+            }
+            console.log(`[Meta API] Batch checking ${cleanPhones.length} contacts...`);
+            const response = await this.client.post(`/${phoneNumberId}/contacts`, {
+                messaging_product: 'whatsapp',
+                blocking: 'wait',
+                force_check: true,
+                contacts: cleanPhones,
+            }, {
+                headers: { Authorization: `Bearer ${accessToken}` },
+            });
+            const contacts = response.data.contacts || [];
+            console.log(`[Meta API] ✅ Checked ${contacts.length} contacts`);
+            return contacts.map((contact) => ({
+                input: contact.input,
+                waId: contact.wa_id,
+                status: contact.status,
+            }));
+        }
+        catch (error) {
+            console.error('[Meta API] Batch contact check failed:', error.response?.data || error.message);
+            throw this.handleError(error, 'Failed to batch check contacts');
+        }
+    }
+    /**
+     * ✅ Get contact profile from message send response
+     */
+    extractContactFromMessageResponse(messageResponse) {
+        try {
+            const contact = messageResponse.contacts?.[0];
+            if (!contact) {
+                return null;
+            }
+            return {
+                waId: contact.wa_id,
+                input: contact.input,
+            };
+        }
+        catch (error) {
+            console.error('[Meta API] Failed to extract contact from message response');
+            return null;
+        }
+    }
+    /**
+     * ⚠️ Get profile picture URL
+     * NOTE: This typically requires special permissions and may not work
+     */
+    async getProfilePictureUrl(phoneNumberId, accessToken, waId) {
+        try {
+            console.log(`[Meta API] Attempting to get profile picture for ${waId}...`);
+            const response = await this.client.get(`/${waId}/profile_picture`, {
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                },
+            });
+            return response.data.url || null;
+        }
+        catch (error) {
+            console.warn('[Meta API] Profile picture not accessible:', error.response?.data?.error?.message);
+            return null;
+        }
+    }
+    // ============================================
+    // CONTACT VALIDATION
+    // ============================================
+    async checkContact(phoneNumberId, accessToken, phone) {
+        try {
+            const clean = phone.replace(/[^0-9]/g, '');
+            console.log(`📞 Checking contact: ${clean}`);
+            const response = await this.client.post(`/${phoneNumberId}/contacts`, {
+                messaging_product: 'whatsapp',
+                blocking: 'wait',
+                force_check: true,
+                contacts: [clean],
+            }, {
+                headers: { Authorization: `Bearer ${accessToken}` },
+            });
+            const result = response.data;
+            const status = result.contacts?.[0]?.status;
+            console.log(`📞 Contact check result: ${status}`);
+            return result;
+        }
+        catch (error) {
+            console.error('[Meta API] Contact check failed:', error.response?.data || error.message);
+            throw this.handleError(error, 'Failed to check contact');
         }
     }
     // ============================================
@@ -380,6 +577,37 @@ class MetaApiClient {
             return {
                 messageId: messageId,
                 contacts: response.data.contacts,
+            };
+        }
+        catch (error) {
+            console.error('[Meta API] ❌ Failed to send message');
+            throw this.handleError(error, 'Failed to send message');
+        }
+    }
+    /**
+     * ✅ Enhanced send message with contact extraction
+     */
+    async sendMessageWithContactInfo(phoneNumberId, accessToken, to, message) {
+        try {
+            const cleanTo = to.replace(/[^0-9]/g, '');
+            console.log(`[Meta API] Sending message to ${cleanTo.substring(0, 5)}...`);
+            const payload = {
+                messaging_product: 'whatsapp',
+                recipient_type: 'individual',
+                to: cleanTo,
+                ...message,
+            };
+            const response = await this.client.post(`/${phoneNumberId}/messages`, payload, {
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                },
+            });
+            const messageId = response.data.messages?.[0]?.id;
+            const contact = this.extractContactFromMessageResponse(response.data);
+            console.log(`[Meta API] ✅ Message sent: ${messageId}`);
+            return {
+                messageId,
+                contact: contact || undefined,
             };
         }
         catch (error) {

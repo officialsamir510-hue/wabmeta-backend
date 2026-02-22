@@ -55,6 +55,7 @@ export interface ContactsQueryInput {
   groupId?: string;
   sortBy?: 'createdAt' | 'firstName' | 'lastName' | 'lastMessageAt';
   sortOrder?: 'asc' | 'desc';
+  hasWhatsAppProfile?: boolean; // NEW
 }
 
 // Contact Groups
@@ -94,6 +95,15 @@ export interface ContactResponse {
   source: string | null;
   lastMessageAt: Date | null;
   messageCount: number;
+
+  // WhatsApp Profile Fields (NEW)
+  whatsappProfileFetched?: boolean;
+  lastProfileFetchAt?: Date | null;
+  profileFetchAttempts?: number;
+  whatsappProfileName?: string | null;
+  whatsappAbout?: string | null;
+  whatsappProfilePicUrl?: string | null;
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -130,7 +140,7 @@ export interface ImportContactsResponse {
   imported: number;
   skipped: number;
   failed: number;
-  errors: { row: number; error: string }[];
+  errors: { row?: number; phone?: string; error: string }[];
 }
 
 export interface ContactStats {
@@ -138,8 +148,9 @@ export interface ContactStats {
   active: number;
   blocked: number;
   unsubscribed: number;
-  recentlyAdded: number; // Last 7 days
+  recentlyAdded: number;
   withMessages: number;
+  whatsappVerified?: number; // NEW
 }
 
 // ============================================

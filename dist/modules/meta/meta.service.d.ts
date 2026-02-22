@@ -5,9 +5,9 @@ export declare class MetaService {
     getOAuthUrl(state: string): string;
     getEmbeddedSignupConfig(): {
         appId: string;
-        configId: string;
-        version: string;
-        redirectUri: string;
+        configId: any;
+        version: any;
+        redirectUri: any;
         features: string[];
     };
     getIntegrationStatus(): {
@@ -15,7 +15,7 @@ export declare class MetaService {
         appId: string | null;
         hasConfigId: boolean;
         hasRedirectUri: boolean;
-        apiVersion: string;
+        apiVersion: any;
     };
     completeConnection(codeOrToken: string, organizationId: string, userId: string, onProgress?: (progress: ConnectionProgress) => void): Promise<{
         success: boolean;

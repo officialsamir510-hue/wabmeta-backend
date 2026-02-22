@@ -1,11 +1,9 @@
-// 📁 src/socket.ts - COMPLETE WITH CAMPAIGN SOCKET INTEGRATION
+// src/socket.ts - COMPLETE & OPTIMIZED
 
 import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { config } from './config';
-import { webhookEvents } from './modules/webhooks/webhook.service';
-import { initializeCampaignSocket } from './modules/campaigns/campaigns.socket';
 
 interface AuthenticatedSocket extends Socket {
   userId?: string;
@@ -20,15 +18,12 @@ interface JWTPayload {
 }
 
 let io: Server;
+let webhookEvents: any;
 
 export const initializeSocket = (server: HttpServer) => {
   io = new Server(server, {
     cors: {
-      origin: [
-        config.frontendUrl,
-        'https://wabmeta.com',
-        'http://localhost:5173',
-      ],
+      origin: config.frontend.corsOrigins as unknown as string[],
       methods: ['GET', 'POST'],
       credentials: true,
     },
@@ -37,9 +32,11 @@ export const initializeSocket = (server: HttpServer) => {
     transports: ['websocket', 'polling'],
   });
 
-  // ✅ Initialize campaign socket service FIRST
-  initializeCampaignSocket(io);
-  console.log('✅ Campaign Socket Service initialized');
+  // Initialize campaign socket (if available)
+  initializeCampaignSocket();
+
+  // Initialize webhook events
+  initializeWebhookEvents();
 
   // Authentication middleware
   io.use((socket: AuthenticatedSocket, next) => {
@@ -53,7 +50,7 @@ export const initializeSocket = (server: HttpServer) => {
     }
 
     try {
-      const decoded = jwt.verify(token, config.jwtSecret) as JWTPayload;
+      const decoded = jwt.verify(token, config.jwt.secret) as JWTPayload;
 
       socket.userId = decoded.userId;
       socket.organizationId = decoded.organizationId;
@@ -71,27 +68,23 @@ export const initializeSocket = (server: HttpServer) => {
   io.on('connection', (socket: AuthenticatedSocket) => {
     console.log(`🔌 Socket connected: ${socket.email || socket.userId} (${socket.id})`);
 
-    // Join user to their organization room
+    // Join rooms
     if (socket.organizationId) {
       socket.join(`org:${socket.organizationId}`);
       console.log(`📂 User joined org room: org:${socket.organizationId}`);
     }
 
-    // Join user to their personal room
     if (socket.userId) {
       socket.join(`user:${socket.userId}`);
       console.log(`👤 User joined personal room: user:${socket.userId}`);
     }
 
     // ==========================================
-    // CONVERSATION EVENTS (Existing)
+    // CONVERSATION EVENTS
     // ==========================================
 
     socket.on('join:conversation', (conversationId: string) => {
-      if (!conversationId) {
-        console.warn('⚠️ Attempted to join conversation without ID');
-        return;
-      }
+      if (!conversationId) return;
       socket.join(`conversation:${conversationId}`);
       console.log(`💬 User joined conversation: ${conversationId}`);
     });
@@ -121,18 +114,13 @@ export const initializeSocket = (server: HttpServer) => {
     });
 
     // ==========================================
-    // CAMPAIGN EVENTS (New)
+    // CAMPAIGN EVENTS
     // ==========================================
 
     socket.on('campaign:join', (campaignId: string) => {
-      if (!campaignId) {
-        console.warn('⚠️ Attempted to join campaign without ID');
-        return;
-      }
+      if (!campaignId) return;
       socket.join(`campaign:${campaignId}`);
       console.log(`📢 User joined campaign room: campaign:${campaignId}`);
-
-      // Confirm subscription
       socket.emit('campaign:joined', { campaignId });
     });
 
@@ -140,47 +128,31 @@ export const initializeSocket = (server: HttpServer) => {
       if (!campaignId) return;
       socket.leave(`campaign:${campaignId}`);
       console.log(`📢 User left campaign room: campaign:${campaignId}`);
-
-      // Confirm unsubscription
       socket.emit('campaign:left', { campaignId });
     });
 
-    // ✅ Join all campaigns for organization (optional)
     socket.on('campaigns:subscribe', () => {
-      if (!socket.organizationId) {
-        console.warn('⚠️ Cannot subscribe to campaigns: No organizationId');
-        return;
-      }
-
+      if (!socket.organizationId) return;
       socket.join(`org:${socket.organizationId}:campaigns`);
       console.log(`📢 User subscribed to all organization campaigns`);
-
-      socket.emit('campaigns:subscribed', {
-        organizationId: socket.organizationId
-      });
+      socket.emit('campaigns:subscribed', { organizationId: socket.organizationId });
     });
 
     socket.on('campaigns:unsubscribe', () => {
       if (!socket.organizationId) return;
-
       socket.leave(`org:${socket.organizationId}:campaigns`);
       console.log(`📢 User unsubscribed from organization campaigns`);
-
-      socket.emit('campaigns:unsubscribed', {
-        organizationId: socket.organizationId
-      });
+      socket.emit('campaigns:unsubscribed', { organizationId: socket.organizationId });
     });
 
     // ==========================================
     // GENERAL EVENTS
     // ==========================================
 
-    // Heartbeat/ping
     socket.on('ping', () => {
       socket.emit('pong', { timestamp: Date.now() });
     });
 
-    // Request connection status
     socket.on('status', () => {
       socket.emit('status:response', {
         connected: true,
@@ -196,221 +168,155 @@ export const initializeSocket = (server: HttpServer) => {
 
     socket.on('disconnect', (reason) => {
       console.log(`❌ Socket disconnected: ${socket.email || socket.userId} (${reason})`);
-
-      // Cleanup if needed
-      if (socket.organizationId) {
-        console.log(`🧹 Cleaned up rooms for org: ${socket.organizationId}`);
-      }
     });
-
-    // ==========================================
-    // ERROR HANDLER
-    // ==========================================
 
     socket.on('error', (error) => {
       console.error(`❌ Socket error for ${socket.email || socket.userId}:`, error);
     });
   });
 
-  // ==========================================
-  // WEBHOOK EVENT BROADCASTING (Existing)
-  // ==========================================
-
-  webhookEvents.on('newMessage', (data: any) => {
-    if (!data.organizationId) {
-      console.warn('⚠️ newMessage event missing organizationId');
-      return;
-    }
-
-    // Broadcast to organization
-    io.to(`org:${data.organizationId}`).emit('message:new', data);
-
-    // Broadcast to specific conversation
-    if (data.conversationId) {
-      io.to(`conversation:${data.conversationId}`).emit('message:new', data);
-    }
-
-    console.log(`📨 Broadcasted new message to org:${data.organizationId}`);
-  });
-
-  webhookEvents.on('messageStatus', (data: any) => {
-    if (!data.organizationId) {
-      console.warn('⚠️ messageStatus event missing organizationId');
-      return;
-    }
-
-    io.to(`org:${data.organizationId}`).emit('message:status', data);
-
-    if (data.conversationId) {
-      io.to(`conversation:${data.conversationId}`).emit('message:status', data);
-    }
-
-    console.log(`📊 Broadcasted message status to org:${data.organizationId}`);
-  });
-
-  // ✅ NEW: Campaign webhook events
-  webhookEvents.on('campaignUpdate', (data: any) => {
-    if (!data.organizationId || !data.campaignId) {
-      console.warn('⚠️ campaignUpdate event missing required fields');
-      return;
-    }
-
-    // Broadcast to organization campaigns room
-    io.to(`org:${data.organizationId}:campaigns`).emit('campaign:update', data);
-
-    // Broadcast to specific campaign room
-    io.to(`campaign:${data.campaignId}`).emit('campaign:update', data);
-
-    // Broadcast to organization
-    io.to(`org:${data.organizationId}`).emit('campaign:update', data);
-
-    console.log(`📢 Broadcasted campaign update: ${data.campaignId}`);
-  });
-
-  webhookEvents.on('campaignProgress', (data: any) => {
-    if (!data.organizationId || !data.campaignId) return;
-
-    io.to(`campaign:${data.campaignId}`).emit('campaign:progress', data);
-    io.to(`org:${data.organizationId}:campaigns`).emit('campaign:progress', data);
-
-    console.log(`📊 Broadcasted campaign progress: ${data.campaignId} (${data.percentage}%)`);
-  });
-
-  webhookEvents.on('campaignCompleted', (data: any) => {
-    if (!data.organizationId || !data.campaignId) return;
-
-    io.to(`campaign:${data.campaignId}`).emit('campaign:completed', data);
-    io.to(`org:${data.organizationId}:campaigns`).emit('campaign:completed', data);
-    io.to(`org:${data.organizationId}`).emit('campaign:completed', data);
-
-    console.log(`✅ Broadcasted campaign completion: ${data.campaignId}`);
-  });
-
-  webhookEvents.on('campaignContactStatus', (data: any) => {
-    if (!data.organizationId || !data.campaignId) return;
-
-    io.to(`campaign:${data.campaignId}`).emit('campaign:contact:status', data);
-
-    // Only log failed contacts to avoid spam
-    if (data.status === 'FAILED') {
-      console.log(`❌ Contact failed in campaign ${data.campaignId}: ${data.phone}`);
-    }
-  });
-
-  console.log('✅ Socket.IO server initialized with all event handlers');
+  console.log('✅ Socket.IO server initialized');
 
   return io;
 };
 
+// ============================================
+// INITIALIZE CAMPAIGN SOCKET (DYNAMIC IMPORT)
+// ============================================
+
+async function initializeCampaignSocket() {
+  try {
+    const campaignModule = await import('./modules/campaigns/campaigns.socket');
+    if (campaignModule.initializeCampaignSocket && io) {
+      campaignModule.initializeCampaignSocket(io);
+      console.log('✅ Campaign Socket Service initialized');
+    }
+  } catch (error) {
+    console.log('ℹ️  Campaign socket service not available');
+  }
+}
+
+// ============================================
+// INITIALIZE WEBHOOK EVENTS (DYNAMIC IMPORT)
+// ============================================
+
+async function initializeWebhookEvents() {
+  try {
+    const webhookModule = await import('./modules/webhooks/webhook.service') as any;
+    webhookEvents = webhookModule.webhookEvents;
+
+    if (webhookEvents) {
+      // Message events
+      webhookEvents.on('newMessage', (data: any) => {
+        if (!data.organizationId) return;
+        io.to(`org:${data.organizationId}`).emit('message:new', data);
+        if (data.conversationId) {
+          io.to(`conversation:${data.conversationId}`).emit('message:new', data);
+        }
+      });
+
+      webhookEvents.on('messageStatus', (data: any) => {
+        if (!data.organizationId) return;
+        io.to(`org:${data.organizationId}`).emit('message:status', data);
+        if (data.conversationId) {
+          io.to(`conversation:${data.conversationId}`).emit('message:status', data);
+        }
+      });
+
+      // Campaign events
+      webhookEvents.on('campaignUpdate', (data: any) => {
+        if (!data.organizationId || !data.campaignId) return;
+        io.to(`campaign:${data.campaignId}`).emit('campaign:update', data);
+        io.to(`org:${data.organizationId}:campaigns`).emit('campaign:update', data);
+        io.to(`org:${data.organizationId}`).emit('campaign:update', data);
+      });
+
+      webhookEvents.on('campaignProgress', (data: any) => {
+        if (!data.organizationId || !data.campaignId) return;
+        io.to(`campaign:${data.campaignId}`).emit('campaign:progress', data);
+        io.to(`org:${data.organizationId}:campaigns`).emit('campaign:progress', data);
+      });
+
+      webhookEvents.on('campaignCompleted', (data: any) => {
+        if (!data.organizationId || !data.campaignId) return;
+        io.to(`campaign:${data.campaignId}`).emit('campaign:completed', data);
+        io.to(`org:${data.organizationId}:campaigns`).emit('campaign:completed', data);
+        io.to(`org:${data.organizationId}`).emit('campaign:completed', data);
+      });
+
+      webhookEvents.on('campaignContactStatus', (data: any) => {
+        if (!data.organizationId || !data.campaignId) return;
+        io.to(`campaign:${data.campaignId}`).emit('campaign:contact:status', data);
+      });
+
+      console.log('✅ Webhook events initialized');
+    }
+  } catch (error) {
+    console.log('ℹ️  Webhook events not available');
+  }
+}
+
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
+
 export const getIO = (): Server => {
   if (!io) {
-    throw new Error('Socket.IO not initialized. Call initializeSocket() first.');
+    throw new Error('Socket.IO not initialized');
   }
   return io;
 };
 
-// ==========================================
-// UTILITY FUNCTIONS
-// ==========================================
-
-/**
- * Broadcast to organization
- */
 export const broadcastToOrganization = (
   organizationId: string,
   event: string,
   data: any
 ) => {
-  if (!io) {
-    console.warn('⚠️ Cannot broadcast: Socket.IO not initialized');
-    return;
-  }
-
+  if (!io) return;
   io.to(`org:${organizationId}`).emit(event, data);
-  console.log(`📡 Broadcasted ${event} to org:${organizationId}`);
 };
 
-/**
- * Broadcast to specific user
- */
-export const broadcastToUser = (
-  userId: string,
-  event: string,
-  data: any
-) => {
-  if (!io) {
-    console.warn('⚠️ Cannot broadcast: Socket.IO not initialized');
-    return;
-  }
-
+export const broadcastToUser = (userId: string, event: string, data: any) => {
+  if (!io) return;
   io.to(`user:${userId}`).emit(event, data);
-  console.log(`📡 Broadcasted ${event} to user:${userId}`);
 };
 
-/**
- * Broadcast to specific conversation
- */
 export const broadcastToConversation = (
   conversationId: string,
   event: string,
   data: any
 ) => {
-  if (!io) {
-    console.warn('⚠️ Cannot broadcast: Socket.IO not initialized');
-    return;
-  }
-
+  if (!io) return;
   io.to(`conversation:${conversationId}`).emit(event, data);
-  console.log(`📡 Broadcasted ${event} to conversation:${conversationId}`);
 };
 
-/**
- * Broadcast to specific campaign
- */
 export const broadcastToCampaign = (
   campaignId: string,
   event: string,
   data: any
 ) => {
-  if (!io) {
-    console.warn('⚠️ Cannot broadcast: Socket.IO not initialized');
-    return;
-  }
-
+  if (!io) return;
   io.to(`campaign:${campaignId}`).emit(event, data);
-  console.log(`📡 Broadcasted ${event} to campaign:${campaignId}`);
 };
 
-/**
- * Get active connections count
- */
 export const getActiveConnections = async (): Promise<number> => {
   if (!io) return 0;
-
   const sockets = await io.fetchSockets();
   return sockets.length;
 };
 
-/**
- * Get connections for organization
- */
 export const getOrganizationConnections = async (
   organizationId: string
 ): Promise<number> => {
   if (!io) return 0;
-
   const sockets = await io.in(`org:${organizationId}`).fetchSockets();
   return sockets.length;
 };
 
-/**
- * Get connections for campaign
- */
 export const getCampaignConnections = async (
   campaignId: string
 ): Promise<number> => {
   if (!io) return 0;
-
   const sockets = await io.in(`campaign:${campaignId}`).fetchSockets();
   return sockets.length;
 };

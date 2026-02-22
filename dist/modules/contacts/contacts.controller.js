@@ -17,7 +17,10 @@ class ContactsController {
             }
             const input = req.body;
             const contact = await contacts_service_1.contactsService.create(organizationId, input);
-            (0, response_1.sendSuccess)(res, contact, 'Contact created successfully', 201);
+            const message = contact.whatsappProfileFetched
+                ? 'Contact created with provided name'
+                : 'Contact created - name will update when they send a message';
+            (0, response_1.sendSuccess)(res, contact, message, 201);
         }
         catch (error) {
             next(error);
@@ -41,6 +44,8 @@ class ContactsController {
                 groupId: req.query.groupId,
                 sortBy: req.query.sortBy || 'createdAt',
                 sortOrder: req.query.sortOrder || 'desc',
+                hasWhatsAppProfile: req.query.hasWhatsAppProfile === 'true' ? true :
+                    req.query.hasWhatsAppProfile === 'false' ? false : undefined,
             };
             const result = await contacts_service_1.contactsService.getList(organizationId, query);
             res.json({
@@ -63,7 +68,7 @@ class ContactsController {
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const id = req.params.id; // ✅ Fixed
+            const id = req.params.id;
             const contact = await contacts_service_1.contactsService.getById(organizationId, id);
             (0, response_1.sendSuccess)(res, contact, 'Contact fetched successfully');
         }
@@ -80,7 +85,7 @@ class ContactsController {
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const id = req.params.id; // ✅ Fixed
+            const id = req.params.id;
             const input = req.body;
             const contact = await contacts_service_1.contactsService.update(organizationId, id, input);
             (0, response_1.sendSuccess)(res, contact, 'Contact updated successfully');
@@ -98,7 +103,7 @@ class ContactsController {
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const id = req.params.id; // ✅ Fixed
+            const id = req.params.id;
             const result = await contacts_service_1.contactsService.delete(organizationId, id);
             (0, response_1.sendSuccess)(res, result, result.message);
         }
@@ -117,7 +122,10 @@ class ContactsController {
             }
             const input = req.body;
             const result = await contacts_service_1.contactsService.import(organizationId, input);
-            (0, response_1.sendSuccess)(res, result, `Imported ${result.imported} contacts`);
+            const message = result.failed > 0
+                ? `Imported ${result.imported} contacts. ${result.failed} failed (only Indian numbers allowed)`
+                : `Successfully imported ${result.imported} contacts`;
+            (0, response_1.sendSuccess)(res, result, message);
         }
         catch (error) {
             next(error);
@@ -200,10 +208,8 @@ class ContactsController {
             }
             const { groupId } = req.query;
             const contacts = await contacts_service_1.contactsService.export(organizationId, groupId);
-            // Set headers for CSV download
             res.setHeader('Content-Type', 'text/csv');
             res.setHeader('Content-Disposition', 'attachment; filename=contacts.csv');
-            // Generate CSV
             if (contacts.length === 0) {
                 res.send('No contacts found');
                 return;
@@ -220,9 +226,24 @@ class ContactsController {
         }
     }
     // ==========================================
+    // REFRESH UNKNOWN NAMES (NEW)
+    // ==========================================
+    async refreshUnknownNames(req, res, next) {
+        try {
+            const organizationId = req.user?.organizationId;
+            if (!organizationId) {
+                throw new errorHandler_1.AppError('Organization context required', 400);
+            }
+            const result = await contacts_service_1.contactsService.refreshUnknownNames(organizationId);
+            (0, response_1.sendSuccess)(res, result, result.message);
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    // ==========================================
     // CONTACT GROUPS
     // ==========================================
-    // Create Group
     async createGroup(req, res, next) {
         try {
             const organizationId = req.user?.organizationId;
@@ -237,7 +258,6 @@ class ContactsController {
             next(error);
         }
     }
-    // Get All Groups
     async getGroups(req, res, next) {
         try {
             const organizationId = req.user?.organizationId;
@@ -251,14 +271,13 @@ class ContactsController {
             next(error);
         }
     }
-    // Get Group By ID
     async getGroupById(req, res, next) {
         try {
             const organizationId = req.user?.organizationId;
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const groupId = req.params.groupId; // ✅ Fixed
+            const groupId = req.params.groupId;
             const group = await contacts_service_1.contactsService.getGroupById(organizationId, groupId);
             (0, response_1.sendSuccess)(res, group, 'Group fetched successfully');
         }
@@ -266,14 +285,13 @@ class ContactsController {
             next(error);
         }
     }
-    // Update Group
     async updateGroup(req, res, next) {
         try {
             const organizationId = req.user?.organizationId;
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const groupId = req.params.groupId; // ✅ Fixed
+            const groupId = req.params.groupId;
             const input = req.body;
             const group = await contacts_service_1.contactsService.updateGroup(organizationId, groupId, input);
             (0, response_1.sendSuccess)(res, group, 'Group updated successfully');
@@ -282,14 +300,13 @@ class ContactsController {
             next(error);
         }
     }
-    // Delete Group
     async deleteGroup(req, res, next) {
         try {
             const organizationId = req.user?.organizationId;
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const groupId = req.params.groupId; // ✅ Fixed
+            const groupId = req.params.groupId;
             const result = await contacts_service_1.contactsService.deleteGroup(organizationId, groupId);
             (0, response_1.sendSuccess)(res, result, result.message);
         }
@@ -297,14 +314,13 @@ class ContactsController {
             next(error);
         }
     }
-    // Add Contacts to Group
     async addContactsToGroup(req, res, next) {
         try {
             const organizationId = req.user?.organizationId;
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const groupId = req.params.groupId; // ✅ Fixed
+            const groupId = req.params.groupId;
             const { contactIds } = req.body;
             const result = await contacts_service_1.contactsService.addContactsToGroup(organizationId, groupId, contactIds);
             (0, response_1.sendSuccess)(res, result, result.message);
@@ -313,14 +329,13 @@ class ContactsController {
             next(error);
         }
     }
-    // Remove Contacts from Group
     async removeContactsFromGroup(req, res, next) {
         try {
             const organizationId = req.user?.organizationId;
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const groupId = req.params.groupId; // ✅ Fixed
+            const groupId = req.params.groupId;
             const { contactIds } = req.body;
             const result = await contacts_service_1.contactsService.removeContactsFromGroup(organizationId, groupId, contactIds);
             (0, response_1.sendSuccess)(res, result, result.message);
@@ -329,14 +344,13 @@ class ContactsController {
             next(error);
         }
     }
-    // Get Group Contacts
     async getGroupContacts(req, res, next) {
         try {
             const organizationId = req.user?.organizationId;
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
-            const groupId = req.params.groupId; // ✅ Fixed
+            const groupId = req.params.groupId;
             const query = {
                 page: parseInt(req.query.page) || 1,
                 limit: parseInt(req.query.limit) || 20,
@@ -358,6 +372,5 @@ class ContactsController {
     }
 }
 exports.ContactsController = ContactsController;
-// Export singleton instance
 exports.contactsController = new ContactsController();
 //# sourceMappingURL=contacts.controller.js.map

@@ -1,4 +1,4 @@
-// src/config/database.ts
+// src/config/database.ts - OPTIMIZED
 
 import { PrismaClient } from '@prisma/client';
 
@@ -6,46 +6,41 @@ const createPrismaClient = () => {
   let dbUrl = process.env.DATABASE_URL;
   const prismaOptions: any = {
     log: process.env.NODE_ENV === 'development'
-      ? ['query', 'error', 'warn']
+      ? ['error', 'warn']
       : ['error'],
   };
 
-  if (dbUrl && dbUrl.includes('.pooler.supabase.com')) {
-    // 1. We must use the transaction pooler on port 6543 for Supabase Prisma interactions.
-    // 2. We NEED pgbouncer=true to correctly work with the Transaction Pooler.
+  // Auto-configure for Supabase pooler
+  if (dbUrl && (dbUrl.includes('.pooler.supabase.com') || dbUrl.includes('pooler'))) {
     if (!dbUrl.includes('pgbouncer=true')) {
       dbUrl += (dbUrl.includes('?') ? '&' : '?') + 'pgbouncer=true';
     }
-
-    // 3. Add sane limits for long-running Node process
     if (!dbUrl.includes('connection_limit=')) {
       dbUrl += '&connection_limit=10';
     }
     if (!dbUrl.includes('pool_timeout=')) {
       dbUrl += '&pool_timeout=30';
     }
-
     prismaOptions.datasources = { db: { url: dbUrl } };
-    console.log('🔧 Auto-configured Supabase Transaction pooler (pgbouncer=true)');
+    console.log('🔧 Auto-configured database pooler');
   }
 
-  const client = new PrismaClient(prismaOptions);
+  // Auto-configure for Neon pooler
+  if (dbUrl && dbUrl.includes('neon.tech')) {
+    if (!dbUrl.includes('sslmode=require')) {
+      dbUrl += (dbUrl.includes('?') ? '&' : '?') + 'sslmode=require';
+    }
+    if (!dbUrl.includes('connect_timeout=')) {
+      dbUrl += '&connect_timeout=30';
+    }
+    prismaOptions.datasources = { db: { url: dbUrl } };
+    console.log('🔧 Auto-configured Neon database');
+  }
 
-  // ✅ Add connection retry logic
-  client.$connect()
-    .then(() => console.log('✅ Database connected'))
-    .catch((err) => {
-      console.error('❌ Database connection failed:', err);
-      // Retry after 5 seconds
-      setTimeout(() => {
-        client.$connect().catch(console.error);
-      }, 5000);
-    });
-
-  return client;
+  return new PrismaClient(prismaOptions);
 };
 
-// Singleton pattern
+// Singleton
 declare global {
   var prisma: PrismaClient | undefined;
 }

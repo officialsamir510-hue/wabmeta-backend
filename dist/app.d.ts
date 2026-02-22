@@ -1,3 +1,4 @@
-declare const app: import("express-serve-static-core").Express;
+import { Application } from 'express';
+declare const app: Application;
 export default app;
 //# sourceMappingURL=app.d.ts.map

@@ -440,18 +440,16 @@ class InboxService {
         else if (accountIdOrUserId) {
             baseWhere.phoneNumberId = accountIdOrUserId;
         }
-        const [total, open, unread, archived] = await Promise.all([
-            database_1.default.conversation.count({ where: baseWhere }),
-            database_1.default.conversation.count({
-                where: { ...baseWhere, isWindowOpen: true, isArchived: false },
-            }),
-            database_1.default.conversation.count({
-                where: { ...baseWhere, unreadCount: { gt: 0 } },
-            }),
-            database_1.default.conversation.count({
-                where: { ...baseWhere, isArchived: true },
-            }),
-        ]);
+        const total = await database_1.default.conversation.count({ where: baseWhere });
+        const open = await database_1.default.conversation.count({
+            where: { ...baseWhere, isWindowOpen: true, isArchived: false },
+        });
+        const unread = await database_1.default.conversation.count({
+            where: { ...baseWhere, unreadCount: { gt: 0 } },
+        });
+        const archived = await database_1.default.conversation.count({
+            where: { ...baseWhere, isArchived: true },
+        });
         return { total, open, unread, archived };
     }
     /**

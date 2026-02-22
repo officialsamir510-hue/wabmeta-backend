@@ -436,47 +436,47 @@ export declare const getTemplatesQuerySchema: z.ZodObject<{
     }, "strip", z.ZodTypeAny, {
         page: number;
         limit: number;
-        search?: string | undefined;
         status?: "APPROVED" | "PENDING" | "REJECTED" | undefined;
+        search?: string | undefined;
+        sortBy?: string | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
         whatsappAccountId?: string | undefined;
         language?: string | undefined;
         category?: "MARKETING" | "UTILITY" | "AUTHENTICATION" | undefined;
-        sortBy?: string | undefined;
-        sortOrder?: "asc" | "desc" | undefined;
     }, {
-        search?: string | undefined;
         status?: "APPROVED" | "PENDING" | "REJECTED" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
+        search?: string | undefined;
+        sortBy?: string | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
         whatsappAccountId?: string | undefined;
         language?: string | undefined;
         category?: "MARKETING" | "UTILITY" | "AUTHENTICATION" | undefined;
-        sortBy?: string | undefined;
-        sortOrder?: "asc" | "desc" | undefined;
     }>>;
 }, "strip", z.ZodTypeAny, {
     query?: {
         page: number;
         limit: number;
-        search?: string | undefined;
         status?: "APPROVED" | "PENDING" | "REJECTED" | undefined;
+        search?: string | undefined;
+        sortBy?: string | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
         whatsappAccountId?: string | undefined;
         language?: string | undefined;
         category?: "MARKETING" | "UTILITY" | "AUTHENTICATION" | undefined;
-        sortBy?: string | undefined;
-        sortOrder?: "asc" | "desc" | undefined;
     } | undefined;
 }, {
     query?: {
-        search?: string | undefined;
         status?: "APPROVED" | "PENDING" | "REJECTED" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
+        search?: string | undefined;
+        sortBy?: string | undefined;
+        sortOrder?: "asc" | "desc" | undefined;
         whatsappAccountId?: string | undefined;
         language?: string | undefined;
         category?: "MARKETING" | "UTILITY" | "AUTHENTICATION" | undefined;
-        sortBy?: string | undefined;
-        sortOrder?: "asc" | "desc" | undefined;
     } | undefined;
 }>;
 //# sourceMappingURL=templates.schema.d.ts.map

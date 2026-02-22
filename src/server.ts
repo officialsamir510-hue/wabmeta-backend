@@ -1,4 +1,4 @@
-// 📁 src/server.ts - COMPLETE SERVER WITH ENCRYPTION & QUEUE
+// src/server.ts - COMPLETE & OPTIMIZED
 
 import http from 'http';
 import app from './app';
@@ -7,7 +7,7 @@ import prisma from './config/database';
 import { initializeSocket } from './socket';
 import { validateEncryptionKey } from './utils/encryption';
 
-// Optional: Message Queue Worker (gracefully handles if not available)
+// Optional services
 let messageQueueWorker: any = null;
 let webhookService: any = null;
 
@@ -42,7 +42,7 @@ async function bootstrap() {
     console.log('');
 
     // ============================================
-    // Step 1: Validate Encryption Key FIRST
+    // Step 1: Validate Encryption Key
     // ============================================
     console.log('🔐 Validating encryption configuration...');
 
@@ -64,8 +64,7 @@ async function bootstrap() {
       console.error('');
       console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-      // In production, exit immediately
-      if (config.app.env === 'production') {
+      if (config.app.isProduction) {
         console.error('🛑 Exiting: Encryption key required in production');
         process.exit(1);
       } else {
@@ -82,6 +81,9 @@ async function bootstrap() {
     // ============================================
     console.log('📦 Connecting to database...');
     await prisma.$connect();
+
+    // Test query
+    await prisma.$queryRaw`SELECT 1`;
     console.log('✅ Database connected successfully');
 
     // ============================================
@@ -91,7 +93,7 @@ async function bootstrap() {
     await loadOptionalServices();
 
     // ============================================
-    // Step 4: Start Message Queue Worker (if available)
+    // Step 4: Start Message Queue Worker
     // ============================================
     if (messageQueueWorker) {
       console.log('🔄 Starting message queue worker...');
@@ -100,10 +102,8 @@ async function bootstrap() {
         await messageQueueWorker.start();
         console.log('✅ Message queue worker started');
 
-        // Listen for worker events
         messageQueueWorker.on('message:sent', (data: any) => {
-          // Uncomment for debugging
-          // console.log(`📤 Message sent: ${data.waMessageId}`);
+          // Silent - only log in dev if needed
         });
 
         messageQueueWorker.on('message:failed', (data: any) => {
@@ -155,9 +155,9 @@ async function bootstrap() {
       console.log('');
       console.log(`   📡 API:           http://localhost:${PORT}`);
       console.log(`   🌍 Environment:   ${config.app.env}`);
-      console.log(`   🔗 Frontend:      ${config.frontend.url || 'http://localhost:3000'}`);
+      console.log(`   🔗 Frontend:      ${config.frontendUrl}`);
       console.log(`   🔐 Encryption:    ${encryptionValid ? 'ENABLED ✓' : 'DISABLED ✗'}`);
-      console.log(`   📨 Message Queue: ${messageQueueWorker?.isRunning ? 'RUNNING ✓' : 'DISABLED ✗'}`);
+      console.log(`   📨 Queue Worker:  ${messageQueueWorker?.isRunning ? 'RUNNING ✓' : 'DISABLED ✗'}`);
       console.log(`   🔌 Socket.io:     ENABLED ✓`);
       console.log('');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -165,7 +165,7 @@ async function bootstrap() {
     });
 
     // ============================================
-    // Graceful Shutdown Handler
+    // Graceful Shutdown
     // ============================================
     const shutdown = async (signal: string) => {
       console.log('');
@@ -175,14 +175,12 @@ async function bootstrap() {
         console.log('✅ HTTP server closed');
 
         try {
-          // Stop message queue worker
           if (messageQueueWorker && messageQueueWorker.isRunning) {
             console.log('🔄 Stopping message queue worker...');
             await messageQueueWorker.stop();
             console.log('✅ Message queue worker stopped');
           }
 
-          // Disconnect database
           await prisma.$disconnect();
           console.log('✅ Database disconnected');
         } catch (err) {
@@ -193,14 +191,12 @@ async function bootstrap() {
         process.exit(0);
       });
 
-      // Force close after 10 seconds
       setTimeout(() => {
         console.error('⚠️ Graceful shutdown timed out. Forcing exit...');
         process.exit(1);
       }, 10000);
     };
 
-    // Signal handlers
     process.on('SIGTERM', () => shutdown('SIGTERM'));
     process.on('SIGINT', () => shutdown('SIGINT'));
 
@@ -208,7 +204,6 @@ async function bootstrap() {
     // Error Handlers
     // ============================================
 
-    // Handle uncaught exceptions
     process.on('uncaughtException', (error) => {
       console.error('');
       console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -216,11 +211,8 @@ async function bootstrap() {
       console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.error(error);
       console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      // Do not shutdown aggressively to prevent websocket disconnects
-      // shutdown('uncaughtException');
     });
 
-    // Handle unhandled promise rejections
     process.on('unhandledRejection', (reason, promise) => {
       console.error('');
       console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -229,8 +221,6 @@ async function bootstrap() {
       console.error('Promise:', promise);
       console.error('Reason:', reason);
       console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      // Do not shutdown aggressively to prevent websocket disconnects
-      // shutdown('unhandledRejection');
     });
   } catch (error) {
     console.error('');
@@ -248,6 +238,18 @@ async function bootstrap() {
 // ============================================
 
 function startCronJobs() {
+  // Health check every 3 minutes
+  setInterval(
+    async () => {
+      try {
+        await prisma.$queryRaw`SELECT 1`;
+      } catch (error) {
+        console.error('❌ DB Health check failed:', error);
+      }
+    },
+    3 * 60 * 1000
+  );
+
   // Expire conversation windows every 5 minutes
   if (webhookService?.expireConversationWindows) {
     setInterval(
@@ -259,7 +261,7 @@ function startCronJobs() {
         }
       },
       5 * 60 * 1000
-    ); // 5 minutes
+    );
   }
 
   // Reset daily message limits every hour
@@ -273,7 +275,7 @@ function startCronJobs() {
         }
       },
       60 * 60 * 1000
-    ); // 1 hour
+    );
   }
 
   // Clean up old queue messages daily
@@ -281,30 +283,14 @@ function startCronJobs() {
     setInterval(
       async () => {
         try {
-          await messageQueueWorker.cleanupOldMessages(30); // 30 days
+          await messageQueueWorker.cleanupOldMessages(30);
         } catch (error) {
           console.error('❌ Error in queue cleanup cron:', error);
         }
       },
       24 * 60 * 60 * 1000
-    ); // 24 hours
+    );
   }
-
-  // Health check every 3 minutes to prevent Supabase Transaction Pooler from dropping idle connections
-  setInterval(
-    async () => {
-      try {
-        // Check database connection
-        await prisma.$queryRaw`SELECT 1`;
-
-        // Log health status
-        // console.log('✅ DB Health check ping sent');
-      } catch (error) {
-        console.error('❌ DB Health check ping failed:', error);
-      }
-    },
-    3 * 60 * 1000
-  ); // 3 minutes
 }
 
 // ============================================

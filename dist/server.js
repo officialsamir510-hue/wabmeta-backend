@@ -1,5 +1,5 @@
 "use strict";
-// 📁 src/server.ts - COMPLETE SERVER WITH ENCRYPTION & QUEUE
+// src/server.ts - COMPLETE & OPTIMIZED
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
@@ -43,7 +43,7 @@ const config_1 = require("./config");
 const database_1 = __importDefault(require("./config/database"));
 const socket_1 = require("./socket");
 const encryption_1 = require("./utils/encryption");
-// Optional: Message Queue Worker (gracefully handles if not available)
+// Optional services
 let messageQueueWorker = null;
 let webhookService = null;
 async function loadOptionalServices() {
@@ -75,7 +75,7 @@ async function bootstrap() {
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         console.log('');
         // ============================================
-        // Step 1: Validate Encryption Key FIRST
+        // Step 1: Validate Encryption Key
         // ============================================
         console.log('🔐 Validating encryption configuration...');
         const encryptionValid = (0, encryption_1.validateEncryptionKey)();
@@ -94,8 +94,7 @@ async function bootstrap() {
             console.error('   node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
             console.error('');
             console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-            // In production, exit immediately
-            if (config_1.config.app.env === 'production') {
+            if (config_1.config.app.isProduction) {
                 console.error('🛑 Exiting: Encryption key required in production');
                 process.exit(1);
             }
@@ -113,6 +112,8 @@ async function bootstrap() {
         // ============================================
         console.log('📦 Connecting to database...');
         await database_1.default.$connect();
+        // Test query
+        await database_1.default.$queryRaw `SELECT 1`;
         console.log('✅ Database connected successfully');
         // ============================================
         // Step 3: Load Optional Services
@@ -120,17 +121,15 @@ async function bootstrap() {
         console.log('📦 Loading optional services...');
         await loadOptionalServices();
         // ============================================
-        // Step 4: Start Message Queue Worker (if available)
+        // Step 4: Start Message Queue Worker
         // ============================================
         if (messageQueueWorker) {
             console.log('🔄 Starting message queue worker...');
             try {
                 await messageQueueWorker.start();
                 console.log('✅ Message queue worker started');
-                // Listen for worker events
                 messageQueueWorker.on('message:sent', (data) => {
-                    // Uncomment for debugging
-                    // console.log(`📤 Message sent: ${data.waMessageId}`);
+                    // Silent - only log in dev if needed
                 });
                 messageQueueWorker.on('message:failed', (data) => {
                     console.error(`❌ Message failed: ${data.error}`);
@@ -174,16 +173,16 @@ async function bootstrap() {
             console.log('');
             console.log(`   📡 API:           http://localhost:${PORT}`);
             console.log(`   🌍 Environment:   ${config_1.config.app.env}`);
-            console.log(`   🔗 Frontend:      ${config_1.config.frontend.url || 'http://localhost:3000'}`);
+            console.log(`   🔗 Frontend:      ${config_1.config.frontendUrl}`);
             console.log(`   🔐 Encryption:    ${encryptionValid ? 'ENABLED ✓' : 'DISABLED ✗'}`);
-            console.log(`   📨 Message Queue: ${messageQueueWorker?.isRunning ? 'RUNNING ✓' : 'DISABLED ✗'}`);
+            console.log(`   📨 Queue Worker:  ${messageQueueWorker?.isRunning ? 'RUNNING ✓' : 'DISABLED ✗'}`);
             console.log(`   🔌 Socket.io:     ENABLED ✓`);
             console.log('');
             console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             console.log('');
         });
         // ============================================
-        // Graceful Shutdown Handler
+        // Graceful Shutdown
         // ============================================
         const shutdown = async (signal) => {
             console.log('');
@@ -191,13 +190,11 @@ async function bootstrap() {
             server.close(async () => {
                 console.log('✅ HTTP server closed');
                 try {
-                    // Stop message queue worker
                     if (messageQueueWorker && messageQueueWorker.isRunning) {
                         console.log('🔄 Stopping message queue worker...');
                         await messageQueueWorker.stop();
                         console.log('✅ Message queue worker stopped');
                     }
-                    // Disconnect database
                     await database_1.default.$disconnect();
                     console.log('✅ Database disconnected');
                 }
@@ -207,19 +204,16 @@ async function bootstrap() {
                 console.log('👋 Goodbye!');
                 process.exit(0);
             });
-            // Force close after 10 seconds
             setTimeout(() => {
                 console.error('⚠️ Graceful shutdown timed out. Forcing exit...');
                 process.exit(1);
             }, 10000);
         };
-        // Signal handlers
         process.on('SIGTERM', () => shutdown('SIGTERM'));
         process.on('SIGINT', () => shutdown('SIGINT'));
         // ============================================
         // Error Handlers
         // ============================================
-        // Handle uncaught exceptions
         process.on('uncaughtException', (error) => {
             console.error('');
             console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -227,9 +221,7 @@ async function bootstrap() {
             console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             console.error(error);
             console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-            shutdown('uncaughtException');
         });
-        // Handle unhandled promise rejections
         process.on('unhandledRejection', (reason, promise) => {
             console.error('');
             console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -238,7 +230,6 @@ async function bootstrap() {
             console.error('Promise:', promise);
             console.error('Reason:', reason);
             console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-            shutdown('unhandledRejection');
         });
     }
     catch (error) {
@@ -255,6 +246,15 @@ async function bootstrap() {
 // CRON JOBS
 // ============================================
 function startCronJobs() {
+    // Health check every 3 minutes
+    setInterval(async () => {
+        try {
+            await database_1.default.$queryRaw `SELECT 1`;
+        }
+        catch (error) {
+            console.error('❌ DB Health check failed:', error);
+        }
+    }, 3 * 60 * 1000);
     // Expire conversation windows every 5 minutes
     if (webhookService?.expireConversationWindows) {
         setInterval(async () => {
@@ -264,7 +264,7 @@ function startCronJobs() {
             catch (error) {
                 console.error('❌ Error in window expiry cron:', error);
             }
-        }, 5 * 60 * 1000); // 5 minutes
+        }, 5 * 60 * 1000);
     }
     // Reset daily message limits every hour
     if (webhookService?.resetDailyMessageLimits) {
@@ -275,31 +275,19 @@ function startCronJobs() {
             catch (error) {
                 console.error('❌ Error in limit reset cron:', error);
             }
-        }, 60 * 60 * 1000); // 1 hour
+        }, 60 * 60 * 1000);
     }
     // Clean up old queue messages daily
     if (messageQueueWorker?.cleanupOldMessages) {
         setInterval(async () => {
             try {
-                await messageQueueWorker.cleanupOldMessages(30); // 30 days
+                await messageQueueWorker.cleanupOldMessages(30);
             }
             catch (error) {
                 console.error('❌ Error in queue cleanup cron:', error);
             }
-        }, 24 * 60 * 60 * 1000); // 24 hours
+        }, 24 * 60 * 60 * 1000);
     }
-    // Health check every 30 minutes
-    setInterval(async () => {
-        try {
-            // Check database connection
-            await database_1.default.$queryRaw `SELECT 1`;
-            // Log health status
-            console.log('✅ Health check passed');
-        }
-        catch (error) {
-            console.error('❌ Health check failed:', error);
-        }
-    }, 30 * 60 * 1000); // 30 minutes
 }
 // ============================================
 // START THE SERVER

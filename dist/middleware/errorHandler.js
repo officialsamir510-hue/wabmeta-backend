@@ -98,7 +98,8 @@ next) => {
                 return sendJsonError(res, 'Database temporarily unavailable. Please try again.', 503);
             }
             default:
-                return sendJsonError(res, 'Database error', 500, [
+                console.error('⚠️ Unhandled Prisma Error:', err.code, err.message);
+                return sendJsonError(res, `Database error: ${err.code} ${err.message}`, 500, [
                     { field: 'prisma', message: `Error code: ${err.code}` }
                 ]);
         }

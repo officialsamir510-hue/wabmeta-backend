@@ -43,6 +43,7 @@ export declare const createCampaignSchema: z.ZodObject<{
         templateId: string;
         scheduledAt?: string | undefined;
         description?: string | undefined;
+        contactIds?: string[] | undefined;
         contactGroupId?: string | undefined;
         audienceFilter?: {
             tags?: string[] | undefined;
@@ -51,7 +52,6 @@ export declare const createCampaignSchema: z.ZodObject<{
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
         } | undefined;
-        contactIds?: string[] | undefined;
         variableMapping?: Record<string, {
             type: "field" | "static";
             value: string;
@@ -62,6 +62,7 @@ export declare const createCampaignSchema: z.ZodObject<{
         templateId: string;
         scheduledAt?: string | undefined;
         description?: string | undefined;
+        contactIds?: string[] | undefined;
         contactGroupId?: string | undefined;
         audienceFilter?: {
             tags?: string[] | undefined;
@@ -70,7 +71,6 @@ export declare const createCampaignSchema: z.ZodObject<{
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
         } | undefined;
-        contactIds?: string[] | undefined;
         variableMapping?: Record<string, {
             type: "field" | "static";
             value: string;
@@ -81,6 +81,7 @@ export declare const createCampaignSchema: z.ZodObject<{
         templateId: string;
         scheduledAt?: string | undefined;
         description?: string | undefined;
+        contactIds?: string[] | undefined;
         contactGroupId?: string | undefined;
         audienceFilter?: {
             tags?: string[] | undefined;
@@ -89,7 +90,6 @@ export declare const createCampaignSchema: z.ZodObject<{
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
         } | undefined;
-        contactIds?: string[] | undefined;
         variableMapping?: Record<string, {
             type: "field" | "static";
             value: string;
@@ -100,6 +100,7 @@ export declare const createCampaignSchema: z.ZodObject<{
         templateId: string;
         scheduledAt?: string | undefined;
         description?: string | undefined;
+        contactIds?: string[] | undefined;
         contactGroupId?: string | undefined;
         audienceFilter?: {
             tags?: string[] | undefined;
@@ -108,7 +109,6 @@ export declare const createCampaignSchema: z.ZodObject<{
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
         } | undefined;
-        contactIds?: string[] | undefined;
         variableMapping?: Record<string, {
             type: "field" | "static";
             value: string;
@@ -121,6 +121,7 @@ export declare const createCampaignSchema: z.ZodObject<{
         templateId: string;
         scheduledAt?: string | undefined;
         description?: string | undefined;
+        contactIds?: string[] | undefined;
         contactGroupId?: string | undefined;
         audienceFilter?: {
             tags?: string[] | undefined;
@@ -129,7 +130,6 @@ export declare const createCampaignSchema: z.ZodObject<{
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
         } | undefined;
-        contactIds?: string[] | undefined;
         variableMapping?: Record<string, {
             type: "field" | "static";
             value: string;
@@ -142,6 +142,7 @@ export declare const createCampaignSchema: z.ZodObject<{
         templateId: string;
         scheduledAt?: string | undefined;
         description?: string | undefined;
+        contactIds?: string[] | undefined;
         contactGroupId?: string | undefined;
         audienceFilter?: {
             tags?: string[] | undefined;
@@ -150,7 +151,6 @@ export declare const createCampaignSchema: z.ZodObject<{
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
         } | undefined;
-        contactIds?: string[] | undefined;
         variableMapping?: Record<string, {
             type: "field" | "static";
             value: string;
@@ -205,6 +205,7 @@ export declare const updateCampaignSchema: z.ZodObject<{
         name?: string | undefined;
         scheduledAt?: string | null | undefined;
         description?: string | null | undefined;
+        contactIds?: string[] | undefined;
         templateId?: string | undefined;
         contactGroupId?: string | null | undefined;
         audienceFilter?: {
@@ -214,7 +215,6 @@ export declare const updateCampaignSchema: z.ZodObject<{
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
         } | undefined;
-        contactIds?: string[] | undefined;
         variableMapping?: Record<string, {
             type: "field" | "static";
             value: string;
@@ -223,6 +223,7 @@ export declare const updateCampaignSchema: z.ZodObject<{
         name?: string | undefined;
         scheduledAt?: string | null | undefined;
         description?: string | null | undefined;
+        contactIds?: string[] | undefined;
         templateId?: string | undefined;
         contactGroupId?: string | null | undefined;
         audienceFilter?: {
@@ -232,7 +233,6 @@ export declare const updateCampaignSchema: z.ZodObject<{
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
         } | undefined;
-        contactIds?: string[] | undefined;
         variableMapping?: Record<string, {
             type: "field" | "static";
             value: string;
@@ -243,6 +243,7 @@ export declare const updateCampaignSchema: z.ZodObject<{
         name?: string | undefined;
         scheduledAt?: string | null | undefined;
         description?: string | null | undefined;
+        contactIds?: string[] | undefined;
         templateId?: string | undefined;
         contactGroupId?: string | null | undefined;
         audienceFilter?: {
@@ -252,7 +253,6 @@ export declare const updateCampaignSchema: z.ZodObject<{
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
         } | undefined;
-        contactIds?: string[] | undefined;
         variableMapping?: Record<string, {
             type: "field" | "static";
             value: string;
@@ -266,6 +266,7 @@ export declare const updateCampaignSchema: z.ZodObject<{
         name?: string | undefined;
         scheduledAt?: string | null | undefined;
         description?: string | null | undefined;
+        contactIds?: string[] | undefined;
         templateId?: string | undefined;
         contactGroupId?: string | null | undefined;
         audienceFilter?: {
@@ -275,7 +276,6 @@ export declare const updateCampaignSchema: z.ZodObject<{
             createdBefore?: string | undefined;
             hasMessaged?: boolean | undefined;
         } | undefined;
-        contactIds?: string[] | undefined;
         variableMapping?: Record<string, {
             type: "field" | "static";
             value: string;
@@ -306,13 +306,13 @@ export declare const getCampaignsSchema: z.ZodObject<{
         limit: number;
         sortBy: "name" | "scheduledAt" | "createdAt" | "sentCount";
         sortOrder: "asc" | "desc";
+        status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "SCHEDULED" | "RUNNING" | "FAILED" | undefined;
         search?: string | undefined;
-        status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
     }, {
-        search?: string | undefined;
-        status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
+        status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "SCHEDULED" | "RUNNING" | "FAILED" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
+        search?: string | undefined;
         sortBy?: "name" | "scheduledAt" | "createdAt" | "sentCount" | undefined;
         sortOrder?: "asc" | "desc" | undefined;
     }>;
@@ -322,15 +322,15 @@ export declare const getCampaignsSchema: z.ZodObject<{
         limit: number;
         sortBy: "name" | "scheduledAt" | "createdAt" | "sentCount";
         sortOrder: "asc" | "desc";
+        status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "SCHEDULED" | "RUNNING" | "FAILED" | undefined;
         search?: string | undefined;
-        status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
     };
 }, {
     query: {
-        search?: string | undefined;
-        status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "FAILED" | "SCHEDULED" | "RUNNING" | undefined;
+        status?: "CANCELLED" | "COMPLETED" | "DRAFT" | "PAUSED" | "SCHEDULED" | "RUNNING" | "FAILED" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
+        search?: string | undefined;
         sortBy?: "name" | "scheduledAt" | "createdAt" | "sentCount" | undefined;
         sortOrder?: "asc" | "desc" | undefined;
     };
@@ -390,9 +390,9 @@ export declare const getCampaignContactsSchema: z.ZodObject<{
     }, "strip", z.ZodTypeAny, {
         page: number;
         limit: number;
-        status?: "PENDING" | "SENT" | "DELIVERED" | "READ" | "FAILED" | undefined;
+        status?: "PENDING" | "FAILED" | "SENT" | "DELIVERED" | "READ" | undefined;
     }, {
-        status?: "PENDING" | "SENT" | "DELIVERED" | "READ" | "FAILED" | undefined;
+        status?: "PENDING" | "FAILED" | "SENT" | "DELIVERED" | "READ" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
     }>;
@@ -400,14 +400,14 @@ export declare const getCampaignContactsSchema: z.ZodObject<{
     query: {
         page: number;
         limit: number;
-        status?: "PENDING" | "SENT" | "DELIVERED" | "READ" | "FAILED" | undefined;
+        status?: "PENDING" | "FAILED" | "SENT" | "DELIVERED" | "READ" | undefined;
     };
     params: {
         id: string;
     };
 }, {
     query: {
-        status?: "PENDING" | "SENT" | "DELIVERED" | "READ" | "FAILED" | undefined;
+        status?: "PENDING" | "FAILED" | "SENT" | "DELIVERED" | "READ" | undefined;
         page?: string | undefined;
         limit?: string | undefined;
     };

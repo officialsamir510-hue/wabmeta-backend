@@ -1,15 +1,16 @@
 "use strict";
-// 📁 src/modules/meta/meta.controller.ts - COMPLETE FIXED VERSION
+// 📁 src/modules/meta/meta.controller.ts - COMPLETE FINAL VERSION
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.metaController = exports.MetaController = void 0;
-const meta_service_1 = require("./meta.service");
 const errorHandler_1 = require("../../middleware/errorHandler");
 const response_1 = require("../../utils/response");
 const database_1 = __importDefault(require("../../config/database"));
-const otp_1 = require("../../utils/otp");
+const client_1 = require("@prisma/client");
+const crypto_1 = __importDefault(require("crypto"));
+const axios_1 = __importDefault(require("axios"));
 // Helper to safely get organization ID from headers
 const getOrgId = (req) => {
     const header = req.headers['x-organization-id'];
@@ -19,30 +20,53 @@ const getOrgId = (req) => {
 };
 class MetaController {
     // ============================================
-    // GET OAUTH URL
+    // GET OAUTH URL (Initiate Connection)
     // ============================================
     async getOAuthUrl(req, res, next) {
         try {
-            const { organizationId } = req.query;
-            if (!organizationId || typeof organizationId !== 'string') {
+            // Multiple sources for organization ID
+            const organizationId = req.query.organizationId ||
+                req.body.organizationId ||
+                req.user?.organizationId;
+            // Detailed logging
+            console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.log('🔍 Meta OAuth URL Request');
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.log('Query params:', req.query);
+            console.log('Body:', req.body);
+            console.log('User:', req.user?.id);
+            console.log('Organization ID:', organizationId);
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+            if (!organizationId) {
+                console.error('❌ No organization ID provided');
                 throw new errorHandler_1.AppError('Organization ID is required', 400);
             }
-            const userId = req.user?.id;
-            if (!userId) {
-                throw new errorHandler_1.AppError('Authentication required', 401);
-            }
-            const membership = await database_1.default.organizationMember.findFirst({
-                where: {
-                    organizationId,
-                    userId,
-                    role: { in: ['OWNER', 'ADMIN'] },
-                },
+            // Verify organization exists
+            const organization = await database_1.default.organization.findUnique({
+                where: { id: organizationId },
             });
-            if (!membership) {
-                throw new errorHandler_1.AppError('You do not have permission to connect WhatsApp', 403);
+            if (!organization) {
+                console.error('❌ Organization not found:', organizationId);
+                throw new errorHandler_1.AppError('Organization not found', 404);
             }
-            const stateToken = (0, otp_1.generateToken)();
-            const state = `${organizationId}:${stateToken}`;
+            console.log('✅ Organization found:', organization.name);
+            // Verify user permissions
+            const userId = req.user?.id;
+            if (userId) {
+                const membership = await database_1.default.organizationMember.findFirst({
+                    where: {
+                        organizationId,
+                        userId,
+                        role: { in: ['OWNER', 'ADMIN'] },
+                    },
+                });
+                if (!membership) {
+                    throw new errorHandler_1.AppError('You do not have permission to connect WhatsApp', 403);
+                }
+            }
+            // Generate secure state
+            const state = `${organizationId}:${crypto_1.default.randomBytes(32).toString('hex')}`;
+            // Save state with expiry (10 minutes)
             await database_1.default.oAuthState.create({
                 data: {
                     state,
@@ -50,142 +74,424 @@ class MetaController {
                     expiresAt: new Date(Date.now() + 10 * 60 * 1000),
                 },
             });
+            // Clean up expired states
             await database_1.default.oAuthState.deleteMany({
                 where: {
                     expiresAt: { lt: new Date() },
                 },
             });
-            const url = meta_service_1.metaService.getOAuthUrl(state);
-            console.log('📱 OAuth URL generated for organization:', organizationId);
-            return (0, response_1.sendSuccess)(res, { url, state }, 'OAuth URL generated');
+            console.log('✅ OAuth state created');
+            // Build Meta Embedded Signup URL (v25.0)
+            const metaAuthUrl = new URL('https://www.facebook.com/v25.0/dialog/oauth');
+            metaAuthUrl.searchParams.set('client_id', process.env.META_APP_ID);
+            metaAuthUrl.searchParams.set('config_id', process.env.META_CONFIG_ID);
+            metaAuthUrl.searchParams.set('state', state);
+            metaAuthUrl.searchParams.set('response_type', 'code');
+            metaAuthUrl.searchParams.set('override_default_response_type', 'true');
+            // Embedded Signup specific params
+            metaAuthUrl.searchParams.set('auth_type', '');
+            metaAuthUrl.searchParams.set('display', 'popup');
+            // Extras for Embedded Signup v3
+            const extras = JSON.stringify({
+                featureType: 'whatsapp_business_app_onboarding',
+                sessionInfoVersion: '3',
+                version: 'v3',
+                partner_data: null,
+                is_hosted_es: true,
+            });
+            metaAuthUrl.searchParams.set('extras', extras);
+            // Redirect URIs
+            const redirectUri = `${process.env.FRONTEND_URL}/meta/callback`;
+            const fallbackRedirectUri = `https://business.facebook.com/messaging/hosted_es/oauth_callback/?app_id=${process.env.META_APP_ID}&config_id=${process.env.META_CONFIG_ID}&extras=${encodeURIComponent(extras)}`;
+            metaAuthUrl.searchParams.set('redirect_uri', redirectUri);
+            metaAuthUrl.searchParams.set('fallback_redirect_uri', fallbackRedirectUri);
+            // Scopes
+            metaAuthUrl.searchParams.set('scope', 'whatsapp_business_management,whatsapp_business_messaging,business_management');
+            console.log('✅ OAuth URL generated');
+            return (0, response_1.sendSuccess)(res, {
+                url: metaAuthUrl.toString(),
+                authUrl: metaAuthUrl.toString(), // For compatibility
+                state,
+            }, 'OAuth URL generated');
         }
         catch (error) {
+            console.error('❌ getOAuthUrl failed:', error);
             next(error);
         }
+    }
+    // Alias for getOAuthUrl
+    async initiateConnection(req, res, next) {
+        return this.getOAuthUrl(req, res, next);
     }
     async getAuthUrl(req, res, next) {
         return this.getOAuthUrl(req, res, next);
     }
     // ============================================
-    // HANDLE CALLBACK
+    // HANDLE CALLBACK (Complete Connection)
     // ============================================
     async handleCallback(req, res, next) {
         try {
             const { code, state } = req.body;
             console.log('\n🔄 ========== META CALLBACK ==========');
-            console.log('   Code received:', code ? 'Yes' : 'No');
-            console.log('   State received:', state ? 'Yes' : 'No');
+            console.log('   Code:', code ? `${code.substring(0, 10)}...` : 'Missing');
+            console.log('   State:', state ? `${state.substring(0, 20)}...` : 'Missing');
             if (!code) {
                 throw new errorHandler_1.AppError('Authorization code is required', 400);
             }
-            let organizationId;
-            if (state) {
-                const storedState = await database_1.default.oAuthState.findUnique({
-                    where: { state },
-                });
-                if (!storedState) {
-                    throw new errorHandler_1.AppError('Invalid or expired state token', 400);
-                }
-                if (storedState.expiresAt < new Date()) {
-                    await database_1.default.oAuthState.delete({ where: { state } });
-                    throw new errorHandler_1.AppError('State token expired. Please try again.', 400);
-                }
-                organizationId = storedState.organizationId;
+            if (!state) {
+                throw new errorHandler_1.AppError('State parameter is required', 400);
+            }
+            // Verify state
+            const oauthState = await database_1.default.oAuthState.findUnique({
+                where: { state },
+            });
+            if (!oauthState) {
+                console.error('❌ Invalid state token');
+                throw new errorHandler_1.AppError('Invalid or expired state token', 400);
+            }
+            if (oauthState.expiresAt < new Date()) {
                 await database_1.default.oAuthState.delete({ where: { state } });
+                console.error('❌ State token expired');
+                throw new errorHandler_1.AppError('State token expired. Please try again.', 400);
             }
-            else if (req.body.organizationId) {
-                organizationId = req.body.organizationId;
-            }
-            else {
-                throw new errorHandler_1.AppError('Organization ID is required', 400);
-            }
+            const organizationId = oauthState.organizationId;
             console.log('   Organization ID:', organizationId);
+            // Verify user permissions
             const userId = req.user?.id;
-            if (!userId) {
-                throw new errorHandler_1.AppError('Authentication required', 401);
+            if (userId) {
+                const membership = await database_1.default.organizationMember.findFirst({
+                    where: {
+                        organizationId,
+                        userId,
+                        role: { in: ['OWNER', 'ADMIN'] },
+                    },
+                });
+                if (!membership) {
+                    throw new errorHandler_1.AppError('You do not have permission to connect WhatsApp', 403);
+                }
             }
-            const membership = await database_1.default.organizationMember.findFirst({
-                where: {
-                    organizationId,
-                    userId,
-                    role: { in: ['OWNER', 'ADMIN'] },
+            console.log('📊 Step 1: Exchanging code for access token...');
+            // Exchange code for access token
+            const tokenResponse = await axios_1.default.get(`https://graph.facebook.com/v25.0/oauth/access_token`, {
+                params: {
+                    client_id: process.env.META_APP_ID,
+                    client_secret: process.env.META_APP_SECRET,
+                    code,
+                    redirect_uri: `${process.env.FRONTEND_URL}/meta/callback`,
                 },
             });
-            if (!membership) {
-                throw new errorHandler_1.AppError('You do not have permission to connect WhatsApp', 403);
-            }
-            const result = await meta_service_1.metaService.completeConnection(code, organizationId, userId, (progress) => {
-                console.log(`📊 ${progress.step}: ${progress.message}`);
+            const { access_token } = tokenResponse.data;
+            console.log('   ✅ Access token obtained');
+            console.log('📊 Step 2: Getting WABA ID from token...');
+            // Get WABA ID from token debug
+            const debugTokenResponse = await axios_1.default.get(`https://graph.facebook.com/v25.0/debug_token`, {
+                params: {
+                    input_token: access_token,
+                    access_token: `${process.env.META_APP_ID}|${process.env.META_APP_SECRET}`,
+                },
             });
-            if (!result.success) {
-                throw new errorHandler_1.AppError(result.error || 'Failed to connect WhatsApp account', 500);
+            const wabaId = debugTokenResponse.data.data.granular_scopes?.find((s) => s.scope === 'whatsapp_business_management')?.target_ids?.[0];
+            if (!wabaId) {
+                console.error('❌ WABA ID not found in token');
+                throw new errorHandler_1.AppError('WABA ID not found. Please complete the setup in Meta Business Suite.', 400);
             }
+            console.log('   ✅ WABA ID:', wabaId);
+            console.log('📊 Step 3: Fetching WABA details...');
+            // Get WABA details
+            const wabaDetails = await axios_1.default.get(`https://graph.facebook.com/v25.0/${wabaId}`, {
+                params: {
+                    fields: 'id,name,currency,timezone_id,message_template_namespace',
+                    access_token,
+                },
+            });
+            console.log('   ✅ WABA Name:', wabaDetails.data.name);
+            console.log('📊 Step 4: Fetching phone numbers...');
+            // Get phone numbers
+            const phoneNumbersResponse = await axios_1.default.get(`https://graph.facebook.com/v25.0/${wabaId}/phone_numbers`, {
+                params: {
+                    access_token,
+                },
+            });
+            const phoneNumbers = phoneNumbersResponse.data.data || [];
+            console.log('   ✅ Phone numbers found:', phoneNumbers.length);
+            if (phoneNumbers.length === 0) {
+                console.warn('⚠️ No phone numbers found for WABA');
+            }
+            console.log('📊 Step 5: Saving to database...');
+            // Save WhatsAppAccount (primary model)
+            let savedAccount = null;
+            if (phoneNumbers.length > 0) {
+                const primaryPhone = phoneNumbers[0];
+                savedAccount = await database_1.default.whatsAppAccount.upsert({
+                    where: {
+                        phoneNumberId: primaryPhone.id,
+                    },
+                    update: {
+                        status: 'CONNECTED',
+                        phoneNumber: primaryPhone.display_phone_number,
+                        displayName: primaryPhone.verified_name,
+                        qualityRating: primaryPhone.quality_rating,
+                        accessToken: access_token,
+                    },
+                    create: {
+                        organizationId,
+                        phoneNumberId: primaryPhone.id,
+                        wabaId,
+                        accessToken: access_token,
+                        phoneNumber: primaryPhone.display_phone_number,
+                        displayName: primaryPhone.verified_name,
+                        qualityRating: primaryPhone.quality_rating,
+                        status: 'CONNECTED',
+                        isDefault: true,
+                    },
+                });
+                console.log('   ✅ WhatsAppAccount saved');
+            }
+            // Save MetaConnection (if model exists)
+            let savedMetaConnection = null;
+            try {
+                savedMetaConnection = await database_1.default.metaConnection.upsert({
+                    where: { organizationId },
+                    update: {
+                        accessToken: access_token,
+                        wabaId,
+                        wabaName: wabaDetails.data.name,
+                        status: 'CONNECTED',
+                        lastSyncedAt: new Date(),
+                    },
+                    create: {
+                        organizationId,
+                        accessToken: access_token,
+                        wabaId,
+                        wabaName: wabaDetails.data.name,
+                        status: 'CONNECTED',
+                    },
+                });
+                console.log('   ✅ MetaConnection saved');
+            }
+            catch (e) {
+                console.log('   ⚠️ MetaConnection model not available (optional)');
+            }
+            // Save PhoneNumbers (if model exists)
+            const savedPhoneNumbers = [];
+            try {
+                for (const phone of phoneNumbers) {
+                    const savedPhone = await database_1.default.phoneNumber.upsert({
+                        where: { phoneNumberId: phone.id },
+                        update: {
+                            phoneNumber: phone.display_phone_number,
+                            displayName: phone.verified_name,
+                            qualityRating: phone.quality_rating,
+                            verifiedName: phone.verified_name,
+                            isActive: true,
+                        },
+                        create: {
+                            metaConnectionId: savedMetaConnection?.id,
+                            phoneNumberId: phone.id,
+                            phoneNumber: phone.display_phone_number,
+                            displayName: phone.verified_name,
+                            qualityRating: phone.quality_rating,
+                            verifiedName: phone.verified_name,
+                            isActive: true,
+                            isPrimary: phoneNumbers[0].id === phone.id, // First is primary
+                        },
+                    });
+                    savedPhoneNumbers.push(savedPhone);
+                }
+                console.log('   ✅ PhoneNumbers saved');
+            }
+            catch (e) {
+                console.log('   ⚠️ PhoneNumber model not available:', e.message);
+            }
+            // Delete used state
+            await database_1.default.oAuthState.delete({ where: { state } });
             console.log('✅ Meta callback successful');
             console.log('🔄 ========== META CALLBACK END ==========\n');
-            return (0, response_1.sendSuccess)(res, { account: result.account }, 'WhatsApp account connected successfully');
+            return (0, response_1.sendSuccess)(res, {
+                wabaId,
+                wabaName: wabaDetails.data.name,
+                phoneNumbers: phoneNumbers.map((p) => ({
+                    id: p.id,
+                    phoneNumber: p.display_phone_number,
+                    displayName: p.verified_name,
+                    qualityRating: p.quality_rating,
+                })),
+                phoneNumberCount: phoneNumbers.length,
+                account: savedAccount,
+            }, 'WhatsApp account connected successfully');
         }
         catch (error) {
             console.error('❌ Meta callback error:', error);
+            // Provide specific error messages
+            if (error.response?.data) {
+                console.error('   Meta API Error:', error.response.data);
+                const apiError = error.response.data.error;
+                throw new errorHandler_1.AppError(apiError?.message || 'Meta API error', error.response.status || 500);
+            }
             next(error);
         }
     }
     // ============================================
-    // CONNECT
-    // ============================================
-    async connect(req, res, next) {
-        try {
-            const { code, accessToken, organizationId } = req.body;
-            const codeOrToken = accessToken || code;
-            if (!codeOrToken) {
-                throw new errorHandler_1.AppError('Authorization code or access token is required', 400);
-            }
-            if (!organizationId) {
-                throw new errorHandler_1.AppError('Organization ID is required', 400);
-            }
-            const userId = req.user?.id;
-            if (!userId) {
-                throw new errorHandler_1.AppError('Authentication required', 401);
-            }
-            const membership = await database_1.default.organizationMember.findFirst({
-                where: {
-                    organizationId,
-                    userId,
-                    role: { in: ['OWNER', 'ADMIN'] },
-                },
-            });
-            if (!membership) {
-                throw new errorHandler_1.AppError('You do not have permission to connect WhatsApp', 403);
-            }
-            const result = await meta_service_1.metaService.completeConnection(codeOrToken, organizationId, userId, (progress) => {
-                console.log(`📊 ${progress.step}: ${progress.message}`);
-            });
-            if (!result.success) {
-                throw new errorHandler_1.AppError(result.error || 'Failed to connect WhatsApp account', 500);
-            }
-            return (0, response_1.sendSuccess)(res, { account: result.account }, 'WhatsApp account connected successfully');
-        }
-        catch (error) {
-            next(error);
-        }
-    }
-    // ============================================
-    // GET ACCOUNTS
+    // GET ACCOUNTS (OLD METHOD - WHATSAPPACCOUNT ONLY)
     // ============================================
     async getAccounts(req, res, next) {
         try {
-            const organizationId = getOrgId(req);
+            const organizationId = getOrgId(req) || req.query.organizationId;
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization ID is required', 400);
             }
-            const accounts = await meta_service_1.metaService.getAccounts(organizationId);
-            return (0, response_1.sendSuccess)(res, accounts, 'Accounts fetched');
+            const orgIdString = Array.isArray(organizationId) ? organizationId[0] : organizationId;
+            console.log('📋 Fetching accounts (old method) for org:', orgIdString);
+            const accounts = await database_1.default.whatsAppAccount.findMany({
+                where: { organizationId: orgIdString },
+                orderBy: { createdAt: 'desc' },
+            });
+            console.log('   Found accounts:', accounts.length);
+            return (0, response_1.sendSuccess)(res, { accounts }, 'Accounts fetched successfully');
         }
         catch (error) {
             next(error);
         }
     }
     // ============================================
-    // GET ACCOUNT
+    // GET WHATSAPP ACCOUNTS (NEW METHOD - SUPPORTS BOTH STRUCTURES)
+    // ============================================
+    async getWhatsAppAccounts(req, res, next) {
+        try {
+            const { organizationId } = req.params;
+            console.log('\n📋 Fetching WhatsApp accounts for org:', organizationId);
+            if (!organizationId) {
+                throw new errorHandler_1.AppError('Organization ID is required', 400);
+            }
+            let accounts = [];
+            // METHOD 1: Check MetaConnection + PhoneNumber (New structure)
+            try {
+                const metaConnection = await database_1.default.metaConnection.findUnique({
+                    where: { organizationId },
+                    include: {
+                        phoneNumbers: {
+                            where: { isActive: true },
+                            orderBy: { isPrimary: 'desc' },
+                        },
+                    },
+                });
+                if (metaConnection && metaConnection.phoneNumbers && metaConnection.phoneNumbers.length > 0) {
+                    console.log('✅ Found MetaConnection with phones:', metaConnection.phoneNumbers.length);
+                    accounts = metaConnection.phoneNumbers.map((phone) => ({
+                        id: phone.id,
+                        phoneNumberId: phone.phoneNumberId,
+                        phoneNumber: phone.phoneNumber,
+                        displayName: phone.displayName,
+                        verifiedName: phone.verifiedName,
+                        qualityRating: phone.qualityRating,
+                        isPrimary: phone.isPrimary,
+                        isActive: phone.isActive,
+                        wabaId: metaConnection.wabaId,
+                        wabaName: metaConnection.wabaName,
+                    }));
+                    console.log('📤 Returning accounts from MetaConnection:', accounts.length);
+                    return (0, response_1.sendSuccess)(res, { accounts }, 'Accounts fetched successfully');
+                }
+            }
+            catch (e) {
+                console.log('⚠️ MetaConnection check failed:', e.message);
+            }
+            // METHOD 2: Check WhatsAppAccount table (Fallback)
+            console.log('⚠️ No MetaConnection found, checking WhatsAppAccount table...');
+            const orgIdString = Array.isArray(organizationId) ? organizationId[0] : organizationId;
+            const whatsappAccounts = await database_1.default.whatsAppAccount.findMany({
+                where: {
+                    organizationId: orgIdString,
+                    status: 'CONNECTED'
+                },
+                orderBy: { createdAt: 'desc' },
+            });
+            if (whatsappAccounts.length > 0) {
+                console.log('✅ Found WhatsAppAccounts:', whatsappAccounts.length);
+                accounts = whatsappAccounts.map((acc) => ({
+                    id: acc.id,
+                    phoneNumberId: acc.phoneNumberId,
+                    phoneNumber: acc.phoneNumber,
+                    displayName: acc.displayName,
+                    verifiedName: acc.verifiedName,
+                    qualityRating: acc.qualityRating,
+                    wabaId: acc.wabaId,
+                    isActive: acc.status === 'CONNECTED',
+                }));
+            }
+            console.log('📤 Returning accounts:', accounts.length);
+            return (0, response_1.sendSuccess)(res, { accounts }, 'Accounts fetched successfully');
+        }
+        catch (error) {
+            console.error('❌ Get WhatsApp accounts error:', error);
+            next(error);
+        }
+    }
+    // ============================================
+    // GET CONNECTION STATUS
+    // ============================================
+    async getConnectionStatus(req, res, next) {
+        try {
+            const { organizationId } = req.params;
+            if (!organizationId) {
+                throw new errorHandler_1.AppError('Organization ID is required', 400);
+            }
+            console.log('🔍 Checking connection status for org:', organizationId);
+            // Check MetaConnection
+            let isConnected = false;
+            let status = 'NOT_CONNECTED';
+            let details = null;
+            try {
+                const metaConnection = await database_1.default.metaConnection.findUnique({
+                    where: { organizationId },
+                    include: {
+                        phoneNumbers: {
+                            where: { isActive: true },
+                        },
+                    },
+                });
+                if (metaConnection) {
+                    isConnected = metaConnection.status === 'CONNECTED';
+                    status = metaConnection.status;
+                    details = {
+                        wabaId: metaConnection.wabaId,
+                        wabaName: metaConnection.wabaName,
+                        phoneNumbers: metaConnection.phoneNumbers?.length || 0,
+                        lastSyncedAt: metaConnection.lastSyncedAt,
+                    };
+                }
+            }
+            catch (e) {
+                console.log('⚠️ MetaConnection not available, checking WhatsAppAccount');
+            }
+            // Fallback to WhatsAppAccount
+            if (!isConnected) {
+                const orgIdString = Array.isArray(organizationId) ? organizationId[0] : organizationId;
+                const whatsappAccount = await database_1.default.whatsAppAccount.findFirst({
+                    where: { organizationId: orgIdString, status: 'CONNECTED' },
+                });
+                if (whatsappAccount) {
+                    isConnected = true;
+                    status = 'CONNECTED';
+                    details = {
+                        wabaId: whatsappAccount.wabaId,
+                        phoneNumber: whatsappAccount.phoneNumber,
+                        displayName: whatsappAccount.displayName,
+                    };
+                }
+            }
+            return (0, response_1.sendSuccess)(res, {
+                isConnected,
+                status,
+                ...details,
+            }, 'Connection status fetched');
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    // ============================================
+    // GET SINGLE ACCOUNT
     // ============================================
     async getAccount(req, res, next) {
         try {
@@ -194,8 +500,13 @@ class MetaController {
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization ID is required', 400);
             }
-            const account = await meta_service_1.metaService.getAccount(id, organizationId);
-            return (0, response_1.sendSuccess)(res, account, 'Account fetched');
+            const account = await database_1.default.whatsAppAccount.findFirst({
+                where: { id, organizationId },
+            });
+            if (!account) {
+                throw new errorHandler_1.AppError('Account not found', 404);
+            }
+            return (0, response_1.sendSuccess)(res, account, 'Account fetched successfully');
         }
         catch (error) {
             next(error);
@@ -225,97 +536,225 @@ class MetaController {
             if (!membership) {
                 throw new errorHandler_1.AppError('You do not have permission to disconnect', 403);
             }
-            const result = await meta_service_1.metaService.disconnectAccount(id, organizationId);
-            return (0, response_1.sendSuccess)(res, result, 'Account disconnected');
-        }
-        catch (error) {
-            next(error);
-        }
-    }
-    // ============================================
-    // SET DEFAULT ACCOUNT
-    // ============================================
-    async setDefaultAccount(req, res, next) {
-        try {
-            const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-            const organizationId = getOrgId(req);
-            if (!organizationId) {
-                throw new errorHandler_1.AppError('Organization ID is required', 400);
-            }
-            const result = await meta_service_1.metaService.setDefaultAccount(id, organizationId);
-            return (0, response_1.sendSuccess)(res, result, 'Default account updated');
-        }
-        catch (error) {
-            next(error);
-        }
-    }
-    // ============================================
-    // SYNC TEMPLATES
-    // ============================================
-    async syncTemplates(req, res, next) {
-        try {
-            const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-            const organizationId = getOrgId(req);
-            if (!organizationId) {
-                throw new errorHandler_1.AppError('Organization ID is required', 400);
-            }
-            const result = await meta_service_1.metaService.syncTemplates(id, organizationId);
-            return (0, response_1.sendSuccess)(res, result, 'Templates synced');
-        }
-        catch (error) {
-            next(error);
-        }
-    }
-    // ============================================
-    // GET ORGANIZATION STATUS
-    // ============================================
-    async getOrganizationStatus(req, res, next) {
-        try {
-            const organizationId = Array.isArray(req.params.organizationId) ? req.params.organizationId[0] : req.params.organizationId;
-            if (!organizationId) {
-                throw new errorHandler_1.AppError('Organization ID is required', 400);
-            }
-            const accounts = await database_1.default.whatsAppAccount.findMany({
-                where: {
-                    organizationId,
-                    status: 'CONNECTED',
-                },
+            await database_1.default.whatsAppAccount.update({
+                where: { id },
+                data: { status: 'DISCONNECTED' },
             });
-            const status = accounts.length > 0 ? 'CONNECTED' : 'DISCONNECTED';
-            return (0, response_1.sendSuccess)(res, {
-                status,
-                connectedCount: accounts.length,
-                accounts: accounts.map((a) => ({
-                    id: a.id,
-                    phoneNumber: a.phoneNumber,
-                    displayName: a.displayName,
-                    isDefault: a.isDefault,
-                })),
-            });
+            // Also disconnect MetaConnection if exists
+            try {
+                await database_1.default.metaConnection.update({
+                    where: { organizationId },
+                    data: { status: 'DISCONNECTED' },
+                });
+            }
+            catch (e) {
+                console.log('⚠️ MetaConnection not updated (may not exist)');
+            }
+            return (0, response_1.sendSuccess)(res, { success: true }, 'Account disconnected successfully');
         }
         catch (error) {
             next(error);
         }
     }
     // ============================================
-    // GET CONFIG
+    // GET EMBEDDED SIGNUP CONFIG
     // ============================================
     async getEmbeddedSignupConfig(req, res, next) {
         try {
-            const config = meta_service_1.metaService.getEmbeddedSignupConfig();
-            return (0, response_1.sendSuccess)(res, config, 'Config fetched');
+            const config = {
+                appId: process.env.META_APP_ID,
+                configId: process.env.META_CONFIG_ID,
+                version: 'v25.0',
+                features: ['whatsapp_business_app_onboarding'],
+            };
+            return (0, response_1.sendSuccess)(res, config, 'Config fetched successfully');
         }
         catch (error) {
             next(error);
         }
     }
+    // ============================================
+    // GET INTEGRATION STATUS
+    // ============================================
     async getIntegrationStatus(req, res, next) {
         try {
-            const status = meta_service_1.metaService.getIntegrationStatus();
-            return (0, response_1.sendSuccess)(res, status, 'Integration status');
+            const status = {
+                configured: !!(process.env.META_APP_ID && process.env.META_APP_SECRET),
+                appId: process.env.META_APP_ID,
+                version: 'v25.0',
+                embeddedSignup: true,
+            };
+            return (0, response_1.sendSuccess)(res, status, 'Integration status fetched');
         }
         catch (error) {
             next(error);
+        }
+    }
+    // ============================================
+    // WEBHOOK VERIFICATION (META REQUIREMENT)
+    // ============================================
+    async verifyWebhook(req, res, next) {
+        try {
+            const mode = req.query['hub.mode'];
+            const token = req.query['hub.verify_token'];
+            const challenge = req.query['hub.challenge'];
+            const verifyToken = process.env.META_WEBHOOK_VERIFY_TOKEN || process.env.META_VERIFY_TOKEN;
+            console.log('📞 Webhook verification request:', {
+                mode,
+                token: token ? '***' : 'missing',
+                challenge: challenge ? 'present' : 'missing',
+            });
+            if (mode === 'subscribe' && token === verifyToken) {
+                console.log('✅ Webhook verified successfully');
+                res.status(200).send(challenge);
+            }
+            else {
+                console.error('❌ Webhook verification failed');
+                res.sendStatus(403);
+            }
+        }
+        catch (error) {
+            console.error('❌ Webhook verification error:', error);
+            res.sendStatus(500);
+        }
+    }
+    // ============================================
+    // WEBHOOK HANDLER - ✅ COMPLETE WITH STATUS UPDATES
+    // ============================================
+    async handleWebhook(req, res) {
+        try {
+            const body = req.body;
+            console.log('\n📨 ========== WEBHOOK RECEIVED ==========');
+            console.log(JSON.stringify(body, null, 2));
+            // Acknowledge receipt immediately (Meta requirement)
+            res.sendStatus(200);
+            // Process webhook asynchronously
+            const entry = body?.entry;
+            if (!Array.isArray(entry) || entry.length === 0) {
+                console.warn('⚠️ Invalid webhook payload - no entries');
+                return;
+            }
+            for (const item of entry) {
+                const changes = item.changes || [];
+                for (const change of changes) {
+                    const field = change.field;
+                    const value = change.value;
+                    // ✅ HANDLE MESSAGE STATUS UPDATES
+                    if (field === 'messages' && value.statuses && Array.isArray(value.statuses)) {
+                        for (const statusUpdate of value.statuses) {
+                            console.log('📦 STATUS UPDATE:', {
+                                id: statusUpdate.id,
+                                status: statusUpdate.status,
+                                recipient_id: statusUpdate.recipient_id,
+                                timestamp: statusUpdate.timestamp,
+                                errors: statusUpdate.errors,
+                            });
+                            try {
+                                // Map Meta status to our MessageStatus enum
+                                let dbStatus = client_1.MessageStatus.SENT;
+                                let deliveredAt;
+                                let readAt;
+                                let failedAt;
+                                const metaStatus = statusUpdate.status;
+                                const timestamp = new Date(Number(statusUpdate.timestamp) * 1000);
+                                switch (metaStatus) {
+                                    case 'sent':
+                                        dbStatus = client_1.MessageStatus.SENT;
+                                        break;
+                                    case 'delivered':
+                                        dbStatus = client_1.MessageStatus.DELIVERED;
+                                        deliveredAt = timestamp;
+                                        break;
+                                    case 'read':
+                                        dbStatus = client_1.MessageStatus.READ;
+                                        readAt = timestamp;
+                                        break;
+                                    case 'failed':
+                                        dbStatus = client_1.MessageStatus.FAILED;
+                                        failedAt = timestamp;
+                                        break;
+                                    default:
+                                        console.warn(`⚠️ Unknown status: ${metaStatus}`);
+                                }
+                                // Extract failure reason if failed
+                                const failureReason = statusUpdate.errors?.[0]?.message || null;
+                                // ✅ Update Message in DB
+                                const updateData = {
+                                    status: dbStatus,
+                                };
+                                if (deliveredAt)
+                                    updateData.deliveredAt = deliveredAt;
+                                if (readAt)
+                                    updateData.readAt = readAt;
+                                if (failedAt)
+                                    updateData.failedAt = failedAt;
+                                if (failureReason)
+                                    updateData.failureReason = failureReason;
+                                const updated = await database_1.default.message.updateMany({
+                                    where: {
+                                        OR: [
+                                            { wamId: statusUpdate.id },
+                                            { waMessageId: statusUpdate.id },
+                                        ],
+                                    },
+                                    data: updateData,
+                                });
+                                if (updated.count > 0) {
+                                    console.log(`✅ Updated ${updated.count} message(s) to status: ${dbStatus}`);
+                                }
+                                else {
+                                    console.warn(`⚠️ No message found with ID: ${statusUpdate.id}`);
+                                }
+                                // ✅ Update CampaignContact status if this is a campaign message
+                                if (updated.count > 0) {
+                                    await database_1.default.campaignContact.updateMany({
+                                        where: { waMessageId: statusUpdate.id },
+                                        data: {
+                                            status: dbStatus,
+                                            deliveredAt,
+                                            readAt,
+                                            failedAt,
+                                            failureReason,
+                                        },
+                                    });
+                                }
+                            }
+                            catch (dbError) {
+                                console.error('❌ DB update error:', dbError.message);
+                            }
+                        }
+                    }
+                    // ✅ HANDLE INCOMING MESSAGES
+                    if (field === 'messages' && value.messages && Array.isArray(value.messages)) {
+                        for (const message of value.messages) {
+                            console.log('📩 INCOMING MESSAGE:', {
+                                id: message.id,
+                                from: message.from,
+                                type: message.type,
+                                timestamp: message.timestamp,
+                            });
+                            // TODO: Process incoming message
+                            // This would create a new Message record with direction: INBOUND
+                            // await this.processIncomingMessage(message, value.metadata);
+                        }
+                    }
+                    // ✅ HANDLE TEMPLATE STATUS UPDATES
+                    if (field === 'message_template_status_update') {
+                        console.log('📋 TEMPLATE STATUS UPDATE:', {
+                            messageTemplateId: value.message_template_id,
+                            event: value.event,
+                        });
+                        // TODO: Update template status in DB
+                        // await this.updateTemplateStatus(value);
+                    }
+                }
+            }
+            console.log('📨 ========== WEBHOOK PROCESSED ==========\n');
+        }
+        catch (error) {
+            console.error('❌ Webhook processing error:', error);
+            // Still return 200 to Meta to prevent retries
+            res.sendStatus(200);
         }
     }
 }

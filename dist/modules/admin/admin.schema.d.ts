@@ -107,35 +107,35 @@ export declare const getUsersSchema: z.ZodObject<{
         sortBy: z.ZodOptional<z.ZodString>;
         sortOrder: z.ZodOptional<z.ZodEnum<["asc", "desc"]>>;
     }, "strip", z.ZodTypeAny, {
-        search?: string | undefined;
         status?: string | undefined;
         page?: string | undefined;
         limit?: string | undefined;
+        search?: string | undefined;
         sortBy?: string | undefined;
         sortOrder?: "asc" | "desc" | undefined;
     }, {
-        search?: string | undefined;
         status?: string | undefined;
         page?: string | undefined;
         limit?: string | undefined;
+        search?: string | undefined;
         sortBy?: string | undefined;
         sortOrder?: "asc" | "desc" | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     query: {
-        search?: string | undefined;
         status?: string | undefined;
         page?: string | undefined;
         limit?: string | undefined;
+        search?: string | undefined;
         sortBy?: string | undefined;
         sortOrder?: "asc" | "desc" | undefined;
     };
 }, {
     query: {
-        search?: string | undefined;
         status?: string | undefined;
         page?: string | undefined;
         limit?: string | undefined;
+        search?: string | undefined;
         sortBy?: string | undefined;
         sortOrder?: "asc" | "desc" | undefined;
     };
@@ -263,35 +263,35 @@ export declare const getOrganizationsSchema: z.ZodObject<{
         sortBy: z.ZodOptional<z.ZodString>;
         sortOrder: z.ZodOptional<z.ZodEnum<["asc", "desc"]>>;
     }, "strip", z.ZodTypeAny, {
-        search?: string | undefined;
         planType?: string | undefined;
         page?: string | undefined;
         limit?: string | undefined;
+        search?: string | undefined;
         sortBy?: string | undefined;
         sortOrder?: "asc" | "desc" | undefined;
     }, {
-        search?: string | undefined;
         planType?: string | undefined;
         page?: string | undefined;
         limit?: string | undefined;
+        search?: string | undefined;
         sortBy?: string | undefined;
         sortOrder?: "asc" | "desc" | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     query: {
-        search?: string | undefined;
         planType?: string | undefined;
         page?: string | undefined;
         limit?: string | undefined;
+        search?: string | undefined;
         sortBy?: string | undefined;
         sortOrder?: "asc" | "desc" | undefined;
     };
 }, {
     query: {
-        search?: string | undefined;
         planType?: string | undefined;
         page?: string | undefined;
         limit?: string | undefined;
+        search?: string | undefined;
         sortBy?: string | undefined;
         sortOrder?: "asc" | "desc" | undefined;
     };

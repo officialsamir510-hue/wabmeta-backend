@@ -9,11 +9,64 @@ declare class MetaApiClient {
     validateToken(accessToken: string): Promise<boolean>;
     getSharedWABAs(accessToken: string): Promise<SharedWABAInfo[]>;
     getWABADetails(wabaId: string, accessToken: string): Promise<SharedWABAInfo>;
-    /**
-     * ✅ FIXED: Get phone numbers with proper snake_case mapping
-     */
     getPhoneNumbers(wabaId: string, accessToken: string): Promise<PhoneNumberInfo[]>;
+    getPhoneNumberDetails(phoneNumberId: string, accessToken: string): Promise<{
+        id: string;
+        verifiedName: string;
+        displayPhoneNumber: string;
+        qualityRating: string;
+        codeVerificationStatus?: string;
+        nameStatus?: string;
+    }>;
     registerPhoneNumber(phoneNumberId: string, accessToken: string): Promise<boolean>;
+    /**
+     * ✅ Extract WhatsApp profile from incoming webhook
+     * This is the MOST RELIABLE method to get real names
+     * Called when processing incoming messages
+     */
+    extractProfileFromWebhook(webhookData: any): {
+        waId: string;
+        profileName: string;
+        phone: string;
+    } | null;
+    /**
+     * ✅ Get WhatsApp contact profile
+     * Uses the Contacts API to check if number exists and get profile
+     */
+    getContactProfile(phoneNumberId: string, accessToken: string, phone: string): Promise<{
+        exists: boolean;
+        waId?: string;
+        profileName?: string;
+        status?: string;
+    }>;
+    /**
+     * ✅ Batch check multiple contacts
+     * Check up to 50 contacts at once
+     */
+    batchCheckContacts(phoneNumberId: string, accessToken: string, phones: string[]): Promise<Array<{
+        input: string;
+        waId?: string;
+        status: 'valid' | 'invalid';
+    }>>;
+    /**
+     * ✅ Get contact profile from message send response
+     */
+    extractContactFromMessageResponse(messageResponse: any): {
+        waId: string;
+        input: string;
+    } | null;
+    /**
+     * ⚠️ Get profile picture URL
+     * NOTE: This typically requires special permissions and may not work
+     */
+    getProfilePictureUrl(phoneNumberId: string, accessToken: string, waId: string): Promise<string | null>;
+    checkContact(phoneNumberId: string, accessToken: string, phone: string): Promise<{
+        contacts: Array<{
+            input: string;
+            wa_id: string;
+            status: string;
+        }>;
+    }>;
     subscribeToWebhooks(wabaId: string, accessToken: string): Promise<boolean>;
     unsubscribeFromWebhooks(wabaId: string, accessToken: string): Promise<boolean>;
     getBusinessProfile(phoneNumberId: string, accessToken: string): Promise<any>;
@@ -28,6 +81,16 @@ declare class MetaApiClient {
     sendMessage(phoneNumberId: string, accessToken: string, to: string, message: any): Promise<{
         messageId: string;
         contacts?: any[];
+    }>;
+    /**
+     * ✅ Enhanced send message with contact extraction
+     */
+    sendMessageWithContactInfo(phoneNumberId: string, accessToken: string, to: string, message: any): Promise<{
+        messageId: string;
+        contact?: {
+            waId: string;
+            input: string;
+        };
     }>;
     markMessageAsRead(phoneNumberId: string, accessToken: string, messageId: string): Promise<boolean>;
     getTemplates(wabaId: string, accessToken: string): Promise<any[]>;

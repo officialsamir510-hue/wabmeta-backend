@@ -215,10 +215,10 @@ export declare class AdminService {
                 lastName: string | null;
             };
             _count: {
+                campaigns: number;
+                contacts: number;
                 members: number;
                 whatsappAccounts: number;
-                contacts: number;
-                campaigns: number;
             };
         } & {
             name: string;
@@ -302,16 +302,16 @@ export declare class AdminService {
             joinedAt: Date | null;
         })[];
         whatsappAccounts: {
-            phoneNumber: string;
             id: string;
             status: import(".prisma/client").$Enums.WhatsAppAccountStatus;
+            phoneNumber: string;
             displayName: string;
         }[];
         _count: {
-            contacts: number;
-            templates: number;
             campaigns: number;
             chatbots: number;
+            contacts: number;
+            templates: number;
         };
     } & {
         name: string;
@@ -409,16 +409,16 @@ export declare class AdminService {
             joinedAt: Date | null;
         })[];
         whatsappAccounts: {
-            phoneNumber: string;
             id: string;
             status: import(".prisma/client").$Enums.WhatsAppAccountStatus;
+            phoneNumber: string;
             displayName: string;
         }[];
         _count: {
-            contacts: number;
-            templates: number;
             campaigns: number;
             chatbots: number;
+            contacts: number;
+            templates: number;
         };
     } & {
         name: string;
@@ -558,10 +558,10 @@ export declare class AdminService {
             createdAt: Date;
             userAgent: string | null;
             ipAddress: string | null;
+            metadata: import("@prisma/client/runtime/library").JsonValue;
             entity: string | null;
             entityId: string | null;
             action: import(".prisma/client").$Enums.ActivityAction | null;
-            metadata: import("@prisma/client/runtime/library").JsonValue;
         })[];
         total: number;
     }>;

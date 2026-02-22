@@ -1,0 +1,9 @@
+src/modules/contacts/contacts.service.ts(162,15): error TS2353: Object literal may only specify known properties, and 'lastProfileFetchAt' does not exist in type '(Without<ContactUpdateInput, ContactUncheckedUpdateInput> & ContactUncheckedUpdateInput) | (Without<...> & ContactUpdateInput)'.
+src/modules/contacts/contacts.service.ts(180,13): error TS2353: Object literal may only specify known properties, and 'lastProfileFetchAt' does not exist in type 'Without<ContactCreateInput, ContactUncheckedCreateInput> & ContactUncheckedCreateInput'.
+src/modules/contacts/contacts.service.ts(279,9): error TS2353: Object literal may only specify known properties, and 'profileFetchAttempts' does not exist in type 'Without<ContactCreateInput, ContactUncheckedCreateInput> & ContactUncheckedCreateInput'.
+src/utils/email.ts(11,35): error TS2339: Property 'auth' does not exist on type '{ readonly host: string; readonly port: number; readonly user: string; readonly pass: string; }'.
+src/utils/email.ts(11,70): error TS2339: Property 'auth' does not exist on type '{ readonly host: string; readonly port: number; readonly user: string; readonly pass: string; }'.
+src/utils/email.ts(304,28): error TS2339: Property 'auth' does not exist on type '{ readonly host: string; readonly port: number; readonly user: string; readonly pass: string; }'.
+src/utils/email.ts(304,60): error TS2339: Property 'auth' does not exist on type '{ readonly host: string; readonly port: number; readonly user: string; readonly pass: string; }'.
+src/utils/email.ts(394,28): error TS2339: Property 'auth' does not exist on type '{ readonly host: string; readonly port: number; readonly user: string; readonly pass: string; }'.
+src/utils/email.ts(394,60): error TS2339: Property 'auth' does not exist on type '{ readonly host: string; readonly port: number; readonly user: string; readonly pass: string; }'.

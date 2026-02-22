@@ -21,17 +21,22 @@ interface CampaignSendResult {
     failed: number;
     errors: string[];
 }
+interface ContactCheckResult {
+    valid: boolean;
+    waId?: string;
+    status: string;
+}
 declare class WhatsAppService {
     /**
      * Check if a string looks like a Meta access token
      */
     private looksLikeAccessToken;
     /**
-     * ✅ NEW: Extract plain text content from message payload
+     * Extract plain text content from message payload
      */
     private extractMessageContent;
     /**
-     * Get account with safe token decryption - ✅ FIXED VERSION
+     * Get account with safe token decryption
      */
     private getAccountWithToken;
     /**
@@ -46,6 +51,14 @@ declare class WhatsAppService {
      * Get or create conversation
      */
     private getOrCreateConversation;
+    /**
+     * Map string type to MessageType enum
+     */
+    private mapMessageType;
+    /**
+     * Check if a phone number has WhatsApp
+     */
+    checkContact(accountId: string, phone: string): Promise<ContactCheckResult>;
     /**
      * Send a text message
      */
@@ -77,9 +90,9 @@ declare class WhatsAppService {
                 id: string;
                 createdAt: Date;
                 updatedAt: Date;
+                lastMessageAt: Date | null;
                 contactId: string;
                 phoneNumberId: string | null;
-                lastMessageAt: Date | null;
                 lastMessagePreview: string | null;
                 lastCustomerMessageAt: Date | null;
                 windowExpiresAt: Date | null;
@@ -97,31 +110,31 @@ declare class WhatsAppService {
             status: import(".prisma/client").$Enums.MessageStatus;
             createdAt: Date;
             updatedAt: Date;
-            metadata: import("@prisma/client/runtime/library").JsonValue | null;
-            whatsappAccountId: string | null;
             waMessageId: string | null;
+            whatsappAccountId: string | null;
+            templateId: string | null;
+            sentAt: Date | null;
+            deliveredAt: Date | null;
+            readAt: Date | null;
+            failedAt: Date | null;
+            failureReason: string | null;
+            retryCount: number;
+            templateParams: import("@prisma/client/runtime/library").JsonValue | null;
+            templateName: string | null;
             wamId: string | null;
             direction: import(".prisma/client").$Enums.MessageDirection;
             content: string | null;
             mediaUrl: string | null;
             mediaType: string | null;
             mediaMimeType: string | null;
-            templateId: string | null;
-            templateName: string | null;
-            templateParams: import("@prisma/client/runtime/library").JsonValue | null;
-            sentAt: Date | null;
-            deliveredAt: Date | null;
-            readAt: Date | null;
-            failedAt: Date | null;
-            failureReason: string | null;
             replyToMessageId: string | null;
-            retryCount: number;
+            metadata: import("@prisma/client/runtime/library").JsonValue | null;
             statusUpdatedAt: Date | null;
             conversationId: string;
         };
     }>;
     /**
-     * Send a template message - ✅ FIXED VERSION
+     * Send a template message
      */
     sendTemplateMessage(options: SendTemplateOptions): Promise<{
         success: boolean;
@@ -151,9 +164,9 @@ declare class WhatsAppService {
                 id: string;
                 createdAt: Date;
                 updatedAt: Date;
+                lastMessageAt: Date | null;
                 contactId: string;
                 phoneNumberId: string | null;
-                lastMessageAt: Date | null;
                 lastMessagePreview: string | null;
                 lastCustomerMessageAt: Date | null;
                 windowExpiresAt: Date | null;
@@ -171,25 +184,25 @@ declare class WhatsAppService {
             status: import(".prisma/client").$Enums.MessageStatus;
             createdAt: Date;
             updatedAt: Date;
-            metadata: import("@prisma/client/runtime/library").JsonValue | null;
-            whatsappAccountId: string | null;
             waMessageId: string | null;
+            whatsappAccountId: string | null;
+            templateId: string | null;
+            sentAt: Date | null;
+            deliveredAt: Date | null;
+            readAt: Date | null;
+            failedAt: Date | null;
+            failureReason: string | null;
+            retryCount: number;
+            templateParams: import("@prisma/client/runtime/library").JsonValue | null;
+            templateName: string | null;
             wamId: string | null;
             direction: import(".prisma/client").$Enums.MessageDirection;
             content: string | null;
             mediaUrl: string | null;
             mediaType: string | null;
             mediaMimeType: string | null;
-            templateId: string | null;
-            templateName: string | null;
-            templateParams: import("@prisma/client/runtime/library").JsonValue | null;
-            sentAt: Date | null;
-            deliveredAt: Date | null;
-            readAt: Date | null;
-            failedAt: Date | null;
-            failureReason: string | null;
             replyToMessageId: string | null;
-            retryCount: number;
+            metadata: import("@prisma/client/runtime/library").JsonValue | null;
             statusUpdatedAt: Date | null;
             conversationId: string;
         };
@@ -225,9 +238,9 @@ declare class WhatsAppService {
                 id: string;
                 createdAt: Date;
                 updatedAt: Date;
+                lastMessageAt: Date | null;
                 contactId: string;
                 phoneNumberId: string | null;
-                lastMessageAt: Date | null;
                 lastMessagePreview: string | null;
                 lastCustomerMessageAt: Date | null;
                 windowExpiresAt: Date | null;
@@ -245,31 +258,31 @@ declare class WhatsAppService {
             status: import(".prisma/client").$Enums.MessageStatus;
             createdAt: Date;
             updatedAt: Date;
-            metadata: import("@prisma/client/runtime/library").JsonValue | null;
-            whatsappAccountId: string | null;
             waMessageId: string | null;
+            whatsappAccountId: string | null;
+            templateId: string | null;
+            sentAt: Date | null;
+            deliveredAt: Date | null;
+            readAt: Date | null;
+            failedAt: Date | null;
+            failureReason: string | null;
+            retryCount: number;
+            templateParams: import("@prisma/client/runtime/library").JsonValue | null;
+            templateName: string | null;
             wamId: string | null;
             direction: import(".prisma/client").$Enums.MessageDirection;
             content: string | null;
             mediaUrl: string | null;
             mediaType: string | null;
             mediaMimeType: string | null;
-            templateId: string | null;
-            templateName: string | null;
-            templateParams: import("@prisma/client/runtime/library").JsonValue | null;
-            sentAt: Date | null;
-            deliveredAt: Date | null;
-            readAt: Date | null;
-            failedAt: Date | null;
-            failureReason: string | null;
             replyToMessageId: string | null;
-            retryCount: number;
+            metadata: import("@prisma/client/runtime/library").JsonValue | null;
             statusUpdatedAt: Date | null;
             conversationId: string;
         };
     }>;
     /**
-     * Core send message function - ✅ FIXED VERSION WITH CONTENT EXTRACTION
+     * Core send message function - WITH CONTACT CHECK
      */
     sendMessage(options: SendMessageOptions): Promise<{
         success: boolean;
@@ -299,9 +312,9 @@ declare class WhatsAppService {
                 id: string;
                 createdAt: Date;
                 updatedAt: Date;
+                lastMessageAt: Date | null;
                 contactId: string;
                 phoneNumberId: string | null;
-                lastMessageAt: Date | null;
                 lastMessagePreview: string | null;
                 lastCustomerMessageAt: Date | null;
                 windowExpiresAt: Date | null;
@@ -319,31 +332,31 @@ declare class WhatsAppService {
             status: import(".prisma/client").$Enums.MessageStatus;
             createdAt: Date;
             updatedAt: Date;
-            metadata: import("@prisma/client/runtime/library").JsonValue | null;
-            whatsappAccountId: string | null;
             waMessageId: string | null;
+            whatsappAccountId: string | null;
+            templateId: string | null;
+            sentAt: Date | null;
+            deliveredAt: Date | null;
+            readAt: Date | null;
+            failedAt: Date | null;
+            failureReason: string | null;
+            retryCount: number;
+            templateParams: import("@prisma/client/runtime/library").JsonValue | null;
+            templateName: string | null;
             wamId: string | null;
             direction: import(".prisma/client").$Enums.MessageDirection;
             content: string | null;
             mediaUrl: string | null;
             mediaType: string | null;
             mediaMimeType: string | null;
-            templateId: string | null;
-            templateName: string | null;
-            templateParams: import("@prisma/client/runtime/library").JsonValue | null;
-            sentAt: Date | null;
-            deliveredAt: Date | null;
-            readAt: Date | null;
-            failedAt: Date | null;
-            failureReason: string | null;
             replyToMessageId: string | null;
-            retryCount: number;
+            metadata: import("@prisma/client/runtime/library").JsonValue | null;
             statusUpdatedAt: Date | null;
             conversationId: string;
         };
     }>;
     /**
-     * Send bulk campaign messages - ✅ FIXED VERSION
+     * Send bulk campaign messages - WITH CONTACT CHECK
      */
     sendCampaignMessages(campaignId: string, batchSize?: number, delayMs?: number): Promise<CampaignSendResult>;
     /**
@@ -351,11 +364,17 @@ declare class WhatsAppService {
      */
     updateContactStatus(campaignId: string, contactId: string, status: MessageStatus, waMessageId?: string, failureReason?: string): Promise<void>;
     /**
-     * Check if campaign is complete and update status
+     * Check if campaign is complete
      */
     checkCampaignCompletion(campaignId: string): Promise<boolean>;
     /**
-     * Mark message as read - ✅ FIXED VERSION
+     * Build template components with variables
+     */
+    private buildTemplateComponents;
+    private extractVariablesFromText;
+    private extractVariables;
+    /**
+     * Mark message as read
      */
     markAsRead(accountId: string, messageId: string): Promise<{
         success: boolean;
@@ -364,46 +383,23 @@ declare class WhatsAppService {
         success: boolean;
         error: any;
     }>;
-    /**
-     * Build template components with variables
-     */
-    private buildTemplateComponents;
-    /**
-     * Extract variable placeholders from template text
-     */
-    private extractVariablesFromText;
-    /**
-     * Extract and replace variables in text
-     */
-    private extractVariables;
-    /**
-     * Generate message preview for conversation list
-     */
-    private getMessagePreview;
-    /**
-     * Map string type to MessageType enum
-     */
-    private mapMessageType;
-    /**
-     * Get default WhatsApp account for organization
-     */
     getDefaultAccount(organizationId: string): Promise<{
-        phoneNumber: string;
         organizationId: string;
         id: string;
         status: import(".prisma/client").$Enums.WhatsAppAccountStatus;
         createdAt: Date;
         updatedAt: Date;
+        phoneNumber: string;
         accessToken: string | null;
-        phoneNumberId: string;
-        webhookSecret: string | null;
-        wabaId: string;
-        displayName: string;
+        verifiedName: string | null;
         qualityRating: string | null;
-        tokenExpiresAt: Date | null;
         codeVerificationStatus: string | null;
         nameStatus: string | null;
-        verifiedName: string | null;
+        webhookSecret: string | null;
+        phoneNumberId: string;
+        wabaId: string;
+        displayName: string;
+        tokenExpiresAt: Date | null;
         messagingLimit: string | null;
         dailyMessageLimit: number;
         dailyMessagesUsed: number;
@@ -411,9 +407,6 @@ declare class WhatsAppService {
         businessProfile: import("@prisma/client/runtime/library").JsonValue | null;
         isDefault: boolean;
     } | null>;
-    /**
-     * Validate account has required permissions - ✅ FIXED VERSION
-     */
     validateAccount(accountId: string): Promise<{
         valid: boolean;
         reason?: string;

@@ -1,24 +1,40 @@
 "use strict";
-// src/config/database.ts
+// src/config/database.ts - OPTIMIZED
 Object.defineProperty(exports, "__esModule", { value: true });
 const client_1 = require("@prisma/client");
 const createPrismaClient = () => {
-    const client = new client_1.PrismaClient({
+    let dbUrl = process.env.DATABASE_URL;
+    const prismaOptions = {
         log: process.env.NODE_ENV === 'development'
-            ? ['query', 'error', 'warn']
+            ? ['error', 'warn']
             : ['error'],
-    });
-    // ✅ Add connection retry logic
-    client.$connect()
-        .then(() => console.log('✅ Database connected'))
-        .catch((err) => {
-        console.error('❌ Database connection failed:', err);
-        // Retry after 5 seconds
-        setTimeout(() => {
-            client.$connect().catch(console.error);
-        }, 5000);
-    });
-    return client;
+    };
+    // Auto-configure for Supabase pooler
+    if (dbUrl && (dbUrl.includes('.pooler.supabase.com') || dbUrl.includes('pooler'))) {
+        if (!dbUrl.includes('pgbouncer=true')) {
+            dbUrl += (dbUrl.includes('?') ? '&' : '?') + 'pgbouncer=true';
+        }
+        if (!dbUrl.includes('connection_limit=')) {
+            dbUrl += '&connection_limit=10';
+        }
+        if (!dbUrl.includes('pool_timeout=')) {
+            dbUrl += '&pool_timeout=30';
+        }
+        prismaOptions.datasources = { db: { url: dbUrl } };
+        console.log('🔧 Auto-configured database pooler');
+    }
+    // Auto-configure for Neon pooler
+    if (dbUrl && dbUrl.includes('neon.tech')) {
+        if (!dbUrl.includes('sslmode=require')) {
+            dbUrl += (dbUrl.includes('?') ? '&' : '?') + 'sslmode=require';
+        }
+        if (!dbUrl.includes('connect_timeout=')) {
+            dbUrl += '&connect_timeout=30';
+        }
+        prismaOptions.datasources = { db: { url: dbUrl } };
+        console.log('🔧 Auto-configured Neon database');
+    }
+    return new client_1.PrismaClient(prismaOptions);
 };
 const prisma = globalThis.prisma ?? createPrismaClient();
 if (process.env.NODE_ENV !== 'production') {
