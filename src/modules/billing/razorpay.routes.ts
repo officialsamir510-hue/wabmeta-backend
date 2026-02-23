@@ -119,7 +119,7 @@ router.post("/verify", async (req: any, res, next) => {
       throw new AppError("Payment verification failed", 400);
     }
 
-    const planType = PlanType.PRO;
+    const planType = PlanType.BIANNUAL;
     const plan = await prisma.plan.findUnique({ where: { type: planType } });
     if (!plan) throw new AppError("PRO plan missing in DB", 404);
 
@@ -165,19 +165,19 @@ router.post("/verify", async (req: any, res, next) => {
           action: ActivityAction.CREATE, // ✅ Proper enum
           entity: 'billing',
           entityId: organizationId,
-          metadata: { 
+          metadata: {
             event: 'razorpay_success',
             planKey,
-            razorpay_order_id, 
-            razorpay_payment_id 
+            razorpay_order_id,
+            razorpay_payment_id
           },
         },
       });
     });
 
-    return res.json({ 
-      success: true, 
-      message: "Payment verified & subscription activated" 
+    return res.json({
+      success: true,
+      message: "Payment verified & subscription activated"
     });
   } catch (e: any) {
     console.error("❌ Razorpay verify error:", e);

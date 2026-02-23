@@ -112,13 +112,15 @@ model OrganizationMember {
 }
 
 model Plan {
-  id                   String   @id @default(cuid())
+  id                   String         @id @default(cuid())
   name                 String
-  type                 PlanType @unique
-  slug                 String   @unique
+  type                 PlanType       @unique
+  slug                 String         @unique
   description          String?
-  monthlyPrice         Decimal  @db.Decimal(10, 2)
-  yearlyPrice          Decimal  @db.Decimal(10, 2)
+  monthlyPrice         Decimal        @db.Decimal(10, 2)
+  yearlyPrice          Decimal        @db.Decimal(10, 2)
+  
+  // Limits
   maxContacts          Int
   maxMessages          Int
   maxTeamMembers       Int
@@ -130,23 +132,16 @@ model Plan {
   maxCampaignsPerMonth Int
   maxAutomations       Int
   maxApiCalls          Int
-  features             Json     @default("[]")
-
+  
   // ✅ NEW FIELDS
-  validityDays  Int     @default(30)
-  isRecommended Boolean @default(false)
-  discount      Int?    @default(0) // Percentage discount
-
-  // Features breakdown
-  hasAdvancedAutomation Boolean @default(false)
-  hasCampaignRetry      Boolean @default(false)
-  hasMobileApiAccess    Boolean @default(false)
-  supportLevel          String  @default("standard") // basic, standard, priority
-
-  isActive      Boolean        @default(true)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  subscriptions Subscription[]
+  validityDays         Int            @default(30)
+  isRecommended        Boolean        @default(false)
+  
+  features             Json           @default("[]")
+  isActive             Boolean        @default(true)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  subscriptions        Subscription[]
 
   @@index([slug])
   @@index([isActive])
@@ -715,15 +710,11 @@ enum UserRole {
 }
 
 enum PlanType {
-  FREE
-  STARTER
-  PRO
-  ENTERPRISE
-  FREE_DEMO // Free Demo (2 days)
-  MONTHLY // Monthly Plan (₹899)
-  QUARTERLY // 3-Month Plan (₹2,500)
-  BIANNUAL // 6-Month Plan (₹5,000) ⭐
-  ANNUAL // 1-Year Plan (₹8,999) ⭐
+  FREE_DEMO
+  MONTHLY
+  QUARTERLY
+  BIANNUAL
+  ANNUAL
 }
 
 enum SubscriptionStatus {

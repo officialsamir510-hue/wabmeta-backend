@@ -185,7 +185,7 @@ export class AuthService {
             name: organizationName.trim(),
             slug: generateSlug(organizationName),
             ownerId: user.id,
-            planType: 'FREE',
+            planType: 'FREE_DEMO',
           },
         });
 
@@ -199,10 +199,10 @@ export class AuthService {
           },
         });
 
-        // Create free subscription
-        const freePlan = await tx.plan.findUnique({ where: { type: 'FREE' } });
+        // Wait, we can define the subscription for FREE_DEMO if needed, else it is handled
+        const freePlan = await tx.plan.findUnique({ where: { type: 'FREE_DEMO' } });
         if (!freePlan) {
-          throw new AppError('FREE plan not found. Please run db:seed.', 500);
+          throw new AppError('FREE_DEMO plan not found. Please run db:seed.', 500);
         }
 
         await tx.subscription.create({
@@ -654,7 +654,7 @@ export class AuthService {
           name: `${given_name}'s Workspace`,
           slug: generateSlug(`${given_name}-workspace`),
           ownerId: user.id,
-          planType: 'FREE',
+          planType: 'FREE_DEMO',
         },
       });
 

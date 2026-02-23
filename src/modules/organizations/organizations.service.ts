@@ -55,7 +55,7 @@ export class OrganizationsService {
           industry,
           timezone: timezone || 'UTC',
           ownerId: userId,
-          planType: 'FREE',
+          planType: 'FREE_DEMO',
         },
       });
 
@@ -71,7 +71,7 @@ export class OrganizationsService {
 
       // Get free plan
       const freePlan = await tx.plan.findUnique({
-        where: { type: 'FREE' },
+        where: { type: 'FREE_DEMO' },
       });
 
       // Create subscription
