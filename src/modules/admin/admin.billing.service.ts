@@ -1,12 +1,106 @@
-// src/modules/admin/admin.billing.service.ts
+// src/modules/admin/admin.billing.service.ts - FIXED VERSION
 
 import { PrismaClient, PlanType, SubscriptionStatus } from '@prisma/client';
 import prisma from '../../config/database';
 import { AppError } from '../../middleware/errorHandler';
 
+// ============================================
+// ✅ SLUG TO PLAN TYPE MAPPING (IMPORTANT!)
+// ============================================
+
+const SLUG_TO_PLAN_TYPE: Record<string, PlanType> = {
+    'free-demo': PlanType.FREE_DEMO,
+    'free': PlanType.FREE_DEMO,
+    'freedemo': PlanType.FREE_DEMO,
+
+    'monthly': PlanType.MONTHLY,
+    'month': PlanType.MONTHLY,
+    '1-month': PlanType.MONTHLY,
+
+    '3-month': PlanType.QUARTERLY,
+    '3month': PlanType.QUARTERLY,
+    'quarterly': PlanType.QUARTERLY,
+    'quarter': PlanType.QUARTERLY,
+
+    '6-month': PlanType.BIANNUAL,
+    '6month': PlanType.BIANNUAL,
+    'biannual': PlanType.BIANNUAL,
+    'half-yearly': PlanType.BIANNUAL,
+    'halfyearly': PlanType.BIANNUAL,
+
+    '1-year': PlanType.ANNUAL,
+    '1year': PlanType.ANNUAL,
+    'annual': PlanType.ANNUAL,
+    'yearly': PlanType.ANNUAL,
+    '12-month': PlanType.ANNUAL,
+    '12month': PlanType.ANNUAL,
+};
+
 export class AdminBillingService {
     // ============================================
-    // ASSIGN PLAN TO USER (MANUAL)
+    // ✅ HELPER: Get Plan by Slug (FIXED)
+    // ============================================
+
+    private async getPlanBySlugOrType(slugOrType: string) {
+        const normalizedSlug = slugOrType.toLowerCase().trim().replace(/\s+/g, '-');
+
+        console.log('🔍 Looking for plan:', { input: slugOrType, normalized: normalizedSlug });
+
+        // First: Try exact slug match
+        let plan = await prisma.plan.findFirst({
+            where: {
+                slug: normalizedSlug,
+                isActive: true,
+            },
+        });
+
+        if (plan) {
+            console.log('✅ Found by slug:', plan.name);
+            return plan;
+        }
+
+        // Second: Try mapped PlanType
+        const mappedType = SLUG_TO_PLAN_TYPE[normalizedSlug];
+        if (mappedType) {
+            console.log('🔄 Mapped to PlanType:', mappedType);
+
+            plan = await prisma.plan.findFirst({
+                where: {
+                    type: mappedType,
+                    isActive: true,
+                },
+            });
+
+            if (plan) {
+                console.log('✅ Found by type:', plan.name);
+                return plan;
+            }
+        }
+
+        // Third: Try if it's already a valid PlanType enum
+        const upperType = normalizedSlug.toUpperCase().replace(/-/g, '_');
+        const validPlanTypes = Object.values(PlanType);
+
+        if (validPlanTypes.includes(upperType as PlanType)) {
+            plan = await prisma.plan.findFirst({
+                where: {
+                    type: upperType as PlanType,
+                    isActive: true,
+                },
+            });
+
+            if (plan) {
+                console.log('✅ Found by direct enum:', plan.name);
+                return plan;
+            }
+        }
+
+        console.log('❌ Plan not found for:', slugOrType);
+        return null;
+    }
+
+    // ============================================
+    // ✅ ASSIGN PLAN TO ORGANIZATION (FIXED)
     // ============================================
 
     async assignPlanToOrganization(params: {
@@ -20,13 +114,12 @@ export class AdminBillingService {
     }) {
         const { organizationId, planSlug, validityDays, customEndDate, adminId, adminName, reason } = params;
 
-        console.log('🔧 Admin assigning plan:', {
-            organizationId,
-            planSlug,
-            validityDays,
-            customEndDate,
-            adminId,
-        });
+        console.log('\n🔧 ========== ADMIN PLAN ASSIGNMENT ==========');
+        console.log('   Organization ID:', organizationId);
+        console.log('   Plan Slug:', planSlug);
+        console.log('   Validity Days:', validityDays);
+        console.log('   Custom End Date:', customEndDate);
+        console.log('   Admin:', adminName);
 
         // Verify organization exists
         const organization = await prisma.organization.findUnique({
@@ -38,38 +131,45 @@ export class AdminBillingService {
             throw new AppError('Organization not found', 404);
         }
 
-        // Find plan
-        const plan = await prisma.plan.findFirst({
-            where: {
-                OR: [
-                    { slug: planSlug.toLowerCase() },
-                    { type: planSlug.toUpperCase() as PlanType },
-                ],
-                isActive: true,
-            },
-        });
+        console.log('✅ Organization found:', organization.name);
+
+        // ✅ USE FIXED METHOD - Find plan
+        const plan = await this.getPlanBySlugOrType(planSlug);
 
         if (!plan) {
-            throw new AppError(`Plan '${planSlug}' not found`, 404);
+            // List available plans for debugging
+            const availablePlans = await prisma.plan.findMany({
+                where: { isActive: true },
+                select: { slug: true, type: true, name: true },
+            });
+
+            console.log('📋 Available plans:', availablePlans);
+
+            throw new AppError(
+                `Plan '${planSlug}' not found. Available: ${availablePlans.map(p => p.slug).join(', ')}`,
+                404
+            );
         }
+
+        console.log('✅ Plan found:', plan.name, '(', plan.type, ')');
 
         // Calculate dates
         const now = new Date();
         let periodEnd: Date;
 
         if (customEndDate) {
-            // Admin specified custom end date
             periodEnd = new Date(customEndDate);
+            console.log('📅 Using custom end date:', periodEnd);
         } else if (validityDays) {
-            // Admin specified custom validity days
             periodEnd = new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000);
+            console.log('📅 Using custom validity days:', validityDays);
         } else {
-            // Use plan's default validity
-            const defaultValidity = plan.validityDays || 30;
+            const defaultValidity = (plan as any).validityDays || 30;
             periodEnd = new Date(now.getTime() + defaultValidity * 24 * 60 * 60 * 1000);
+            console.log('📅 Using default validity:', defaultValidity);
         }
 
-        // Check if subscription exists
+        // Get existing subscription for logging
         const existingSubscription = await prisma.subscription.findUnique({
             where: { organizationId },
             include: { plan: true },
@@ -82,7 +182,7 @@ export class AdminBillingService {
                 organizationId,
                 planId: plan.id,
                 status: SubscriptionStatus.ACTIVE,
-                billingCycle: 'manual', // Mark as manually assigned
+                billingCycle: 'manual',
                 currentPeriodStart: now,
                 currentPeriodEnd: periodEnd,
                 paymentMethod: 'admin_assigned',
@@ -103,11 +203,15 @@ export class AdminBillingService {
             include: { plan: true },
         });
 
+        console.log('✅ Subscription created/updated:', subscription.id);
+
         // Update organization plan type
         await prisma.organization.update({
             where: { id: organizationId },
             data: { planType: plan.type },
         });
+
+        console.log('✅ Organization planType updated to:', plan.type);
 
         // Create activity log
         await prisma.activityLog.create({
@@ -123,7 +227,8 @@ export class AdminBillingService {
                     previousPlan: existingSubscription?.plan?.name || 'None',
                     newPlan: plan.name,
                     planType: plan.type,
-                    validityDays: validityDays || plan.validityDays,
+                    validityDays: validityDays || (plan as any).validityDays || 30,
+                    periodStart: now.toISOString(),
                     periodEnd: periodEnd.toISOString(),
                     reason: reason || 'Manual assignment by admin',
                     assignedBy: adminName,
@@ -132,11 +237,8 @@ export class AdminBillingService {
             },
         });
 
-        console.log('✅ Plan assigned successfully:', {
-            organization: organization.name,
-            plan: plan.name,
-            validUntil: periodEnd,
-        });
+        console.log('✅ Activity log created');
+        console.log('🔧 ========== ASSIGNMENT COMPLETE ==========\n');
 
         return {
             subscription,
@@ -173,21 +275,19 @@ export class AdminBillingService {
 
         const subscription = await prisma.subscription.findUnique({
             where: { organizationId },
-            include: { plan: true },
+            include: { plan: true, organization: true },
         });
 
         if (!subscription) {
             throw new AppError('No active subscription found', 404);
         }
 
-        // Extend from current end date or now (whichever is later)
         const now = new Date();
         const currentEnd = new Date(subscription.currentPeriodEnd);
         const extendFrom = currentEnd > now ? currentEnd : now;
 
         const newEndDate = new Date(extendFrom.getTime() + additionalDays * 24 * 60 * 60 * 1000);
 
-        // Update subscription
         const updated = await prisma.subscription.update({
             where: { organizationId },
             data: {
@@ -234,7 +334,7 @@ export class AdminBillingService {
     }
 
     // ============================================
-    // CANCEL/REVOKE SUBSCRIPTION
+    // REVOKE SUBSCRIPTION
     // ============================================
 
     async revokeSubscription(params: {
@@ -267,7 +367,6 @@ export class AdminBillingService {
             cancelledAt: now,
         };
 
-        // If immediate revoke, set end date to now
         if (immediate) {
             updateData.currentPeriodEnd = now;
         }
@@ -318,7 +417,7 @@ export class AdminBillingService {
     }
 
     // ============================================
-    // GET ALL SUBSCRIPTIONS (ADMIN VIEW)
+    // GET ALL SUBSCRIPTIONS
     // ============================================
 
     async getAllSubscriptions(params: {
@@ -374,7 +473,6 @@ export class AdminBillingService {
             prisma.subscription.count({ where }),
         ]);
 
-        // Calculate stats for each subscription
         const subscriptionsWithStats = subscriptions.map((sub) => {
             const now = new Date();
             const daysRemaining = Math.max(
@@ -411,8 +509,8 @@ export class AdminBillingService {
             totalSubscriptions,
             activeSubscriptions,
             expiredSubscriptions,
+            cancelledSubscriptions,
             planBreakdown,
-            recentAssignments,
         ] = await Promise.all([
             prisma.subscription.count(),
             prisma.subscription.count({
@@ -421,22 +519,12 @@ export class AdminBillingService {
             prisma.subscription.count({
                 where: { status: SubscriptionStatus.EXPIRED },
             }),
+            prisma.subscription.count({
+                where: { status: SubscriptionStatus.CANCELLED },
+            }),
             prisma.subscription.groupBy({
                 by: ['planId'],
                 _count: true,
-            }),
-            prisma.activityLog.findMany({
-                where: {
-                    entity: 'subscription',
-                    action: 'UPDATE',
-                },
-                orderBy: { createdAt: 'desc' },
-                take: 10,
-                include: {
-                    organization: {
-                        select: { name: true },
-                    },
-                },
             }),
         ]);
 
@@ -456,15 +544,28 @@ export class AdminBillingService {
             };
         });
 
+        // Get recent activity
+        const recentActivity = await prisma.activityLog.findMany({
+            where: {
+                entity: 'subscription',
+                action: 'UPDATE',
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 10,
+            include: {
+                organization: {
+                    select: { name: true },
+                },
+            },
+        });
+
         return {
             total: totalSubscriptions,
             active: activeSubscriptions,
             expired: expiredSubscriptions,
-            cancelled: await prisma.subscription.count({
-                where: { status: SubscriptionStatus.CANCELLED },
-            }),
+            cancelled: cancelledSubscriptions,
             planBreakdown: planStats,
-            recentActivity: recentAssignments,
+            recentActivity,
         };
     }
 }
