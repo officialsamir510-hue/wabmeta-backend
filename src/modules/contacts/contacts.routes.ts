@@ -5,6 +5,7 @@ import multer from 'multer';
 import { contactsController } from './contacts.controller';
 import { authenticate } from '../../middleware/auth';
 import { validate } from '../../middleware/validate';
+import { checkContactLimit } from '../../middleware/planLimits';
 import {
   createContactSchema,
   updateContactSchema,
@@ -66,14 +67,13 @@ router.delete(
 // ============================================
 
 router.get('/', contactsController.getList.bind(contactsController));
-
-router.post('/', validate(createContactSchema), contactsController.create.bind(contactsController));
+router.post('/', validate(createContactSchema), checkContactLimit, contactsController.create.bind(contactsController));
 
 // ✅ Import contacts (NOW supports JSON + Array + CSV file)
 router.post(
   '/import',
-  upload.single('file'),          // if file is uploaded
   contactsImportMiddleware,       // converts array/file into {contacts:[]}
+  checkContactLimit,              // ✅ ADD THIS
   validate(importContactsSchema), // validates normalized body
   contactsController.import.bind(contactsController)
 );

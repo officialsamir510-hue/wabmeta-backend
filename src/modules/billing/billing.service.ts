@@ -1,8 +1,7 @@
-// src/modules/billing/billing.service.ts
+// src/modules/billing/billing.service.ts - COMPLETE FIXED VERSION
 
 import { PrismaClient, PlanType, SubscriptionStatus } from '@prisma/client';
 import crypto from 'crypto';
-
 import prisma from '../../config/database';
 
 // ============================================
@@ -18,7 +17,6 @@ const getRazorpayInstance = () => {
 
     if (!keyId || !keySecret) {
       console.warn('⚠️ Razorpay credentials not configured');
-      console.warn('Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in .env');
       return null;
     }
 
@@ -28,7 +26,7 @@ const getRazorpayInstance = () => {
         key_id: keyId,
         key_secret: keySecret
       });
-      console.log('✅ Razorpay initialized successfully');
+      console.log('✅ Razorpay initialized');
     } catch (error) {
       console.error('❌ Failed to initialize Razorpay:', error);
       return null;
@@ -37,7 +35,304 @@ const getRazorpayInstance = () => {
   return razorpay;
 };
 
+// ============================================
+// ✅ SLUG TO PLAN TYPE MAPPING
+// ============================================
+
+const SLUG_TO_PLAN_TYPE: Record<string, PlanType> = {
+  'free-demo': PlanType.FREE_DEMO,
+  'free': PlanType.FREE_DEMO,
+  'monthly': PlanType.MONTHLY,
+  '3-month': PlanType.QUARTERLY,
+  'quarterly': PlanType.QUARTERLY,
+  '6-month': PlanType.BIANNUAL,
+  'biannual': PlanType.BIANNUAL,
+  '1-year': PlanType.ANNUAL,
+  'annual': PlanType.ANNUAL,
+  'yearly': PlanType.ANNUAL,
+};
+
+// ============================================
+// ✅ PLAN LIMITS (Default values)
+// ============================================
+
+const DEFAULT_PLAN_LIMITS = {
+  FREE_DEMO: {
+    maxContacts: 50,
+    maxMessages: 100,
+    maxCampaigns: 1,
+    maxCampaignsPerMonth: 1,
+    maxTeamMembers: 1,
+    maxWhatsAppAccounts: 1,
+    maxTemplates: 2,
+    maxChatbots: 0,
+    maxAutomations: 0,
+    validityDays: 2,
+  },
+  MONTHLY: {
+    maxContacts: 999999,
+    maxMessages: 999999,
+    maxCampaigns: 999999,
+    maxCampaignsPerMonth: 999999,
+    maxTeamMembers: 3,
+    maxWhatsAppAccounts: 1,
+    maxTemplates: 999999,
+    maxChatbots: 2,
+    maxAutomations: 0,
+    validityDays: 30,
+  },
+  QUARTERLY: {
+    maxContacts: 999999,
+    maxMessages: 999999,
+    maxCampaigns: 999999,
+    maxCampaignsPerMonth: 999999,
+    maxTeamMembers: 5,
+    maxWhatsAppAccounts: 1,
+    maxTemplates: 999999,
+    maxChatbots: 5,
+    maxAutomations: 10,
+    validityDays: 90,
+  },
+  BIANNUAL: {
+    maxContacts: 999999,
+    maxMessages: 999999,
+    maxCampaigns: 999999,
+    maxCampaignsPerMonth: 999999,
+    maxTeamMembers: 10,
+    maxWhatsAppAccounts: 1,
+    maxTemplates: 999999,
+    maxChatbots: 10,
+    maxAutomations: 50,
+    validityDays: 180,
+  },
+  ANNUAL: {
+    maxContacts: 999999,
+    maxMessages: 999999,
+    maxCampaigns: 999999,
+    maxCampaignsPerMonth: 999999,
+    maxTeamMembers: 999999,
+    maxWhatsAppAccounts: 2,
+    maxTemplates: 999999,
+    maxChatbots: 999999,
+    maxAutomations: 999999,
+    validityDays: 365,
+  },
+};
+
 class BillingService {
+  // ============================================
+  // ✅ GET PLAN BY SLUG (Fixed)
+  // ============================================
+
+  private async getPlanBySlug(slugOrType: string) {
+    const normalizedSlug = slugOrType.toLowerCase().trim();
+
+    // First try by slug
+    let plan = await prisma.plan.findFirst({
+      where: {
+        slug: normalizedSlug,
+        isActive: true,
+      },
+    });
+
+    if (plan) return plan;
+
+    // Try by mapped type
+    const mappedType = SLUG_TO_PLAN_TYPE[normalizedSlug];
+    if (mappedType) {
+      plan = await prisma.plan.findFirst({
+        where: {
+          type: mappedType,
+          isActive: true,
+        },
+      });
+    }
+
+    return plan;
+  }
+
+  // ============================================
+  // ✅ CHECK PLAN LIMITS
+  // ============================================
+
+  async checkPlanLimit(
+    organizationId: string,
+    limitType: 'contacts' | 'campaigns' | 'messages' | 'teamMembers' | 'templates' | 'chatbots' | 'automations'
+  ): Promise<{
+    allowed: boolean;
+    used: number;
+    limit: number;
+    remaining: number;
+    message?: string;
+  }> {
+    try {
+      // Get subscription with plan
+      const subscription = await prisma.subscription.findUnique({
+        where: { organizationId },
+        include: { plan: true },
+      });
+
+      // Get organization's plan type
+      const org = await prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: { planType: true },
+      });
+
+      const planType = subscription?.plan?.type || org?.planType || 'FREE_DEMO';
+      const planLimits = DEFAULT_PLAN_LIMITS[planType as keyof typeof DEFAULT_PLAN_LIMITS] || DEFAULT_PLAN_LIMITS.FREE_DEMO;
+
+      let used = 0;
+      let limit = 0;
+
+      switch (limitType) {
+        case 'contacts':
+          used = await prisma.contact.count({ where: { organizationId } });
+          limit = subscription?.plan?.maxContacts || planLimits.maxContacts;
+          break;
+
+        case 'campaigns':
+          // Count campaigns this month
+          const startOfMonth = new Date();
+          startOfMonth.setDate(1);
+          startOfMonth.setHours(0, 0, 0, 0);
+
+          used = await prisma.campaign.count({
+            where: {
+              organizationId,
+              createdAt: { gte: startOfMonth },
+            },
+          });
+          limit = subscription?.plan?.maxCampaignsPerMonth || planLimits.maxCampaignsPerMonth;
+          break;
+
+        case 'messages':
+          // Count messages this month
+          const msgStartOfMonth = new Date();
+          msgStartOfMonth.setDate(1);
+          msgStartOfMonth.setHours(0, 0, 0, 0);
+
+          used = await prisma.message.count({
+            where: {
+              conversation: { organizationId },
+              direction: 'OUTBOUND',
+              createdAt: { gte: msgStartOfMonth },
+            },
+          });
+          limit = subscription?.plan?.maxMessagesPerMonth || planLimits.maxMessages;
+          break;
+
+        case 'teamMembers':
+          used = await prisma.organizationMember.count({ where: { organizationId } });
+          limit = subscription?.plan?.maxTeamMembers || planLimits.maxTeamMembers;
+          break;
+
+        case 'templates':
+          used = await prisma.template.count({ where: { organizationId } });
+          limit = subscription?.plan?.maxTemplates || planLimits.maxTemplates;
+          break;
+
+        case 'chatbots':
+          used = await prisma.chatbot.count({ where: { organizationId } });
+          limit = subscription?.plan?.maxChatbots || planLimits.maxChatbots;
+          break;
+
+        case 'automations':
+          used = await prisma.automation.count({ where: { organizationId } });
+          limit = subscription?.plan?.maxAutomations || planLimits.maxAutomations;
+          break;
+      }
+
+      // Check if limit is unlimited (-1 or 999999)
+      const isUnlimited = limit === -1 || limit >= 999999;
+      const remaining = isUnlimited ? 999999 : Math.max(0, limit - used);
+      const allowed = isUnlimited || used < limit;
+
+      return {
+        allowed,
+        used,
+        limit: isUnlimited ? -1 : limit,
+        remaining,
+        message: allowed
+          ? undefined
+          : `You've reached your ${limitType} limit (${used}/${limit}). Please upgrade your plan to continue.`,
+      };
+    } catch (error) {
+      console.error('Check plan limit error:', error);
+      // Allow on error to not block users
+      return {
+        allowed: true,
+        used: 0,
+        limit: 999999,
+        remaining: 999999,
+      };
+    }
+  }
+
+  // ============================================
+  // ✅ CHECK SUBSCRIPTION VALIDITY
+  // ============================================
+
+  async checkSubscriptionValidity(organizationId: string): Promise<{
+    isValid: boolean;
+    isExpired: boolean;
+    daysRemaining: number;
+    expiresAt?: Date;
+    planName?: string;
+    message?: string;
+  }> {
+    try {
+      const subscription = await prisma.subscription.findUnique({
+        where: { organizationId },
+        include: { plan: true },
+      });
+
+      if (!subscription) {
+        return {
+          isValid: false,
+          isExpired: true,
+          daysRemaining: 0,
+          message: 'No active subscription found. Please subscribe to a plan.',
+        };
+      }
+
+      const now = new Date();
+      const expiresAt = new Date(subscription.currentPeriodEnd);
+      const isExpired = expiresAt < now;
+      const daysRemaining = isExpired
+        ? 0
+        : Math.ceil((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+      if (isExpired) {
+        // Update status to EXPIRED
+        await prisma.subscription.update({
+          where: { organizationId },
+          data: { status: SubscriptionStatus.EXPIRED },
+        });
+      }
+
+      return {
+        isValid: !isExpired && subscription.status === SubscriptionStatus.ACTIVE,
+        isExpired,
+        daysRemaining,
+        expiresAt,
+        planName: subscription.plan?.name,
+        message: isExpired
+          ? 'Your subscription has expired. Please renew to continue using all features.'
+          : daysRemaining <= 7
+            ? `Your subscription expires in ${daysRemaining} days. Consider renewing soon.`
+            : undefined,
+      };
+    } catch (error) {
+      console.error('Check subscription validity error:', error);
+      return {
+        isValid: false,
+        isExpired: true,
+        daysRemaining: 0,
+        message: 'Error checking subscription status',
+      };
+    }
+  }
+
   // ============================================
   // GET SUBSCRIPTION
   // ============================================
@@ -51,31 +346,20 @@ class BillingService {
 
       if (!subscription) {
         // Return default free plan info
-        const freePlan = await prisma.plan.findFirst({
-          where: { type: PlanType.FREE_DEMO }
-        });
-
         return {
-          plan: freePlan || {
-            id: 'free',
-            name: 'Free',
-            type: 'FREE',
-            slug: 'free',
+          plan: {
+            id: 'free-demo',
+            name: 'Free Demo',
+            type: 'FREE_DEMO',
+            slug: 'free-demo',
             monthlyPrice: 0,
             yearlyPrice: 0,
-            maxContacts: 100,
-            maxMessagesPerMonth: 1000,
-            maxCampaignsPerMonth: 5,
-            maxTeamMembers: 1,
-            maxWhatsAppAccounts: 1,
-            maxTemplates: 5,
-            maxChatbots: 1,
-            maxAutomations: 3
+            ...DEFAULT_PLAN_LIMITS.FREE_DEMO,
           },
           status: 'active',
           billingCycle: 'monthly',
           currentPeriodStart: new Date(),
-          currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          currentPeriodEnd: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000), // 2 days
           messagesUsed: 0,
           contactsUsed: 0
         };
@@ -102,22 +386,19 @@ class BillingService {
         orderBy: { monthlyPrice: 'asc' }
       });
 
-      // If no plans in DB, return default plans
       if (plans.length === 0) {
-        console.log('No plans in database, using defaults');
         return this.getDefaultPlans();
       }
 
       return plans.map(plan => ({
         ...plan,
-        popular: plan.type === PlanType.BIANNUAL,
+        popular: plan.isRecommended || plan.type === 'BIANNUAL',
         monthlyPrice: Number(plan.monthlyPrice) || 0,
         yearlyPrice: Number(plan.yearlyPrice) || 0,
         features: Array.isArray(plan.features) ? plan.features : []
       }));
     } catch (error) {
       console.error('Get plans error:', error);
-      // Return default plans on error
       return this.getDefaultPlans();
     }
   }
@@ -129,95 +410,108 @@ class BillingService {
   private getDefaultPlans() {
     return [
       {
-        id: 'free',
+        id: 'free-demo',
         name: 'Free Demo',
-        type: PlanType.FREE_DEMO,
+        type: 'FREE_DEMO',
         slug: 'free-demo',
         monthlyPrice: 0,
         yearlyPrice: 0,
-        maxContacts: 50,
-        maxMessagesPerMonth: 100,
-        maxCampaignsPerMonth: 1,
-        maxTeamMembers: 1,
-        maxWhatsAppAccounts: 1,
-        maxTemplates: 2,
-        maxChatbots: 0,
-        maxAutomations: 0,
-        features: ['100 messages', '1 campaign', '50 contacts', 'Basic support', '2-day trial period'],
+        ...DEFAULT_PLAN_LIMITS.FREE_DEMO,
+        features: ['100 messages', '1 campaign', '50 contacts', '2-day trial'],
         isActive: true,
-        popular: false
+        isRecommended: false,
+        popular: false,
       },
       {
         id: 'monthly',
         name: 'Monthly Plan',
-        type: PlanType.MONTHLY,
+        type: 'MONTHLY',
         slug: 'monthly',
         monthlyPrice: 899,
         yearlyPrice: 899,
-        maxContacts: 999999,
-        maxMessagesPerMonth: 999999,
-        maxCampaignsPerMonth: 999999,
-        maxTeamMembers: 3,
-        maxWhatsAppAccounts: 1,
-        maxTemplates: 999999,
-        maxChatbots: 2,
-        maxAutomations: 0,
-        features: ['Unlimited* messages', 'Unlimited campaigns', 'Unlimited contacts', 'Webhooks', 'Flow Builder', 'Standard support', '1 WhatsApp account'],
+        ...DEFAULT_PLAN_LIMITS.MONTHLY,
+        features: [
+          'Unlimited* messages',
+          'Unlimited campaigns',
+          'Unlimited contacts',
+          'Webhooks',
+          'Flow Builder',
+          'Standard support',
+        ],
         isActive: true,
-        popular: false
+        isRecommended: false,
+        popular: false,
       },
       {
-        id: 'biannual',
+        id: '3-month',
+        name: '3-Month Plan',
+        type: 'QUARTERLY',
+        slug: '3-month',
+        monthlyPrice: 2500,
+        yearlyPrice: 2500,
+        ...DEFAULT_PLAN_LIMITS.QUARTERLY,
+        features: [
+          'Unlimited* messages',
+          'Unlimited campaigns',
+          'Unlimited contacts',
+          'Basic automation',
+          'Webhooks',
+          'Flow Builder',
+          'Standard support',
+        ],
+        isActive: true,
+        isRecommended: false,
+        popular: false,
+      },
+      {
+        id: '6-month',
         name: '6-Month Plan ⭐',
-        type: PlanType.BIANNUAL,
+        type: 'BIANNUAL',
         slug: '6-month',
         monthlyPrice: 5000,
         yearlyPrice: 5000,
-        maxContacts: 999999,
-        maxMessagesPerMonth: 999999,
-        maxCampaignsPerMonth: 999999,
-        maxTeamMembers: 10,
-        maxWhatsAppAccounts: 1,
-        maxTemplates: 999999,
-        maxChatbots: 10,
-        maxAutomations: 50,
+        ...DEFAULT_PLAN_LIMITS.BIANNUAL,
         features: [
           'Unlimited* messages',
           'Unlimited campaigns',
           'Unlimited contacts',
           'Advanced automation',
-          'Campaign retry ✅'
+          'Campaign retry ✅',
+          'Webhooks',
+          'Flow Builder',
+          'Mobile + API same number ✅',
+          'High number safety',
+          'Priority support',
         ],
         isActive: true,
-        popular: true
+        isRecommended: true,
+        popular: true,
       },
       {
-        id: 'annual',
+        id: '1-year',
         name: '1-Year Plan ⭐',
-        type: PlanType.ANNUAL,
+        type: 'ANNUAL',
         slug: '1-year',
         monthlyPrice: 8999,
         yearlyPrice: 8999,
-        maxContacts: 999999,
-        maxMessagesPerMonth: 999999,
-        maxCampaignsPerMonth: 999999,
-        maxTeamMembers: 999999,
-        maxWhatsAppAccounts: 2,
-        maxTemplates: 999999,
-        maxChatbots: 999999,
-        maxAutomations: 999999,
+        ...DEFAULT_PLAN_LIMITS.ANNUAL,
         features: [
           'Unlimited* messages',
           'Unlimited campaigns',
           'Unlimited contacts',
           'Full automation',
           'Campaign retry ✅',
+          'Webhooks',
+          'Flow Builder',
+          'Mobile + API same number ✅',
+          'Maximum number safety',
           'Priority support',
-          '2 WhatsApp accounts'
+          '2 WhatsApp accounts',
         ],
         isActive: true,
-        popular: false
-      }
+        isRecommended: true,
+        popular: true,
+      },
     ];
   }
 
@@ -232,50 +526,41 @@ class BillingService {
         include: { plan: true }
       });
 
+      const org = await prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: { planType: true },
+      });
+
       const now = new Date();
       const periodStart = subscription?.currentPeriodStart ||
-        new Date(now.getFullYear(), now.getMonth(), 1); // First day of month
+        new Date(now.getFullYear(), now.getMonth(), 1);
 
-      // Get actual usage counts with proper error handling
+      const planType = subscription?.plan?.type || org?.planType || 'FREE_DEMO';
+      const planLimits = DEFAULT_PLAN_LIMITS[planType as keyof typeof DEFAULT_PLAN_LIMITS] || DEFAULT_PLAN_LIMITS.FREE_DEMO;
+
       const [contactCount, messageCount, campaignCount] = await Promise.all([
-        prisma.contact.count({
-          where: { organizationId }
-        }).catch((err) => {
-          console.error('Error counting contacts:', err);
-          return 0;
-        }),
-
+        prisma.contact.count({ where: { organizationId } }).catch(() => 0),
         prisma.message.count({
           where: {
             conversation: { organizationId },
             direction: 'OUTBOUND',
             createdAt: { gte: periodStart }
           }
-        }).catch((err) => {
-          console.error('Error counting messages:', err);
-          return 0;
-        }),
-
+        }).catch(() => 0),
         prisma.campaign.count({
           where: {
             organizationId,
             createdAt: { gte: periodStart }
           }
-        }).catch((err) => {
-          console.error('Error counting campaigns:', err);
-          return 0;
-        })
+        }).catch(() => 0)
       ]);
 
-      // Get limits from subscription or use free plan defaults
-      const plan = subscription?.plan || this.getDefaultPlans()[0];
-      const maxContacts = Number(plan.maxContacts) || 100;
-      const maxMessages = Number(plan.maxMessagesPerMonth) || 1000;
-      const maxCampaigns = Number(plan.maxCampaignsPerMonth) || 5;
+      const maxContacts = subscription?.plan?.maxContacts || planLimits.maxContacts;
+      const maxMessages = subscription?.plan?.maxMessagesPerMonth || planLimits.maxMessages;
+      const maxCampaigns = subscription?.plan?.maxCampaignsPerMonth || planLimits.maxCampaignsPerMonth;
 
-      // Calculate percentage (handle unlimited -1 case)
       const calcPercentage = (used: number, limit: number): number => {
-        if (limit === -1) return 0; // Unlimited
+        if (limit === -1 || limit >= 999999) return 0;
         if (limit === 0) return 100;
         return Math.min(Math.round((used / limit) * 100), 100);
       };
@@ -283,17 +568,17 @@ class BillingService {
       return {
         messages: {
           used: messageCount,
-          limit: maxMessages,
+          limit: maxMessages >= 999999 ? -1 : maxMessages,
           percentage: calcPercentage(messageCount, maxMessages)
         },
         contacts: {
           used: contactCount,
-          limit: maxContacts,
+          limit: maxContacts >= 999999 ? -1 : maxContacts,
           percentage: calcPercentage(contactCount, maxContacts)
         },
         campaigns: {
           used: campaignCount,
-          limit: maxCampaigns,
+          limit: maxCampaigns >= 999999 ? -1 : maxCampaigns,
           percentage: calcPercentage(campaignCount, maxCampaigns)
         },
         storage: {
@@ -304,18 +589,17 @@ class BillingService {
       };
     } catch (error) {
       console.error('Get usage error:', error);
-      // Return safe defaults on error
       return {
-        messages: { used: 0, limit: 1000, percentage: 0 },
-        contacts: { used: 0, limit: 100, percentage: 0 },
-        campaigns: { used: 0, limit: 5, percentage: 0 },
-        storage: { used: 0, limit: 1000, percentage: 0 }
+        messages: { used: 0, limit: 100, percentage: 0 },
+        contacts: { used: 0, limit: 50, percentage: 0 },
+        campaigns: { used: 0, limit: 1, percentage: 0 },
+        storage: { used: 0, limit: 100, percentage: 0 }
       };
     }
   }
 
   // ============================================
-  // CREATE RAZORPAY ORDER - FIXED
+  // ✅ CREATE RAZORPAY ORDER (FIXED)
   // ============================================
 
   async createRazorpayOrder(params: {
@@ -328,150 +612,136 @@ class BillingService {
 
     console.log('Creating Razorpay order:', { organizationId, planKey, billingCycle });
 
-    // Check Razorpay configuration
     const rzp = getRazorpayInstance();
     if (!rzp) {
       throw new Error('Payment gateway not configured. Please contact support.');
     }
 
-    // Get plan by slug or type
-    let plan = await prisma.plan.findFirst({
-      where: {
-        OR: [
-          { slug: planKey.toLowerCase() },
-          { type: planKey.toUpperCase() as PlanType }
-        ],
-        isActive: true
-      }
-    });
+    // ✅ USE FIXED METHOD
+    let plan = await this.getPlanBySlug(planKey);
 
-    // If plan not found in DB, check default plans
+    // If not in DB, create from defaults
     if (!plan) {
+      console.log(`Plan '${planKey}' not found in DB, checking defaults...`);
+
       const defaultPlans = this.getDefaultPlans();
       const defaultPlan = defaultPlans.find(
-        p => p.slug === planKey.toLowerCase() || p.type === planKey.toUpperCase()
+        p => p.slug === planKey.toLowerCase() ||
+          p.id === planKey.toLowerCase()
       );
 
       if (!defaultPlan) {
         throw new Error(`Plan '${planKey}' not found`);
       }
 
-      // Create plan in database for future use
+      // Get correct PlanType from mapping
+      const planType = SLUG_TO_PLAN_TYPE[planKey.toLowerCase()];
+      if (!planType) {
+        throw new Error(`Invalid plan type for '${planKey}'`);
+      }
+
       try {
         plan = await prisma.plan.create({
           data: {
             name: defaultPlan.name,
-            type: defaultPlan.type as PlanType,
+            type: planType,
             slug: defaultPlan.slug,
+            description: `${defaultPlan.name} - ${defaultPlan.validityDays} days validity`,
             monthlyPrice: defaultPlan.monthlyPrice,
             yearlyPrice: defaultPlan.yearlyPrice,
             maxContacts: defaultPlan.maxContacts,
-            maxMessages: defaultPlan.maxMessagesPerMonth,
+            maxMessages: defaultPlan.maxMessages,
             maxTeamMembers: defaultPlan.maxTeamMembers,
-            maxCampaigns: defaultPlan.maxCampaignsPerMonth,
+            maxCampaigns: defaultPlan.maxCampaigns,
             maxChatbots: defaultPlan.maxChatbots,
             maxTemplates: defaultPlan.maxTemplates,
             maxWhatsAppAccounts: defaultPlan.maxWhatsAppAccounts,
-            maxMessagesPerMonth: defaultPlan.maxMessagesPerMonth,
+            maxMessagesPerMonth: defaultPlan.maxMessages,
             maxCampaignsPerMonth: defaultPlan.maxCampaignsPerMonth,
             maxAutomations: defaultPlan.maxAutomations,
             maxApiCalls: 10000,
+            validityDays: defaultPlan.validityDays,
             features: defaultPlan.features,
-            isActive: true
+            isActive: true,
+            isRecommended: defaultPlan.isRecommended || false,
           }
         });
         console.log('✅ Created plan in database:', plan.name);
-      } catch (createError) {
-        console.error('Failed to create plan in DB:', createError);
-        throw new Error('Failed to initialize plan. Please try again.');
+      } catch (createError: any) {
+        // If plan already exists (race condition), fetch it
+        if (createError.code === 'P2002') {
+          plan = await this.getPlanBySlug(planKey);
+        } else {
+          console.error('Failed to create plan:', createError);
+          throw new Error('Failed to initialize plan. Please try again.');
+        }
       }
     }
 
-    // Calculate price
-    const price = billingCycle === 'yearly'
-      ? Number(plan.yearlyPrice)
-      : Number(plan.monthlyPrice);
+    if (!plan) {
+      throw new Error(`Plan '${planKey}' could not be found or created`);
+    }
+
+    const price = Number(plan.monthlyPrice) || 0;
 
     console.log('Plan details:', {
       planName: plan.name,
       price,
-      billingCycle,
-      planId: plan.id
+      planId: plan.id,
+      type: plan.type,
     });
 
-    // Validate price
     if (price <= 0) {
       throw new Error('Cannot create order for free plan');
     }
 
     try {
-      // ✅ Generate short, valid receipt (max 40 chars for Razorpay)
-      const timestamp = Date.now().toString().slice(-8); // Last 8 digits
-      const orgShort = organizationId.replace(/-/g, '').slice(-6); // Clean and get last 6 chars
-      const receipt = `wm_${orgShort}_${timestamp}`; // Format: wm_abc123_12345678 (max 18 chars)
+      const timestamp = Date.now().toString().slice(-8);
+      const orgShort = organizationId.replace(/[^a-zA-Z0-9]/g, '').slice(-6);
+      const receipt = `wm_${orgShort}_${timestamp}`;
 
-      console.log('Generated receipt:', receipt, 'Length:', receipt.length);
-
-      // Create Razorpay order
       const orderOptions = {
-        amount: Math.round(price * 100), // Convert rupees to paise
+        amount: Math.round(price * 100),
         currency: 'INR',
         receipt: receipt,
-        payment_capture: 1, // Auto capture payment
+        payment_capture: 1,
         notes: {
           organizationId,
           userId,
           planId: plan.id,
           planType: plan.type,
+          planSlug: plan.slug,
           billingCycle,
-          planName: plan.name
+          planName: plan.name,
+          validityDays: plan.validityDays || 30,
         }
       };
 
-      console.log('Creating order with options:', {
-        ...orderOptions,
-        amount: `₹${price} (${orderOptions.amount} paise)`
+      console.log('Creating order:', {
+        amount: `₹${price}`,
+        planName: plan.name,
       });
 
       const order = await rzp.orders.create(orderOptions);
 
-      console.log('✅ Razorpay order created successfully:', {
-        id: order.id,
-        amount: order.amount,
-        receipt: order.receipt
-      });
+      console.log('✅ Razorpay order created:', order.id);
 
-      // Return order details
       return {
         id: order.id,
         amount: order.amount,
         currency: order.currency,
         planId: plan.id,
         planName: plan.name,
+        validityDays: plan.validityDays || 30,
         receipt: order.receipt
       };
 
     } catch (razorpayError: any) {
-      console.error('❌ Razorpay order creation failed:', {
-        error: razorpayError.error || razorpayError,
-        message: razorpayError.message,
-        statusCode: razorpayError.statusCode
-      });
+      console.error('❌ Razorpay order creation failed:', razorpayError);
 
-      // Parse Razorpay error
       let errorMessage = 'Failed to create payment order';
-
       if (razorpayError.error?.description) {
         errorMessage = razorpayError.error.description;
-      } else if (razorpayError.message) {
-        errorMessage = razorpayError.message;
-      }
-
-      // Check for common issues
-      if (errorMessage.includes('receipt')) {
-        errorMessage = 'Invalid receipt format. Please try again.';
-      } else if (errorMessage.includes('amount')) {
-        errorMessage = 'Invalid amount. Please contact support.';
       }
 
       throw new Error(errorMessage);
@@ -479,7 +749,7 @@ class BillingService {
   }
 
   // ============================================
-  // VERIFY RAZORPAY PAYMENT
+  // ✅ VERIFY RAZORPAY PAYMENT (FIXED)
   // ============================================
 
   async verifyRazorpayPayment(params: {
@@ -497,10 +767,7 @@ class BillingService {
       razorpay_signature
     } = params;
 
-    console.log('Verifying payment:', {
-      orderId: razorpay_order_id,
-      paymentId: razorpay_payment_id
-    });
+    console.log('Verifying payment:', { orderId: razorpay_order_id, paymentId: razorpay_payment_id });
 
     const keySecret = process.env.RAZORPAY_KEY_SECRET;
     if (!keySecret) {
@@ -515,29 +782,22 @@ class BillingService {
       .digest('hex');
 
     if (expectedSignature !== razorpay_signature) {
-      console.error('❌ Signature mismatch:', {
-        expected: expectedSignature.slice(0, 10) + '...',
-        received: razorpay_signature.slice(0, 10) + '...'
-      });
       throw new Error('Payment verification failed: Invalid signature');
     }
 
     console.log('✅ Signature verified');
 
-    // Get Razorpay instance
     const rzp = getRazorpayInstance();
     if (!rzp) {
       throw new Error('Payment gateway not available');
     }
 
     try {
-      // Fetch order details from Razorpay
       const order = await rzp.orders.fetch(razorpay_order_id);
       const notes = order.notes || {};
 
       console.log('Order notes:', notes);
 
-      // Get plan from database
       const plan = await prisma.plan.findUnique({
         where: { id: notes.planId }
       });
@@ -546,16 +806,15 @@ class BillingService {
         throw new Error('Plan not found for this payment');
       }
 
-      // Calculate subscription period
+      // Calculate subscription period based on validityDays
       const now = new Date();
-      const periodEnd = notes.billingCycle === 'yearly'
-        ? new Date(now.getFullYear() + 1, now.getMonth(), now.getDate())
-        : new Date(now.getFullYear(), now.getMonth() + 1, now.getDate());
+      const validityDays = plan.validityDays || notes.validityDays || 30;
+      const periodEnd = new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000);
 
-      console.log('Creating/updating subscription:', {
+      console.log('Creating subscription:', {
         planId: plan.id,
-        billingCycle: notes.billingCycle,
-        periodEnd
+        validityDays,
+        periodEnd,
       });
 
       // Update or create subscription
@@ -594,13 +853,14 @@ class BillingService {
       console.log('✅ Subscription activated:', {
         subscriptionId: subscription.id,
         planName: plan.name,
-        status: subscription.status
+        validUntil: periodEnd,
       });
 
       return {
         subscription,
         plan,
-        message: 'Subscription activated successfully'
+        validUntil: periodEnd,
+        message: `Subscription activated! Valid until ${periodEnd.toLocaleDateString('en-IN')}`
       };
 
     } catch (error: any) {
@@ -610,8 +870,9 @@ class BillingService {
   }
 
   // ============================================
-  // UPGRADE PLAN (Restored)
+  // UPGRADE PLAN
   // ============================================
+
   async upgradePlan(params: {
     organizationId: string;
     planType: string;
@@ -619,27 +880,21 @@ class BillingService {
   }) {
     const { organizationId, planType, billingCycle = 'monthly' } = params;
 
-    const plan = await prisma.plan.findFirst({
-      where: {
-        OR: [
-          { type: planType.toUpperCase() as PlanType },
-          { slug: planType },
-        ],
-      },
-    });
+    const plan = await this.getPlanBySlug(planType);
 
     if (!plan) {
       throw new Error('Plan not found');
     }
 
-    const price = billingCycle === 'yearly' ? Number(plan.yearlyPrice) : Number(plan.monthlyPrice);
+    const price = Number(plan.monthlyPrice);
 
     if (price > 0) {
       throw new Error('Please use Razorpay checkout for paid plans');
     }
 
     const now = new Date();
-    const periodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const validityDays = plan.validityDays || 30;
+    const periodEnd = new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000);
 
     const subscription = await prisma.subscription.upsert({
       where: { organizationId },
@@ -672,60 +927,38 @@ class BillingService {
   // ============================================
 
   async cancelSubscription(organizationId: string, reason?: string) {
-    try {
-      const existingSubscription = await prisma.subscription.findUnique({
-        where: { organizationId }
-      });
+    const existingSubscription = await prisma.subscription.findUnique({
+      where: { organizationId }
+    });
 
-      if (!existingSubscription) {
-        throw new Error('No active subscription found');
-      }
-
-      if (existingSubscription.status === SubscriptionStatus.CANCELLED) {
-        throw new Error('Subscription is already cancelled');
-      }
-
-      const subscription = await prisma.subscription.update({
-        where: { organizationId },
-        data: {
-          status: SubscriptionStatus.CANCELLED,
-          cancelledAt: new Date(),
-          // cancellationReason: reason // Removed as it's not in schema
-        }
-      });
-
-      // Log cancellation
-      console.log('Subscription cancelled:', {
-        organizationId,
-        subscriptionId: subscription.id,
-        reason
-      });
-
-      if (reason) {
-        await prisma.activityLog.create({
-          data: {
-            organizationId,
-            action: 'UPDATE',
-            entity: 'subscription',
-            entityId: subscription.id,
-            metadata: { reason }
-          }
-        });
-      }
-
-      return {
-        message: 'Subscription cancelled successfully. You will have access until the end of your billing period.',
-        subscription
-      };
-    } catch (error: any) {
-      console.error('Cancel subscription error:', error);
-      throw new Error(error.message || 'Failed to cancel subscription');
+    if (!existingSubscription) {
+      throw new Error('No active subscription found');
     }
+
+    if (existingSubscription.status === SubscriptionStatus.CANCELLED) {
+      throw new Error('Subscription is already cancelled');
+    }
+
+    const subscription = await prisma.subscription.update({
+      where: { organizationId },
+      data: {
+        status: SubscriptionStatus.CANCELLED,
+        cancelledAt: new Date(),
+      }
+    });
+
+    console.log('Subscription cancelled:', { organizationId, reason });
+
+    return {
+      message: 'Subscription cancelled. You will have access until the end of your billing period.',
+      subscription
+    };
   }
 
   // ============================================
-  // RESUME SUBSCRIPTION (Restored)
+  // RESUME SUBSCRIPTION
   // ============================================
+
   async resumeSubscription(organizationId: string) {
     const subscription = await prisma.subscription.update({
       where: { organizationId },
@@ -738,17 +971,20 @@ class BillingService {
   }
 
   // ============================================
-  // GET INVOICES (Restored)
+  // GET INVOICES
   // ============================================
+
   async getInvoices(organizationId: string, limit: number = 10, offset: number = 0): Promise<any[]> {
-    try {
-      // For now, return mock data
-      // In production, integrate with Razorpay invoices API
-      return [];
-    } catch (error) {
-      console.error('Get invoices error:', error);
-      return [];
-    }
+    // TODO: Integrate with Razorpay invoices
+    return [];
+  }
+
+  async getInvoice(invoiceId: string, organizationId: string): Promise<any> {
+    throw new Error('Invoice not found');
+  }
+
+  async generateInvoicePDF(invoiceId: string, organizationId: string): Promise<Buffer> {
+    throw new Error('Invoice PDF generation not implemented');
   }
 
   // ============================================
@@ -756,60 +992,33 @@ class BillingService {
   // ============================================
 
   async checkSubscriptionStatus(organizationId: string) {
-    try {
-      const subscription = await prisma.subscription.findUnique({
-        where: { organizationId },
-        include: { plan: true }
-      });
+    const subscription = await prisma.subscription.findUnique({
+      where: { organizationId },
+      include: { plan: true }
+    });
 
-      if (!subscription) {
-        return { isActive: false, message: 'No subscription found' };
-      }
-
-      const now = new Date();
-      const isExpired = subscription.currentPeriodEnd < now;
-      const isCancelled = subscription.status === SubscriptionStatus.CANCELLED;
-
-      if (isExpired || isCancelled) {
-        // Update status if expired
-        if (isExpired && subscription.status === SubscriptionStatus.ACTIVE) {
-          await prisma.subscription.update({
-            where: { organizationId },
-            data: { status: SubscriptionStatus.EXPIRED }
-          });
-        }
-
-        return {
-          isActive: false,
-          message: isExpired ? 'Subscription expired' : 'Subscription cancelled'
-        };
-      }
-
-      return {
-        isActive: true,
-        subscription,
-        daysRemaining: Math.ceil((subscription.currentPeriodEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-      };
-    } catch (error) {
-      console.error('Check subscription status error:', error);
-      return { isActive: false, message: 'Error checking subscription' };
+    if (!subscription) {
+      return { isActive: false, message: 'No subscription found' };
     }
-  }
 
-  // ============================================
-  // GET SINGLE INVOICE (Restored)
-  // ============================================
-  async getInvoice(invoiceId: string, organizationId: string): Promise<any> {
-    // TODO: Implement actual invoice retrieval
-    throw new Error('Invoice not found');
-  }
+    const now = new Date();
+    const isExpired = subscription.currentPeriodEnd < now;
+    const isCancelled = subscription.status === SubscriptionStatus.CANCELLED;
 
-  // ============================================
-  // GENERATE INVOICE PDF (Restored)
-  // ============================================
-  async generateInvoicePDF(invoiceId: string, organizationId: string): Promise<Buffer> {
-    // TODO: Implement PDF generation
-    throw new Error('Invoice PDF generation not implemented');
+    if (isExpired && subscription.status === SubscriptionStatus.ACTIVE) {
+      await prisma.subscription.update({
+        where: { organizationId },
+        data: { status: SubscriptionStatus.EXPIRED }
+      });
+    }
+
+    return {
+      isActive: !isExpired && !isCancelled,
+      subscription,
+      daysRemaining: isExpired
+        ? 0
+        : Math.ceil((subscription.currentPeriodEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    };
   }
 }
 

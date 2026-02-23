@@ -5,6 +5,7 @@ import { campaignsController, csvUpload } from './campaigns.controller';
 import { validate } from '../../middleware/validate';
 import { authenticate } from '../../middleware/auth';
 import { successResponse } from '../../utils/response';
+import { checkCampaignLimit } from '../../middleware/planLimits';
 import {
   createCampaignSchema,
   updateCampaignSchema,
@@ -89,6 +90,7 @@ router.post(
  */
 router.post(
   '/',
+  checkCampaignLimit,
   validate(createCampaignSchema),
   campaignsController.create.bind(campaignsController)
 );
