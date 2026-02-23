@@ -25,6 +25,7 @@ import chatbotRoutes from './modules/chatbot/chatbot.routes';
 import inboxRoutes from './modules/inbox/inbox.routes';
 import billingRoutes from './modules/billing/billing.routes';
 import adminRoutes from './modules/admin/admin.routes';
+import analyticsRoutes from './modules/analytics/analytics.routes';
 
 // ============================================
 // VERIFY IMPORTS
@@ -294,6 +295,9 @@ try {
 
   app.use('/api/admin', adminRoutes);
   console.log('  ✅ /api/admin');
+
+  app.use('/api/analytics', analyticsRoutes);
+  console.log('  ✅ /api/analytics');
 
   console.log('✅ All API routes registered successfully');
 } catch (error) {
