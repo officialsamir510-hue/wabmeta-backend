@@ -204,6 +204,40 @@ router.put(
 );
 
 // ============================================
+// SUBSCRIPTION MANAGEMENT ROUTES
+// ============================================
+
+// Get all subscriptions
+router.get(
+  '/subscriptions',
+  adminController.getSubscriptions.bind(adminController)
+);
+
+// Get subscription stats
+router.get(
+  '/subscriptions/stats',
+  adminController.getSubscriptionStats.bind(adminController)
+);
+
+// Assign plan to organization
+router.post(
+  '/subscriptions/assign',
+  adminController.assignPlan.bind(adminController)
+);
+
+// Extend subscription
+router.post(
+  '/subscriptions/:organizationId/extend',
+  adminController.extendSubscription.bind(adminController)
+);
+
+// Revoke subscription
+router.post(
+  '/subscriptions/:organizationId/revoke',
+  adminController.revokeSubscription.bind(adminController)
+);
+
+// ============================================
 // PLAN MANAGEMENT
 // ============================================
 
