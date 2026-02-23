@@ -21,7 +21,8 @@ const sendRateLimit = rateLimit({
 });
 
 router.post('/send/text', sendRateLimit, whatsappController.sendText.bind(whatsappController));
-router.post('/send/template', sendRateLimit, whatsappController.sendTemplate.bind(whatsappController));
+// Send template message
+router.post('/send/template', authenticate, whatsappController.sendTemplate);
 router.post('/send/media', sendRateLimit, whatsappController.sendMedia.bind(whatsappController));
 router.post('/read', whatsappController.markAsRead.bind(whatsappController));
 

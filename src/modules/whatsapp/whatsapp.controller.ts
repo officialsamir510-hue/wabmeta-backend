@@ -295,77 +295,32 @@ class WhatsAppController {
    * ✅ FIXED: Send Template Message
    * Accepts multiple field name formats for flexibility
    */
-  async sendTemplate(req: Request, res: Response, next: NextFunction) {
+  async sendTemplate(req: Request, res: Response) {
     try {
-      // ✅ Support multiple field name formats
-      const accountId = req.body.accountId || req.body.whatsappAccountId;
-      const to = req.body.to || req.body.recipient || req.body.phone;
-      const templateName = req.body.templateName || req.body.template_name || req.body.name;
-      const templateLanguage = req.body.templateLanguage || req.body.languageCode || req.body.language || 'en';
-      const components = req.body.components || req.body.parameters || [];
-      const conversationId = req.body.conversationId;
+      const { whatsappAccountId, to, templateName, language, parameters, conversationId } = req.body;
+      const organizationId = req.user?.organizationId;
 
-      // Log incoming request
-      console.log('📋 Send Template Request:', {
-        accountId: accountId ? `${accountId.substring(0, 8)}...` : null,
-        to: to ? `${to.substring(0, 6)}***` : null,
-        templateName,
-        templateLanguage,
-        componentsCount: components?.length || 0,
-        hasConversationId: !!conversationId,
-      });
-
-      // Validate accountId
-      if (!accountId) {
-        return errorResponse(
-          res,
-          'Account ID is required. Send as "accountId" or "whatsappAccountId"',
-          400
-        );
+      if (!organizationId) {
+        return errorResponse(res, 'Organization not found', 400);
       }
 
-      // Validate recipient
-      if (!to) {
-        return errorResponse(
-          res,
-          'Recipient phone number is required. Send as "to", "recipient", or "phone"',
-          400
-        );
-      }
-
-      // Validate template name
-      if (!templateName) {
-        return errorResponse(
-          res,
-          'Template name is required. Send as "templateName", "template_name", or "name"',
-          400
-        );
-      }
-
-      // Send template via service
       const result = await whatsappService.sendTemplateMessage({
-        accountId,
+        organizationId,
+        accountId: whatsappAccountId,
         to,
         templateName,
-        templateLanguage,
-        components,
+        templateLanguage: language,
+        components: parameters,
         conversationId,
-      });
-
-      console.log('✅ Template message sent successfully:', {
-        messageId: result?.messageId || 'N/A',
       });
 
       return successResponse(res, {
         data: result,
-        message: 'Template message sent successfully',
+        message: 'Template message sent'
       });
     } catch (error: any) {
-      console.error('❌ Send template error:', {
-        message: error.message,
-        stack: error.stack?.split('\n').slice(0, 3),
-      });
-      next(error);
+      console.error('Send template error:', error);
+      return errorResponse(res, error.message || 'Failed to send template', 500);
     }
   }
 
