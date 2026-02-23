@@ -67,7 +67,7 @@ model Organization {
   industry         String?
   timezone         String               @default("UTC")
   ownerId          String
-  planType         PlanType             @default(FREE)
+  planType         PlanType             @default(FREE_DEMO)
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
   activityLogs     ActivityLog[]
@@ -112,13 +112,13 @@ model OrganizationMember {
 }
 
 model Plan {
-  id                   String         @id @default(cuid())
+  id                   String   @id @default(cuid())
   name                 String
-  type                 PlanType       @unique
-  slug                 String         @unique
+  type                 PlanType @unique
+  slug                 String   @unique
   description          String?
-  monthlyPrice         Decimal        @db.Decimal(10, 2)
-  yearlyPrice          Decimal        @db.Decimal(10, 2)
+  monthlyPrice         Decimal  @db.Decimal(10, 2)
+  yearlyPrice          Decimal  @db.Decimal(10, 2)
   maxContacts          Int
   maxMessages          Int
   maxTeamMembers       Int
@@ -130,11 +130,23 @@ model Plan {
   maxCampaignsPerMonth Int
   maxAutomations       Int
   maxApiCalls          Int
-  features             Json           @default("[]")
-  isActive             Boolean        @default(true)
-  createdAt            DateTime       @default(now())
-  updatedAt            DateTime       @updatedAt
-  subscriptions        Subscription[]
+  features             Json     @default("[]")
+
+  // ✅ NEW FIELDS
+  validityDays  Int     @default(30)
+  isRecommended Boolean @default(false)
+  discount      Int?    @default(0) // Percentage discount
+
+  // Features breakdown
+  hasAdvancedAutomation Boolean @default(false)
+  hasCampaignRetry      Boolean @default(false)
+  hasMobileApiAccess    Boolean @default(false)
+  supportLevel          String  @default("standard") // basic, standard, priority
+
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  subscriptions Subscription[]
 
   @@index([slug])
   @@index([isActive])
@@ -261,12 +273,12 @@ model OAuthState {
 }
 
 model Contact {
-  id               String               @id @default(cuid())
-  organizationId   String
-  phone            String
-  countryCode      String               @default("+91")
-  firstName        String?
-  lastName         String?
+  id                     String               @id @default(cuid())
+  organizationId         String
+  phone                  String
+  countryCode            String               @default("+91")
+  firstName              String?
+  lastName               String?
   email                  String?
   avatar                 String?
   whatsappProfileName    String?
@@ -274,18 +286,18 @@ model Contact {
   lastProfileFetchAt     DateTime?
   profileFetchAttempts   Int                  @default(0)
   customFields           Json                 @default("{}")
-  tags             String[]             @default([])
-  status           ContactStatus        @default(ACTIVE)
-  lastMessageAt    DateTime?
-  messageCount     Int                  @default(0)
-  source           String?
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
-  campaignContacts CampaignContact[]
-  organization     Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  groupMemberships ContactGroupMember[]
-  conversations    Conversation[]
-  messageQueue     MessageQueue[]
+  tags                   String[]             @default([])
+  status                 ContactStatus        @default(ACTIVE)
+  lastMessageAt          DateTime?
+  messageCount           Int                  @default(0)
+  source                 String?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  campaignContacts       CampaignContact[]
+  organization           Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  groupMemberships       ContactGroupMember[]
+  conversations          Conversation[]
+  messageQueue           MessageQueue[]
 
   @@unique([organizationId, phone])
   @@index([organizationId])
@@ -707,6 +719,11 @@ enum PlanType {
   STARTER
   PRO
   ENTERPRISE
+  FREE_DEMO // Free Demo (2 days)
+  MONTHLY // Monthly Plan (₹899)
+  QUARTERLY // 3-Month Plan (₹2,500)
+  BIANNUAL // 6-Month Plan (₹5,000) ⭐
+  ANNUAL // 1-Year Plan (₹8,999) ⭐
 }
 
 enum SubscriptionStatus {
