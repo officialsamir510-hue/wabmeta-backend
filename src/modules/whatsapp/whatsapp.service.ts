@@ -352,18 +352,107 @@ class WhatsAppService {
   async sendTextMessage(
     accountId: string,
     to: string,
-    text: string,
+    message: string,
     conversationId?: string,
     organizationId?: string
   ) {
-    return this.sendMessage({
-      accountId,
-      to,
-      type: 'text',
-      content: { text: { body: text } },
-      conversationId,
-      organizationId,
-    });
+    try {
+      const accountData = await this.getAccountWithToken(accountId);
+      if (!accountData) {
+        throw new Error('WhatsApp account not found or token unavailable');
+      }
+
+      const { account, accessToken } = accountData;
+      const formattedTo = to.replace(/\D/g, '');
+
+      // Send via Meta API
+      const response = await metaApi.sendMessage(
+        account.phoneNumberId,
+        accessToken,
+        formattedTo,
+        {
+          messaging_product: 'whatsapp',
+          to: formattedTo,
+          type: 'text',
+          text: { body: message },
+        }
+      );
+
+      const waMessageId = (response as any)?.messages?.[0]?.id || response?.messageId;
+
+      if (!waMessageId) {
+        throw new Error('No message ID returned from WhatsApp API');
+      }
+
+      console.log(`✅ Text message sent: ${waMessageId}`);
+
+      // Save to database
+      let savedMessage = null;
+
+      if (conversationId && organizationId) {
+        const now = new Date();
+
+        savedMessage = await prisma.message.create({
+          data: {
+            conversationId,
+            whatsappAccountId: account.id,
+            waMessageId,      // ✅ Critical
+            wamId: waMessageId, // ✅ Critical
+            direction: 'OUTBOUND',
+            type: 'TEXT',
+            content: message,
+            status: 'SENT',
+            sentAt: now,
+            createdAt: now,
+          },
+        });
+
+        // Update conversation
+        await prisma.conversation.update({
+          where: { id: conversationId },
+          data: {
+            lastMessageAt: now,
+            lastMessagePreview: message.substring(0, 100),
+            isWindowOpen: true,
+            windowExpiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+          },
+        });
+
+        // Emit socket event
+        const { webhookEvents } = await import('../webhooks/webhook.service');
+        webhookEvents.emit('newMessage', {
+          organizationId,
+          conversationId,
+          message: {
+            id: savedMessage.id,
+            conversationId,
+            waMessageId: savedMessage.waMessageId,
+            wamId: savedMessage.wamId,
+            direction: 'OUTBOUND',
+            type: 'TEXT',
+            content: message,
+            status: 'SENT',
+            createdAt: savedMessage.createdAt,
+          },
+        });
+      }
+
+      // ✅ Return with waMessageId
+      return {
+        success: true,
+        waMessageId,
+        wamId: waMessageId,
+        message: savedMessage || {
+          waMessageId,
+          wamId: waMessageId,
+          status: 'SENT',
+        },
+      };
+
+    } catch (error: any) {
+      console.error('❌ sendTextMessage error:', error);
+      throw error;
+    }
   }
 
   /**

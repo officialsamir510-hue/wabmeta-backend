@@ -70,7 +70,8 @@ export const initializeSocket = (server: HttpServer) => {
     if (socket.organizationId) {
       socket.join(`org:${socket.organizationId}`);
       socket.join(`org:${socket.organizationId}:campaigns`);
-      console.log(`📂 Auto-joined: org:${socket.organizationId}`);
+      socket.join(`org:${socket.organizationId}:inbox`);
+      console.log(`📂 Auto-joined rooms for org: ${socket.organizationId}`);
     }
 
     if (socket.userId) {
@@ -83,6 +84,7 @@ export const initializeSocket = (server: HttpServer) => {
       socket.organizationId = socket.organizationId || orgId;
       socket.join(`org:${orgId}`);
       socket.join(`org:${orgId}:campaigns`);
+      socket.join(`org:${orgId}:inbox`);
       console.log(`📂 Explicit join: org:${orgId}`);
     });
 
@@ -96,13 +98,13 @@ export const initializeSocket = (server: HttpServer) => {
     socket.on('campaign:leave', (campaignId: string) => {
       if (!campaignId) return;
       socket.leave(`campaign:${campaignId}`);
-      console.log(`📊 Left campaign room: campaign:${campaignId}`);
     });
 
-    // ✅ Conversation rooms
+    // ✅ Conversation room handlers
     socket.on('join:conversation', (conversationId: string) => {
       if (!conversationId) return;
       socket.join(`conversation:${conversationId}`);
+      console.log(`💬 Joined conversation room: ${conversationId}`);
     });
 
     socket.on('leave:conversation', (conversationId: string) => {
@@ -136,7 +138,7 @@ export const initializeSocket = (server: HttpServer) => {
     });
   });
 
-  // ✅ CRITICAL: Initialize campaign socket service
+  // ✅ Initialize campaign socket service
   initializeCampaignSocket(io);
   console.log('✅ Campaign Socket Service initialized');
 
@@ -157,31 +159,50 @@ async function initializeWebhookEvents() {
       return;
     }
 
+    // ✅ New message
     webhookEvents.on('newMessage', (data: any) => {
       if (!data?.organizationId) return;
+
+      console.log(`📡 [SOCKET] Emitting newMessage to org:${data.organizationId}`);
+
       io.to(`org:${data.organizationId}`).emit('message:new', data);
+      io.to(`org:${data.organizationId}:inbox`).emit('message:new', data);
+
       if (data.conversationId) {
         io.to(`conversation:${data.conversationId}`).emit('message:new', data);
       }
     });
 
+    // ✅ Conversation updated
     webhookEvents.on('conversationUpdated', (data: any) => {
       if (!data?.organizationId) return;
+
       io.to(`org:${data.organizationId}`).emit('conversation:updated', data);
+      io.to(`org:${data.organizationId}:inbox`).emit('conversation:updated', data);
     });
 
+    // ✅ CRITICAL: Message status update
     webhookEvents.on('messageStatus', (data: any) => {
       if (!data?.organizationId) return;
+
+      console.log(`📡 [SOCKET] Emitting messageStatus: ${data.messageId} -> ${data.status}`);
+
+      // Emit to all relevant rooms
       io.to(`org:${data.organizationId}`).emit('message:status', data);
+      io.to(`org:${data.organizationId}:inbox`).emit('message:status', data);
+
       if (data.conversationId) {
         io.to(`conversation:${data.conversationId}`).emit('message:status', data);
       }
     });
 
-    // ✅ NEW: Campaign status events from webhook
+    // ✅ Campaign status from webhook
     webhookEvents.on('campaignStatus', (data: any) => {
       if (!data?.organizationId) return;
+
       io.to(`org:${data.organizationId}`).emit('campaign:progress', data);
+      io.to(`org:${data.organizationId}:campaigns`).emit('campaign:progress', data);
+
       if (data.campaignId) {
         io.to(`campaign:${data.campaignId}`).emit('campaign:progress', data);
       }
