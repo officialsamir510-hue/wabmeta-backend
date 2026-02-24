@@ -4,6 +4,7 @@ import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { config } from './config';
+import { initializeCampaignSocket } from './modules/campaigns/campaigns.socket';
 
 interface AuthenticatedSocket extends Socket {
   userId?: string;
@@ -93,6 +94,19 @@ export const initializeSocket = (server: HttpServer) => {
       socket.leave(`conversation:${conversationId}`);
     });
 
+    // ✅ Campaign room join
+    socket.on('campaign:join', (campaignId: string) => {
+      if (!campaignId) return;
+      socket.join(`campaign:${campaignId}`);
+      console.log(`📊 Joined campaign room: campaign:${campaignId}`);
+    });
+
+    socket.on('campaign:leave', (campaignId: string) => {
+      if (!campaignId) return;
+      socket.leave(`campaign:${campaignId}`);
+      console.log(`📊 Left campaign room: campaign:${campaignId}`);
+    });
+
     socket.on('typing:start', ({ conversationId }) => {
       if (!conversationId) return;
       socket.to(`conversation:${conversationId}`).emit('typing:start', {
@@ -116,6 +130,9 @@ export const initializeSocket = (server: HttpServer) => {
 
   // ✅ Hook webhookEvents -> socket broadcast
   initializeWebhookEvents().catch((e) => console.error('initializeWebhookEvents error', e));
+
+  // ✅ Initialize campaign socket service
+  initializeCampaignSocket(io);
 
   console.log('✅ Socket.IO server initialized');
   return io;

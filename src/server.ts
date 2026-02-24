@@ -238,7 +238,7 @@ async function bootstrap() {
 // ============================================
 
 function startCronJobs() {
-  // Health check every 3 minutes
+  // ✅ 1. Health check every 3 minutes
   setInterval(
     async () => {
       try {
@@ -250,7 +250,7 @@ function startCronJobs() {
     3 * 60 * 1000
   );
 
-  // Expire conversation windows every 5 minutes
+  // ✅ 2. Expire conversation windows every 5 minutes
   if (webhookService?.expireConversationWindows) {
     setInterval(
       async () => {
@@ -264,7 +264,7 @@ function startCronJobs() {
     );
   }
 
-  // Reset daily message limits every hour
+  // ✅ 3. Reset daily message limits every hour
   if (webhookService?.resetDailyMessageLimits) {
     setInterval(
       async () => {
@@ -278,7 +278,7 @@ function startCronJobs() {
     );
   }
 
-  // Clean up old queue messages daily
+  // ✅ 4. Clean up old queue messages daily
   if (messageQueueWorker?.cleanupOldMessages) {
     setInterval(
       async () => {
@@ -290,6 +290,75 @@ function startCronJobs() {
       },
       24 * 60 * 60 * 1000
     );
+  }
+
+  // ✅ 5. **NEW: Process Scheduled Campaigns** (Every minute)
+  setInterval(
+    async () => {
+      try {
+        await processScheduledCampaigns();
+      } catch (error) {
+        console.error('❌ Error in scheduled campaigns cron:', error);
+      }
+    },
+    60 * 1000 // Every 1 minute
+  );
+
+  console.log('✅ All cron jobs started (including scheduled campaigns)');
+}
+
+// ✅ NEW: Scheduled Campaign Processor
+async function processScheduledCampaigns() {
+  try {
+    const now = new Date();
+
+    // Find campaigns scheduled to start now or in the past
+    const scheduledCampaigns = await prisma.campaign.findMany({
+      where: {
+        status: 'SCHEDULED',
+        scheduledAt: {
+          lte: now,
+        },
+      },
+      select: {
+        id: true,
+        organizationId: true,
+        name: true,
+        scheduledAt: true,
+      },
+    });
+
+    if (scheduledCampaigns.length === 0) {
+      return; // No campaigns to process
+    }
+
+    console.log(`📅 Found ${scheduledCampaigns.length} scheduled campaigns to start`);
+
+    // Import campaigns service dynamically
+    const { campaignsService } = await import('./modules/campaigns/campaigns.service');
+
+    for (const campaign of scheduledCampaigns) {
+      try {
+        console.log(`🚀 Auto-starting scheduled campaign: ${campaign.name} (${campaign.id})`);
+
+        await campaignsService.start(campaign.organizationId, campaign.id);
+
+        console.log(`✅ Successfully started campaign: ${campaign.name}`);
+      } catch (error: any) {
+        console.error(`❌ Failed to start campaign ${campaign.id}:`, error.message);
+
+        // Mark campaign as failed if can't start
+        await prisma.campaign.update({
+          where: { id: campaign.id },
+          data: {
+            status: 'FAILED',
+            completedAt: new Date(),
+          },
+        });
+      }
+    }
+  } catch (error: any) {
+    console.error('❌ Error processing scheduled campaigns:', error);
   }
 }
 

@@ -1,0 +1,194 @@
+File Tree: wabmeta-backend
+Generated on: 2/24/2026, 7:28:46 PM
+Root path: c:\Users\Sameer Thakur\wabmeta-backend
+
+────────────────────────────────────────────────────────────────────────────────
+
+├── 📁 .qodo/
+│   ├── 📁 agents/
+│   └── 📁 workflows/
+├── 📁 prisma/
+│   ├── 📁 migrations/
+│   │   └── 📄 fix_templates_and_add_queue.ts
+│   ├── 📄 schema.prisma
+│   ├── 📄 schema.prisma.backup
+│   ├── 📄 seed-new-plans.ts
+│   └── 📄 seed.ts
+├── 📁 src/
+│   ├── 📁 config/
+│   │   ├── 📄 database.ts
+│   │   └── 📄 index.ts
+│   ├── 📁 middleware/
+│   │   ├── 📄 auth.ts
+│   │   ├── 📄 errorHandler.ts
+│   │   ├── 📄 planLimits.ts
+│   │   ├── 📄 rateLimit.ts
+│   │   ├── 📄 requestLogger.ts
+│   │   └── 📄 validate.ts
+│   ├── 📁 modules/
+│   │   ├── 📁 admin/
+│   │   │   ├── 📄 admin.billing.service.ts
+│   │   │   ├── 📄 admin.controller.ts
+│   │   │   ├── 📄 admin.middleware.ts
+│   │   │   ├── 📄 admin.routes.ts
+│   │   │   ├── 📄 admin.schema.ts
+│   │   │   ├── 📄 admin.service.ts
+│   │   │   └── 📄 admin.types.ts
+│   │   ├── 📁 analytics/
+│   │   │   ├── 📄 analytics.controller.ts
+│   │   │   ├── 📄 analytics.routes.ts
+│   │   │   └── 📄 analytics.service.ts
+│   │   ├── 📁 auth/
+│   │   │   ├── 📄 auth.controller.ts
+│   │   │   ├── 📄 auth.routes.ts
+│   │   │   ├── 📄 auth.schema.ts
+│   │   │   ├── 📄 auth.service.ts
+│   │   │   └── 📄 auth.types.ts
+│   │   ├── 📁 billing/
+│   │   │   ├── 📄 billing.controller.ts
+│   │   │   ├── 📄 billing.routes.ts
+│   │   │   ├── 📄 billing.schema.ts
+│   │   │   ├── 📄 billing.service.ts
+│   │   │   ├── 📄 billing.types.ts
+│   │   │   └── 📄 razorpay.routes.ts
+│   │   ├── 📁 campaigns/
+│   │   │   ├── 📄 campaigns.controller.ts
+│   │   │   ├── 📄 campaigns.routes.ts
+│   │   │   ├── 📄 campaigns.schema.ts
+│   │   │   ├── 📄 campaigns.service.ts
+│   │   │   ├── 📄 campaigns.service.ts.backup
+│   │   │   ├── 📄 campaigns.socket.ts
+│   │   │   ├── 📄 campaigns.types.ts
+│   │   │   └── 📄 campaigns.upload.service.ts
+│   │   ├── 📁 chatbot/
+│   │   │   ├── 📄 chatbot.controller.ts
+│   │   │   ├── 📄 chatbot.engine.ts
+│   │   │   ├── 📄 chatbot.routes.ts
+│   │   │   ├── 📄 chatbot.schema.ts
+│   │   │   ├── 📄 chatbot.service.ts
+│   │   │   └── 📄 chatbot.types.ts
+│   │   ├── 📁 contacts/
+│   │   │   ├── 📄 contacts.controller.ts
+│   │   │   ├── 📄 contacts.import.middleware.ts
+│   │   │   ├── 📄 contacts.routes.ts
+│   │   │   ├── 📄 contacts.schema.ts
+│   │   │   ├── 📄 contacts.service.ts
+│   │   │   └── 📄 contacts.types.ts
+│   │   ├── 📁 dashboard/
+│   │   │   ├── 📄 dashboard.controller.ts
+│   │   │   ├── 📄 dashboard.routes.ts
+│   │   │   └── 📄 dashboard.service.ts
+│   │   ├── 📁 inbox/
+│   │   │   ├── 📄 inbox.controller.ts
+│   │   │   ├── 📄 inbox.media.ts
+│   │   │   ├── 📄 inbox.routes.ts
+│   │   │   ├── 📄 inbox.schema.ts
+│   │   │   ├── 📄 inbox.service.ts
+│   │   │   └── 📄 inbox.types.ts
+│   │   ├── 📁 meta/
+│   │   │   ├── 📄 meta.api.ts
+│   │   │   ├── 📄 meta.controller.ts
+│   │   │   ├── 📄 meta.controller.ts.backup
+│   │   │   ├── 📄 meta.routes.ts
+│   │   │   ├── 📄 meta.routes.ts.backup
+│   │   │   ├── 📄 meta.schema.ts
+│   │   │   ├── 📄 meta.service.ts
+│   │   │   ├── 📄 meta.service.ts.backup
+│   │   │   └── 📄 meta.types.ts
+│   │   ├── 📁 organizations/
+│   │   │   ├── 📄 organizations.controller.ts
+│   │   │   ├── 📄 organizations.routes.ts
+│   │   │   ├── 📄 organizations.schema.ts
+│   │   │   ├── 📄 organizations.service.ts
+│   │   │   └── 📄 organizations.types.ts
+│   │   ├── 📁 templates/
+│   │   │   ├── 📄 templates.controller.ts
+│   │   │   ├── 📄 templates.routes.ts
+│   │   │   ├── 📄 templates.schema.ts
+│   │   │   ├── 📄 templates.service.ts
+│   │   │   └── 📄 templates.types.ts
+│   │   ├── 📁 users/
+│   │   │   ├── 📄 users.controller.ts
+│   │   │   ├── 📄 users.routes.ts
+│   │   │   ├── 📄 users.schema.ts
+│   │   │   ├── 📄 users.service.ts
+│   │   │   └── 📄 users.types.ts
+│   │   ├── 📁 webhooks/
+│   │   │   ├── 📄 webhook.routes.ts
+│   │   │   └── 📄 webhook.service.ts
+│   │   └── 📁 whatsapp/
+│   │       ├── 📄 whatsapp.api.ts
+│   │       ├── 📄 whatsapp.controller.ts
+│   │       ├── 📄 whatsapp.routes.ts
+│   │       ├── 📄 whatsapp.schema.ts
+│   │       ├── 📄 whatsapp.service.ts
+│   │       └── 📄 whatsapp.types.ts
+│   ├── 📁 scripts/
+│   │   └── 📄 encryptTokens.ts
+│   ├── 📁 services/
+│   │   └── 📄 messageQueue.service.ts
+│   ├── 📁 types/
+│   │   ├── 📄 express.d.ts
+│   │   ├── 📄 global.d.ts
+│   │   └── 📄 multer.d.ts
+│   ├── 📁 utils/
+│   │   ├── 📄 email.resend.ts
+│   │   ├── 📄 email.ts
+│   │   ├── 📄 encryption.ts
+│   │   ├── 📄 encryption.ts.backup
+│   │   ├── 📄 jwt.ts
+│   │   ├── 📄 otp.ts
+│   │   ├── 📄 password.ts
+│   │   ├── 📄 phone.ts
+│   │   ├── 📄 response.ts
+│   │   └── 📄 tokenHelper.ts
+│   ├── 📄 app.ts
+│   ├── 📄 server.ts
+│   └── 📄 socket.ts
+├── 📁 utils/
+│   └── 📄 response.js
+├── ⚙️ .gitignore
+├── 📄 build_errors.txt
+├── 📄 build_errors_utf8.txt
+├── 📄 check-campaign-account.js
+├── 📄 check-campaign.js
+├── 📄 check-sql.js
+├── 📄 check-status.js
+├── 📄 clean-accounts.js
+├── 📄 complete-check.js
+├── 📄 diagnose-campaign.js
+├── 📄 errors.txt
+├── 📄 fix-all-errors.ps1
+├── 📄 full-diagnostic.js
+├── 📄 full-reset-fixed.js
+├── 📄 full-reset.js
+├── 📄 inject-fresh-token.js
+├── 📄 inject-token.js
+├── 📄 list-accounts.js
+├── 📄 list-all-accounts.js
+├── 📄 list-all-complete.js
+├── ⚙️ nodemon.json
+├── 📄 out.txt
+├── ⚙️ package-lock.json
+├── ⚙️ package.json
+├── 📄 prisma.config.ts
+├── 📄 push_out.txt
+├── 📄 quick-fix.js
+├── 📄 reset-account.js
+├── 📄 reset-final.js
+├── 📄 reset-sql-debug.js
+├── 📄 reset-sql.js
+├── 📄 script.js
+├── 📄 script2.js
+├── 📄 script3.js
+├── 📄 temp_tsc_out.txt
+├── 📄 temp_tsc_out2.txt
+├── 📄 ts_errors.txt
+├── 📄 ts_errors2.txt
+├── 📄 ts_errors3.txt
+├── 📄 tsc_output.txt
+├── ⚙️ tsconfig.json
+└── 📄 typescript-errors.txt
+
+────────────────────────────────────────────────────────────────────────────────
+Generated by FileTree Pro Extension

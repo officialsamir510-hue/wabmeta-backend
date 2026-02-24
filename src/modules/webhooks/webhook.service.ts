@@ -282,7 +282,7 @@ export class WebhookService {
   }
 
   // -----------------------------
-  // Status update processing
+  // Status update processing - ✅ ENHANCED WITH CAMPAIGN SYNC
   // -----------------------------
   private async processStatusUpdate(statusObj: any, organizationId: string, whatsappAccountId: string) {
     try {
@@ -293,7 +293,13 @@ export class WebhookService {
 
       const message = await prisma.message.findFirst({
         where: { waMessageId, whatsappAccountId },
+        include: {
+          conversation: {
+            select: { contactId: true }
+          }
+        }
       });
+
       if (!message) return;
 
       let newStatus: MessageStatus = 'SENT';
@@ -302,6 +308,7 @@ export class WebhookService {
       if (st === 'read') newStatus = 'READ';
       if (st === 'failed') newStatus = 'FAILED';
 
+      // Update message
       await prisma.message.update({
         where: { id: message.id },
         data: {
@@ -319,6 +326,7 @@ export class WebhookService {
         },
       });
 
+      // ✅ Emit socket event
       webhookEvents.emit('messageStatus', {
         organizationId,
         conversationId: message.conversationId,
@@ -329,6 +337,87 @@ export class WebhookService {
       });
 
       console.log(`✅ Status updated wa:${waMessageId} -> ${newStatus}`);
+
+      // ✅ NEW: Update CampaignContact if this is a campaign message
+      const contactId = (message as any).conversation?.contactId;
+
+      if (contactId) {
+        const campaignContact = await prisma.campaignContact.findFirst({
+          where: {
+            contactId,
+            waMessageId,
+          },
+          select: {
+            id: true,
+            campaignId: true,
+            status: true,
+          },
+        });
+
+        if (campaignContact) {
+          console.log(`📊 Updating campaign contact status: ${campaignContact.id}`);
+
+          // Only update if new status is "better" than current
+          const shouldUpdate =
+            (campaignContact.status === 'SENT' && ['DELIVERED', 'READ'].includes(newStatus)) ||
+            (campaignContact.status === 'DELIVERED' && newStatus === 'READ');
+
+          if (shouldUpdate) {
+            // Update campaign contact
+            await prisma.campaignContact.update({
+              where: { id: campaignContact.id },
+              data: {
+                status: newStatus,
+                ...(newStatus === 'DELIVERED' ? { deliveredAt: statusTime } : {}),
+                ...(newStatus === 'READ' ? { readAt: statusTime } : {}),
+              },
+            });
+
+            // Update campaign stats
+            const campaign = await prisma.campaign.findUnique({
+              where: { id: campaignContact.campaignId },
+              select: {
+                id: true,
+                organizationId: true,
+                deliveredCount: true,
+                readCount: true,
+              },
+            });
+
+            if (campaign) {
+              if (newStatus === 'DELIVERED') {
+                await prisma.campaign.update({
+                  where: { id: campaign.id },
+                  data: { deliveredCount: { increment: 1 } },
+                });
+                console.log(`✅ Campaign ${campaign.id} deliveredCount incremented`);
+              }
+
+              if (newStatus === 'READ') {
+                await prisma.campaign.update({
+                  where: { id: campaign.id },
+                  data: { readCount: { increment: 1 } },
+                });
+                console.log(`✅ Campaign ${campaign.id} readCount incremented`);
+              }
+
+              // ✅ Emit campaign status update via socket
+              const { campaignSocketService } = await import('../campaigns/campaigns.socket');
+
+              campaignSocketService.emitContactStatus(
+                campaign.organizationId,
+                campaign.id,
+                {
+                  contactId,
+                  phone: '', // We don't have phone here, but contactId is enough
+                  status: newStatus,
+                  messageId: waMessageId,
+                }
+              );
+            }
+          }
+        }
+      }
     } catch (e) {
       console.error('processStatusUpdate error:', e);
     }
