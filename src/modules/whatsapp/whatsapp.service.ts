@@ -455,6 +455,33 @@ class WhatsAppService {
     }
   }
 
+  // Helper function to hydrate template text
+  private hydrateTemplate(bodyText: string, params: any[]): string {
+    let text = bodyText;
+    if (!params || params.length === 0) return text;
+
+    // Convert components to parameter array
+    // Components array structure: [{ type: 'body', parameters: [{ type: 'text', text: 'Value' }] }]
+    let flatParams: any[] = [];
+    if (params.length > 0) {
+      if (params[0]?.type === 'body' || params[0]?.parameters) {
+        const bodyComp = params.find(c => c.type === 'body');
+        if (bodyComp && bodyComp.parameters) {
+          flatParams = bodyComp.parameters;
+        }
+      } else {
+        flatParams = params;
+      }
+    }
+
+    flatParams.forEach((param, index) => {
+      // Replace {{1}}, {{2}} etc with params
+      const paramValue = typeof param === 'string' ? param : param?.text || JSON.stringify(param);
+      text = text.replace(new RegExp(`\\{\\{${index + 1}\\}\\}`, 'g'), paramValue);
+    });
+    return text;
+  }
+
   /**
    * Send a template message
    */
@@ -473,20 +500,104 @@ class WhatsAppService {
     console.log(`   To: ${to}`);
     console.log(`   Account ID: ${accountId}`);
 
-    return this.sendMessage({
-      accountId,
-      to,
-      type: 'template',
-      content: {
+    try {
+      const accountData = await this.getAccountWithToken(accountId);
+      if (!accountData) throw new Error('Account not found');
+
+      const { account, accessToken } = accountData;
+
+      // ✅ 1. Get Template Details from DB to get Body Text
+      const template = await prisma.template.findFirst({
+        where: {
+          organizationId: account.organizationId,
+          name: templateName,
+          status: 'APPROVED' // Optional
+        }
+      });
+
+      // ✅ 2. Hydrate text (Fill variables)
+      let fullContent = templateName;
+      if (template?.bodyText) {
+        fullContent = this.hydrateTemplate(template.bodyText, components || []);
+      }
+
+      // Formatted phone
+      const formattedTo = this.formatPhoneNumber(to);
+      const messagePayload: any = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: formattedTo,
+        type: 'template',
         template: {
           name: templateName,
           language: { code: templateLanguage },
           components: components || [],
         },
-      },
-      conversationId,
-      organizationId,
-    });
+      };
+
+      // Send to Meta
+      const response = await metaApi.sendMessage(
+        account.phoneNumberId,
+        accessToken,
+        formattedTo,
+        messagePayload
+      );
+
+      const waMessageId = (response as any)?.messages?.[0]?.id || response?.messageId;
+      if (!waMessageId) throw new Error('No message ID returned');
+
+      // ✅ 3. Save FULL CONTENT to Database
+      let savedMessage = null;
+      if (conversationId && organizationId) {
+        const now = new Date();
+        savedMessage = await prisma.message.create({
+          data: {
+            conversationId,
+            whatsappAccountId: account.id,
+            waMessageId,
+            wamId: waMessageId,
+            direction: 'OUTBOUND',
+            type: 'TEMPLATE',
+            // Store JSON to keep structure, but include body
+            content: JSON.stringify({
+              templateName,
+              body: fullContent, // This is what we show in UI
+              header: template?.headerContent || null,
+              footer: template?.footerText || null,
+              params: components
+            }),
+            status: 'SENT',
+            sentAt: now,
+            createdAt: now,
+          },
+        });
+
+        // Update conversation
+        await prisma.conversation.update({
+          where: { id: conversationId },
+          data: {
+            lastMessageAt: now,
+            lastMessagePreview: fullContent.substring(0, 100),
+            isWindowOpen: true,
+            windowExpiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+          },
+        });
+
+        // Emit Socket Event
+        const { webhookEvents } = await import('../webhooks/webhook.service');
+        webhookEvents.emit('newMessage', {
+          organizationId,
+          conversationId,
+          message: savedMessage
+        });
+      }
+
+      return { success: true, waMessageId, wamId: waMessageId, message: savedMessage };
+
+    } catch (error: any) {
+      console.error('❌ sendTemplate error:', error);
+      throw error;
+    }
   }
 
   /**
