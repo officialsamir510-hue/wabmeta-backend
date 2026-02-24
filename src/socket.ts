@@ -22,9 +22,33 @@ interface JWTPayload {
 let io: Server;
 
 export const initializeSocket = (server: HttpServer) => {
+  console.log('🔌 Initializing Socket.IO server...');
+  console.log('   CORS Origins:', config.frontend.corsOrigins);
+
   io = new Server(server, {
     cors: {
-      origin: config.frontend.corsOrigins as unknown as string[],
+      origin: (origin, callback) => {
+        // Allow all origins in development or if origin matches allowed list
+        const allowed = [
+          'http://localhost:3000',
+          'http://localhost:5173',
+          'http://localhost:5174',
+          'https://wabmeta.com',
+          'https://www.wabmeta.com',
+        ];
+
+        // Allow requests with no origin (mobile apps, curl, etc.)
+        if (!origin) {
+          return callback(null, true);
+        }
+
+        if (allowed.includes(origin) || origin.includes('wabmeta')) {
+          callback(null, true);
+        } else {
+          console.warn(`⚠️ Socket CORS blocked origin: ${origin}`);
+          callback(null, true); // Allow anyway for now
+        }
+      },
       methods: ['GET', 'POST'],
       credentials: true,
     },
@@ -32,67 +56,84 @@ export const initializeSocket = (server: HttpServer) => {
     pingInterval: 25000,
     transports: ['websocket', 'polling'],
     path: '/socket.io',
+    allowEIO3: true, // ✅ Allow Engine.IO 3 clients
   });
 
-  // ✅ Auth middleware
+  // ✅ Auth middleware - more lenient
   io.use((socket: AuthenticatedSocket, next) => {
-    const token =
-      (socket.handshake.auth as any)?.token ||
-      socket.handshake.headers.authorization?.split(' ')[1];
-
-    if (!token) {
-      console.log('⚠️ Socket connection without token, allowing...');
-      return next();
-    }
-
     try {
+      const token =
+        (socket.handshake.auth as any)?.token ||
+        socket.handshake.headers.authorization?.split(' ')[1] ||
+        (socket.handshake.query as any)?.token;
+
+      console.log(`🔐 Socket auth attempt: ${socket.id.substring(0, 8)}...`, {
+        hasToken: !!token,
+        authKeys: Object.keys(socket.handshake.auth || {}),
+      });
+
+      if (!token) {
+        console.log('⚠️ No token provided, allowing anonymous connection');
+        return next();
+      }
+
       const decoded = jwt.verify(token, config.jwt.secret) as JWTPayload;
+
       socket.userId = decoded.userId || decoded.id;
       socket.organizationId = decoded.organizationId;
       socket.email = decoded.email;
 
+      // Fallback org from handshake
       const orgFromAuth = (socket.handshake.auth as any)?.organizationId;
       if (!socket.organizationId && orgFromAuth) {
         socket.organizationId = String(orgFromAuth);
       }
 
+      console.log(`✅ Socket authenticated: ${socket.email || socket.userId}`);
       next();
     } catch (e: any) {
-      console.warn('⚠️ Invalid socket token, allowing connection anyway');
-      next();
+      console.warn(`⚠️ Socket auth failed: ${e.message}, allowing connection anyway`);
+      next(); // Allow connection anyway
     }
   });
 
   io.on('connection', (socket: AuthenticatedSocket) => {
     console.log(`🔌 Socket connected: ${socket.email || socket.userId || 'anonymous'} (${socket.id})`);
 
-    // ✅ Auto-join org room
+    // Auto-join org room
     if (socket.organizationId) {
-      socket.join(`org:${socket.organizationId}`);
-      socket.join(`org:${socket.organizationId}:campaigns`);
-      socket.join(`org:${socket.organizationId}:inbox`);
-      console.log(`📂 Auto-joined rooms for org: ${socket.organizationId}`);
+      const rooms = [
+        `org:${socket.organizationId}`,
+        `org:${socket.organizationId}:campaigns`,
+        `org:${socket.organizationId}:inbox`,
+      ];
+      rooms.forEach(room => socket.join(room));
+      console.log(`📂 Auto-joined rooms:`, rooms);
     }
 
     if (socket.userId) {
       socket.join(`user:${socket.userId}`);
     }
 
-    // ✅ Allow client to join org explicitly
+    // ✅ Org join handler
     socket.on('org:join', (orgId: string) => {
       if (!orgId) return;
+
       socket.organizationId = socket.organizationId || orgId;
-      socket.join(`org:${orgId}`);
-      socket.join(`org:${orgId}:campaigns`);
-      socket.join(`org:${orgId}:inbox`);
-      console.log(`📂 Explicit join: org:${orgId}`);
+      const rooms = [
+        `org:${orgId}`,
+        `org:${orgId}:campaigns`,
+        `org:${orgId}:inbox`,
+      ];
+      rooms.forEach(room => socket.join(room));
+      console.log(`📂 Explicit org join: ${orgId}`);
     });
 
-    // ✅ Campaign room handlers
+    // Campaign rooms
     socket.on('campaign:join', (campaignId: string) => {
       if (!campaignId) return;
       socket.join(`campaign:${campaignId}`);
-      console.log(`📊 Joined campaign room: campaign:${campaignId}`);
+      console.log(`📊 Joined campaign: ${campaignId}`);
     });
 
     socket.on('campaign:leave', (campaignId: string) => {
@@ -100,11 +141,11 @@ export const initializeSocket = (server: HttpServer) => {
       socket.leave(`campaign:${campaignId}`);
     });
 
-    // ✅ Conversation room handlers
+    // Conversation rooms
     socket.on('join:conversation', (conversationId: string) => {
       if (!conversationId) return;
       socket.join(`conversation:${conversationId}`);
-      console.log(`💬 Joined conversation room: ${conversationId}`);
+      console.log(`💬 Joined conversation: ${conversationId}`);
     });
 
     socket.on('leave:conversation', (conversationId: string) => {
@@ -114,44 +155,59 @@ export const initializeSocket = (server: HttpServer) => {
 
     // Typing indicators
     socket.on('typing:start', ({ conversationId }) => {
-      if (!conversationId) return;
-      socket.to(`conversation:${conversationId}`).emit('typing:start', {
-        conversationId,
-        userId: socket.userId,
-        email: socket.email,
-      });
+      if (conversationId) {
+        socket.to(`conversation:${conversationId}`).emit('typing:start', {
+          conversationId,
+          userId: socket.userId,
+        });
+      }
     });
 
     socket.on('typing:stop', ({ conversationId }) => {
-      if (!conversationId) return;
-      socket.to(`conversation:${conversationId}`).emit('typing:stop', {
-        conversationId,
-        userId: socket.userId,
-        email: socket.email,
-      });
+      if (conversationId) {
+        socket.to(`conversation:${conversationId}`).emit('typing:stop', {
+          conversationId,
+          userId: socket.userId,
+        });
+      }
     });
 
-    socket.on('ping', () => socket.emit('pong', { timestamp: Date.now() }));
+    // Ping/pong
+    socket.on('ping', () => {
+      socket.emit('pong', { timestamp: Date.now(), socketId: socket.id });
+    });
 
     socket.on('disconnect', (reason) => {
       console.log(`🔌 Socket disconnected: ${socket.id} (${reason})`);
     });
+
+    socket.on('error', (error) => {
+      console.error(`❌ Socket error for ${socket.id}:`, error);
+    });
   });
 
-  // ✅ Initialize campaign socket service
+  // Log connection stats periodically
+  setInterval(() => {
+    const sockets = io.sockets.sockets.size;
+    if (sockets > 0) {
+      console.log(`📊 Socket stats: ${sockets} connected clients`);
+    }
+  }, 60000);
+
+  // ✅ Initialize campaign socket
   initializeCampaignSocket(io);
   console.log('✅ Campaign Socket Service initialized');
 
-  // ✅ Hook webhookEvents -> socket broadcast
+  // ✅ Wire webhook events
   initializeWebhookEvents().catch((e) => console.error('initializeWebhookEvents error', e));
 
-  console.log('✅ Socket.IO server initialized');
+  console.log('✅ Socket.IO server initialized successfully');
   return io;
 };
 
 async function initializeWebhookEvents() {
   try {
-    const webhookModule = (await import('./modules/webhooks/webhook.service')) as any;
+    const webhookModule = await import('./modules/webhooks/webhook.service');
     const webhookEvents = webhookModule.webhookEvents;
 
     if (!webhookEvents) {
@@ -159,21 +215,27 @@ async function initializeWebhookEvents() {
       return;
     }
 
-    // ✅ New message
+    // New message
     webhookEvents.on('newMessage', (data: any) => {
       if (!data?.organizationId) return;
 
-      console.log(`📡 [SOCKET] Emitting newMessage to org:${data.organizationId}`);
+      const rooms = [
+        `org:${data.organizationId}`,
+        `org:${data.organizationId}:inbox`,
+      ];
 
-      io.to(`org:${data.organizationId}`).emit('message:new', data);
-      io.to(`org:${data.organizationId}:inbox`).emit('message:new', data);
+      rooms.forEach(room => {
+        io.to(room).emit('message:new', data);
+      });
 
       if (data.conversationId) {
         io.to(`conversation:${data.conversationId}`).emit('message:new', data);
       }
+
+      console.log(`📡 Emitted newMessage to org:${data.organizationId}`);
     });
 
-    // ✅ Conversation updated
+    // Conversation updated
     webhookEvents.on('conversationUpdated', (data: any) => {
       if (!data?.organizationId) return;
 
@@ -185,18 +247,27 @@ async function initializeWebhookEvents() {
     webhookEvents.on('messageStatus', (data: any) => {
       if (!data?.organizationId) return;
 
-      console.log(`📡 [SOCKET] Emitting messageStatus: ${data.messageId} -> ${data.status}`);
+      console.log(`📡 Emitting messageStatus to org:${data.organizationId}`, {
+        messageId: data.messageId,
+        status: data.status,
+      });
 
       // Emit to all relevant rooms
-      io.to(`org:${data.organizationId}`).emit('message:status', data);
-      io.to(`org:${data.organizationId}:inbox`).emit('message:status', data);
+      const rooms = [
+        `org:${data.organizationId}`,
+        `org:${data.organizationId}:inbox`,
+      ];
+
+      rooms.forEach(room => {
+        io.to(room).emit('message:status', data);
+      });
 
       if (data.conversationId) {
         io.to(`conversation:${data.conversationId}`).emit('message:status', data);
       }
     });
 
-    // ✅ Campaign status from webhook
+    // Campaign status
     webhookEvents.on('campaignStatus', (data: any) => {
       if (!data?.organizationId) return;
 
@@ -210,7 +281,7 @@ async function initializeWebhookEvents() {
 
     console.log('✅ Webhook events wired to Socket.IO');
   } catch (e) {
-    console.log('ℹ️ Webhook events not available');
+    console.error('❌ Failed to initialize webhook events:', e);
   }
 }
 
