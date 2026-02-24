@@ -1147,22 +1147,20 @@ export class CampaignsService {
       status: 'RUNNING',
     });
 
+    // Process campaigns in parallel batches
+    const PARALLEL_LIMIT = 5;
+
     while (batchCount < MAX_BATCHES) {
       batchCount++;
 
-      const currentCampaign = await prisma.campaign.findUnique({
-        where: { id: campaignId },
-        select: { status: true },
-      });
-
-      if (!currentCampaign || currentCampaign.status !== 'RUNNING') {
+      if (await this.shouldStopCampaign(campaignId)) {
         console.log(`⚠️ Campaign stopped at batch ${batchCount}`);
         break;
       }
 
       const pending = await prisma.campaignContact.findMany({
         where: { campaignId, status: 'PENDING' },
-        take: 25,
+        take: 50, // Increased from 25
         orderBy: { createdAt: 'asc' },
         include: {
           contact: {
@@ -1185,247 +1183,138 @@ export class CampaignsService {
 
       console.log(`📤 Processing batch ${batchCount}: ${pending.length} contacts`);
 
-      for (const cc of pending) {
-        const c = (cc as any).contact || (cc as any).Contact;
-        const to = toRecipient(c);
+      for (let i = 0; i < pending.length; i += PARALLEL_LIMIT) {
+        if (await this.shouldStopCampaign(campaignId)) break;
 
-        if (!to || to.length < 10) {
-          await this.updateContactStatus(
-            organizationId,
-            campaignId,
-            cc.contactId,
-            'FAILED',
-            undefined,
-            'Contact phone missing, empty, or invalid format'
-          );
-          totalFailed++;
+        const batch = pending.slice(i, i + PARALLEL_LIMIT);
 
-          // ✅ Emit contact failed event
-          campaignSocketService.emitContactStatus(organizationId, campaignId, {
-            contactId: cc.contactId,
-            phone: c?.phone || 'unknown',
-            status: 'FAILED',
-            error: 'Invalid phone number',
-          });
+        const results = await Promise.allSettled(
+          batch.map(async (cc) => {
+            const c = (cc as any).contact || (cc as any).Contact;
+            const to = toRecipient(c);
 
-          continue;
-        }
-
-        const toDigits = digitsOnly(to);
-        const fromDigits = digitsOnly(account.phoneNumber);
-
-        if (toDigits && fromDigits && toDigits === fromDigits) {
-          console.warn(`⚠️ Skipping self-send to ${to}`);
-          await this.updateContactStatus(
-            organizationId,
-            campaignId,
-            cc.contactId,
-            'FAILED',
-            undefined,
-            'Cannot send to business number (sender = recipient)'
-          );
-          totalFailed++;
-
-          campaignSocketService.emitContactStatus(organizationId, campaignId, {
-            contactId: cc.contactId,
-            phone: to,
-            status: 'FAILED',
-            error: 'Cannot send to business number',
-          });
-
-          continue;
-        }
-
-        try {
-          const params = buildParamsFromContact(c, varCount);
-
-          const payload = buildTemplateSendPayload({
-            to,
-            templateName,
-            language: templateLang,
-            params,
-          });
-
-          console.log(`📤 Sending to ${to} with template ${templateName} (${templateLang})`);
-
-          const res = await whatsappApi.sendMessage(account.phoneNumberId, accessToken, payload);
-          const waMessageId = res?.messages?.[0]?.id;
-
-          if (!waMessageId) {
-            throw new Error('No message ID returned from WhatsApp API');
-          }
-
-          await this.updateContactStatus(
-            organizationId,
-            campaignId,
-            cc.contactId,
-            'SENT',
-            waMessageId
-          );
-
-          // Save message with conversation
-          try {
-            let conversation = await prisma.conversation.findFirst({
-              where: {
+            if (!to || to.length < 10) {
+              await this.updateContactStatus(
                 organizationId,
-                contactId: c.id,
-              },
-            });
-
-            const now = new Date();
-            const windowExpiry = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-
-            if (!conversation) {
-              conversation = await prisma.conversation.create({
-                data: {
-                  organizationId,
-                  contactId: c.id,
-                  lastMessageAt: now,
-                  lastMessagePreview: `Template: ${templateName}`,
-                  lastCustomerMessageAt: null,
-                  windowExpiresAt: windowExpiry,
-                  isWindowOpen: true,
-                  unreadCount: 0,
-                  isRead: true,
-                },
-              });
-              console.log(`✅ New conversation created: ${conversation.id}`);
-            } else {
-              await prisma.conversation.update({
-                where: { id: conversation.id },
-                data: {
-                  lastMessageAt: now,
-                  lastMessagePreview: `Template: ${templateName}`,
-                  windowExpiresAt: windowExpiry,
-                  isWindowOpen: true,
-                },
-              });
+                campaignId,
+                cc.contactId,
+                'FAILED',
+                undefined,
+                'Contact phone missing, empty, or invalid format'
+              );
+              return { success: false, contactId: cc.contactId, error: 'Invalid phone number' };
             }
 
-            await prisma.message.create({
-              data: {
-                conversationId: conversation.id,
-                whatsappAccountId: account.id,
-                waMessageId: waMessageId,
-                wamId: waMessageId,
-                direction: 'OUTBOUND',
-                type: 'TEMPLATE',
-                content: JSON.stringify({
-                  templateName,
-                  language: templateLang,
-                  params,
-                }),
+            const toDigits = digitsOnly(to);
+            const fromDigits = digitsOnly(account.phoneNumber);
+
+            if (toDigits && fromDigits && toDigits === fromDigits) {
+              await this.updateContactStatus(
+                organizationId,
+                campaignId,
+                cc.contactId,
+                'FAILED',
+                undefined,
+                'Cannot send to business number (sender = recipient)'
+              );
+              return { success: false, contactId: cc.contactId, error: 'Cannot send to business number', phone: to };
+            }
+
+            try {
+              const params = buildParamsFromContact(c, varCount);
+
+              const payload = buildTemplateSendPayload({
+                to,
+                templateName,
+                language: templateLang,
+                params,
+              });
+
+              const res = await whatsappApi.sendMessage(account.phoneNumberId, accessToken, payload);
+              const waMessageId = res?.messages?.[0]?.id;
+
+              if (!waMessageId) {
+                throw new Error('No message ID returned from WhatsApp API');
+              }
+
+              await this.updateContactStatus(
+                organizationId,
+                campaignId,
+                cc.contactId,
+                'SENT',
+                waMessageId
+              );
+
+              // Sub-task: Save message with conversation
+              void this.saveCampaignMessage(
+                organizationId,
+                campaignId,
+                c.id,
+                account.id,
+                waMessageId,
+                templateName,
+                templateLang,
+                params,
+                template.id,
+                campaign.name
+              );
+
+              return { success: true, contactId: cc.contactId, waMessageId, phone: to };
+            } catch (e: any) {
+              const metaErr = e?.response?.data?.error;
+              const reason = metaErr?.message || e?.message || 'Send failed';
+
+              await this.updateContactStatus(
+                organizationId,
+                campaignId,
+                cc.contactId,
+                'FAILED',
+                undefined,
+                reason
+              );
+
+              return { success: false, contactId: cc.contactId, error: reason, phone: to };
+            }
+          })
+        );
+
+        // Process results
+        for (const result of results) {
+          if (result.status === 'fulfilled') {
+            if (result.value.success) {
+              totalSent++;
+              campaignSocketService.emitContactStatus(organizationId, campaignId, {
+                contactId: result.value.contactId,
+                phone: result.value.phone || '',
                 status: 'SENT',
-                templateId: template.id,
-                sentAt: now,
-                metadata: {
-                  campaignId,
-                  campaignName: campaign.name,
-                },
-              },
-            });
-
-            console.log(`💾 Campaign message saved with conversation: ${waMessageId}`);
-          } catch (saveErr: any) {
-            console.error('⚠️ Failed to save campaign message:', saveErr.message);
-          }
-
-          totalSent++;
-          console.log(`✅ Message sent to ${to} (${waMessageId})`);
-
-          // ✅ Emit contact success event
-          campaignSocketService.emitContactStatus(organizationId, campaignId, {
-            contactId: cc.contactId,
-            phone: to,
-            status: 'SENT',
-            messageId: waMessageId,
-          });
-
-          // ✅ Emit progress update
-          const percentage = Math.round(((totalSent + totalFailed) / totalContacts) * 100);
-          campaignSocketService.emitCampaignProgress(organizationId, campaignId, {
-            sent: totalSent,
-            failed: totalFailed,
-            total: totalContacts,
-            percentage,
-            status: 'RUNNING',
-          });
-
-          await new Promise((r) => setTimeout(r, 80));
-        } catch (e: any) {
-          const metaErr = e?.response?.data?.error;
-          console.error(`❌ Failed to send to ${to}:`, {
-            code: metaErr?.code,
-            message: metaErr?.message,
-            error_subcode: metaErr?.error_subcode,
-            error_data: metaErr?.error_data,
-            fbtrace_id: metaErr?.fbtrace_id,
-          });
-
-          if (metaErr?.code === 190) {
-            console.error('❌ OAuth token invalid - stopping campaign');
-
-            await prisma.whatsAppAccount.update({
-              where: { id: account.id },
-              data: {
-                status: 'DISCONNECTED',
-                accessToken: null,
-                tokenExpiresAt: null,
-              },
-            });
-
-            await prisma.campaign.update({
-              where: { id: campaignId },
-              data: {
+                messageId: result.value.waMessageId,
+              });
+            } else {
+              totalFailed++;
+              campaignSocketService.emitContactStatus(organizationId, campaignId, {
+                contactId: result.value.contactId,
+                phone: result.value.phone || 'unknown',
                 status: 'FAILED',
-                completedAt: new Date(),
-              },
-            });
-
-            campaignSocketService.emitCampaignUpdate(organizationId, campaignId, {
-              status: 'FAILED',
-              message: 'OAuth token invalid - account disconnected',
-            });
-
-            return;
+                error: result.value.error,
+              });
+            }
+          } else {
+            totalFailed++;
           }
-
-          if (metaErr?.code === 130429) {
-            console.warn('⚠️ Rate limit hit, waiting 60 seconds...');
-            await new Promise((r) => setTimeout(r, 60000));
-          }
-
-          const reason = metaErr?.message || e?.message || 'Send failed';
-
-          await this.updateContactStatus(
-            organizationId,
-            campaignId,
-            cc.contactId,
-            'FAILED',
-            undefined,
-            reason
-          );
-
-          totalFailed++;
-
-          // ✅ Emit contact failed event
-          campaignSocketService.emitContactStatus(organizationId, campaignId, {
-            contactId: cc.contactId,
-            phone: to,
-            status: 'FAILED',
-            error: reason,
-          });
-
-          // ✅ Emit progress update
-          const percentage = Math.round(((totalSent + totalFailed) / totalContacts) * 100);
-          campaignSocketService.emitCampaignProgress(organizationId, campaignId, {
-            sent: totalSent,
-            failed: totalFailed,
-            total: totalContacts,
-            percentage,
-            status: 'RUNNING',
-          });
         }
+
+        // Emit progress
+        const percentage = Math.round(((totalSent + totalFailed) / totalContacts) * 100);
+        campaignSocketService.emitCampaignProgress(organizationId, campaignId, {
+          sent: totalSent,
+          failed: totalFailed,
+          total: totalContacts,
+          percentage,
+          status: 'RUNNING',
+        });
+
+        // Small delay between parallel batches
+        await new Promise((r) => setTimeout(r, 40)); // Reduced from 80ms to 40ms
       }
     }
 
@@ -1434,6 +1323,94 @@ export class CampaignsService {
     );
 
     await this.checkAndComplete(organizationId, campaignId);
+  }
+
+  private async shouldStopCampaign(campaignId: string): Promise<boolean> {
+    const currentCampaign = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      select: { status: true },
+    });
+
+    return !currentCampaign || currentCampaign.status !== 'RUNNING';
+  }
+
+  private async saveCampaignMessage(
+    organizationId: string,
+    campaignId: string,
+    contactId: string,
+    accountId: string,
+    waMessageId: string,
+    templateName: string,
+    templateLang: string,
+    params: string[],
+    templateId: string,
+    campaignName: string
+  ): Promise<void> {
+    try {
+      let conversation = await prisma.conversation.findFirst({
+        where: {
+          organizationId,
+          contactId,
+        },
+      });
+
+      const now = new Date();
+      const windowExpiry = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+      if (!conversation) {
+        conversation = await prisma.conversation.create({
+          data: {
+            organizationId,
+            contactId,
+            lastMessageAt: now,
+            lastMessagePreview: `Template: ${templateName}`,
+            lastCustomerMessageAt: null,
+            windowExpiresAt: windowExpiry,
+            isWindowOpen: true,
+            unreadCount: 0,
+            isRead: true,
+          },
+        });
+        console.log(`✅ New conversation created: ${conversation.id}`);
+      } else {
+        await prisma.conversation.update({
+          where: { id: conversation.id },
+          data: {
+            lastMessageAt: now,
+            lastMessagePreview: `Template: ${templateName}`,
+            windowExpiresAt: windowExpiry,
+            isWindowOpen: true,
+          },
+        });
+      }
+
+      await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          whatsappAccountId: accountId,
+          waMessageId: waMessageId,
+          wamId: waMessageId,
+          direction: 'OUTBOUND',
+          type: 'TEMPLATE',
+          content: JSON.stringify({
+            templateName,
+            language: templateLang,
+            params,
+          }),
+          status: 'SENT',
+          templateId,
+          sentAt: now,
+          metadata: {
+            campaignId,
+            campaignName,
+          },
+        },
+      });
+
+      console.log(`💾 Campaign message saved with conversation: ${waMessageId}`);
+    } catch (saveErr: any) {
+      console.error('⚠️ Failed to save campaign message:', saveErr.message);
+    }
   }
 
   // ==========================================

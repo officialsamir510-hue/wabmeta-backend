@@ -319,7 +319,9 @@ export class ContactsService {
       hasWhatsAppProfile,
     } = query;
 
-    const skip = (page - 1) * limit;
+    // ✅ Allow higher limits but cap at 10000
+    const safeLimit = Math.min(limit, 10000);
+    const skip = (page - 1) * safeLimit;
     const where: Prisma.ContactWhereInput = { organizationId };
 
     if (search) {
@@ -340,7 +342,7 @@ export class ContactsService {
       prisma.contact.findMany({
         where,
         skip,
-        take: limit,
+        take: safeLimit,
         orderBy: { [sortBy]: sortOrder },
       }),
       prisma.contact.count({ where }),
@@ -348,7 +350,7 @@ export class ContactsService {
 
     return {
       contacts: contacts.map(formatContact),
-      meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      meta: { page, limit: safeLimit, total, totalPages: Math.ceil(total / safeLimit) },
     };
   }
 

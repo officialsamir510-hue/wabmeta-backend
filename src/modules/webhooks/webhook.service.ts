@@ -282,7 +282,7 @@ export class WebhookService {
   }
 
   // -----------------------------
-  // Status update processing - ✅ ENHANCED WITH CAMPAIGN SYNC
+  // Status update processing - ✅ FIXED WITH CAMPAIGN SYNC
   // -----------------------------
   private async processStatusUpdate(statusObj: any, organizationId: string, whatsappAccountId: string) {
     try {
@@ -291,16 +291,32 @@ export class WebhookService {
       const ts = Number(statusObj?.timestamp || Date.now() / 1000);
       const statusTime = new Date(ts * 1000);
 
+      if (!waMessageId) {
+        console.warn('⚠️ No waMessageId in status update');
+        return;
+      }
+
+      console.log(`📬 Processing status update: ${waMessageId} -> ${st}`);
+
+      // Find message
       const message = await prisma.message.findFirst({
-        where: { waMessageId, whatsappAccountId },
+        where: {
+          OR: [
+            { waMessageId },
+            { wamId: waMessageId }
+          ]
+        },
         include: {
           conversation: {
-            select: { contactId: true }
+            select: { contactId: true, organizationId: true }
           }
         }
       });
 
-      if (!message) return;
+      if (!message) {
+        console.log(`⚠️ Message not found for waMessageId: ${waMessageId}`);
+        return;
+      }
 
       let newStatus: MessageStatus = 'SENT';
       if (st === 'sent') newStatus = 'SENT';
@@ -326,9 +342,11 @@ export class WebhookService {
         },
       });
 
-      // ✅ Emit socket event
+      console.log(`✅ Message status updated: ${waMessageId} -> ${newStatus}`);
+
+      // Emit socket event
       webhookEvents.emit('messageStatus', {
-        organizationId,
+        organizationId: (message as any).conversation?.organizationId || organizationId,
         conversationId: message.conversationId,
         messageId: message.id,
         waMessageId,
@@ -336,90 +354,149 @@ export class WebhookService {
         timestamp: statusTime.toISOString(),
       });
 
-      console.log(`✅ Status updated wa:${waMessageId} -> ${newStatus}`);
+      // ✅ CRITICAL: Update CampaignContact if this is a campaign message
+      await this.updateCampaignContactStatus(waMessageId, newStatus, statusTime);
 
-      // ✅ NEW: Update CampaignContact if this is a campaign message
-      const contactId = (message as any).conversation?.contactId;
+    } catch (e) {
+      console.error('processStatusUpdate error:', e);
+    }
+  }
 
-      if (contactId) {
-        const campaignContact = await prisma.campaignContact.findFirst({
-          where: {
-            contactId,
-            waMessageId,
-          },
+  // ✅ NEW: Separate method for campaign contact update
+  private async updateCampaignContactStatus(
+    waMessageId: string,
+    newStatus: MessageStatus,
+    statusTime: Date
+  ) {
+    try {
+      // Find campaign contact by waMessageId
+      const campaignContact = await prisma.campaignContact.findFirst({
+        where: { waMessageId },
+        select: {
+          id: true,
+          campaignId: true,
+          contactId: true,
+          status: true,
+        },
+      });
+
+      if (!campaignContact) {
+        // Not a campaign message, skip
+        return;
+      }
+
+      console.log(`📊 Found campaign contact: ${campaignContact.id} for campaign: ${campaignContact.campaignId}`);
+
+      const currentStatus = campaignContact.status;
+
+      // Define status priority
+      const statusPriority: Record<string, number> = {
+        'PENDING': 0,
+        'SENT': 1,
+        'DELIVERED': 2,
+        'READ': 3,
+        'FAILED': -1,
+      };
+
+      const currentPriority = statusPriority[currentStatus] ?? 0;
+      const newPriority = statusPriority[newStatus] ?? 0;
+
+      // Only update if new status is better (higher priority) or it's a failure
+      if (newPriority <= currentPriority && newStatus !== 'FAILED') {
+        console.log(`⏭️ Skipping update: ${currentStatus} -> ${newStatus} (not an upgrade)`);
+        return;
+      }
+
+      // Update campaign contact
+      await prisma.campaignContact.update({
+        where: { id: campaignContact.id },
+        data: {
+          status: newStatus,
+          ...(newStatus === 'DELIVERED' ? { deliveredAt: statusTime } : {}),
+          ...(newStatus === 'READ' ? { readAt: statusTime } : {}),
+          ...(newStatus === 'FAILED' ? {
+            failedAt: statusTime,
+            failureReason: 'Delivery failed'
+          } : {}),
+        },
+      });
+
+      console.log(`✅ Campaign contact updated: ${campaignContact.id} -> ${newStatus}`);
+
+      // Get campaign for stats update
+      const campaign = await prisma.campaign.findUnique({
+        where: { id: campaignContact.campaignId },
+        select: {
+          id: true,
+          organizationId: true,
+          deliveredCount: true,
+          readCount: true,
+          failedCount: true,
+          sentCount: true,
+          totalContacts: true,
+        },
+      });
+
+      if (!campaign) return;
+
+      // Update campaign stats based on status transition
+      const updateData: any = {};
+
+      if (newStatus === 'DELIVERED' && currentStatus !== 'DELIVERED' && currentStatus !== 'READ') {
+        updateData.deliveredCount = { increment: 1 };
+      }
+
+      if (newStatus === 'READ' && currentStatus !== 'READ') {
+        updateData.readCount = { increment: 1 };
+        // If we jumped from SENT to READ, also count as delivered
+        if (currentStatus === 'SENT') {
+          updateData.deliveredCount = { increment: 1 };
+        }
+      }
+
+      if (newStatus === 'FAILED' && currentStatus !== 'FAILED') {
+        updateData.failedCount = { increment: 1 };
+      }
+
+      if (Object.keys(updateData).length > 0) {
+        await prisma.campaign.update({
+          where: { id: campaign.id },
+          data: updateData,
+        });
+
+        console.log(`✅ Campaign ${campaign.id} stats updated:`, updateData);
+
+        // Emit socket event for real-time update
+        const updatedCampaign = await prisma.campaign.findUnique({
+          where: { id: campaign.id },
           select: {
-            id: true,
-            campaignId: true,
-            status: true,
+            sentCount: true,
+            deliveredCount: true,
+            readCount: true,
+            failedCount: true,
+            totalContacts: true,
           },
         });
 
-        if (campaignContact) {
-          console.log(`📊 Updating campaign contact status: ${campaignContact.id}`);
-
-          // Only update if new status is "better" than current
-          const shouldUpdate =
-            (campaignContact.status === 'SENT' && ['DELIVERED', 'READ'].includes(newStatus)) ||
-            (campaignContact.status === 'DELIVERED' && newStatus === 'READ');
-
-          if (shouldUpdate) {
-            // Update campaign contact
-            await prisma.campaignContact.update({
-              where: { id: campaignContact.id },
-              data: {
-                status: newStatus,
-                ...(newStatus === 'DELIVERED' ? { deliveredAt: statusTime } : {}),
-                ...(newStatus === 'READ' ? { readAt: statusTime } : {}),
-              },
-            });
-
-            // Update campaign stats
-            const campaign = await prisma.campaign.findUnique({
-              where: { id: campaignContact.campaignId },
-              select: {
-                id: true,
-                organizationId: true,
-                deliveredCount: true,
-                readCount: true,
-              },
-            });
-
-            if (campaign) {
-              if (newStatus === 'DELIVERED') {
-                await prisma.campaign.update({
-                  where: { id: campaign.id },
-                  data: { deliveredCount: { increment: 1 } },
-                });
-                console.log(`✅ Campaign ${campaign.id} deliveredCount incremented`);
-              }
-
-              if (newStatus === 'READ') {
-                await prisma.campaign.update({
-                  where: { id: campaign.id },
-                  data: { readCount: { increment: 1 } },
-                });
-                console.log(`✅ Campaign ${campaign.id} readCount incremented`);
-              }
-
-              // ✅ Emit campaign status update via socket
-              const { campaignSocketService } = await import('../campaigns/campaigns.socket');
-
-              campaignSocketService.emitContactStatus(
-                campaign.organizationId,
-                campaign.id,
-                {
-                  contactId,
-                  phone: '', // We don't have phone here, but contactId is enough
-                  status: newStatus,
-                  messageId: waMessageId,
-                }
-              );
-            }
-          }
+        if (updatedCampaign) {
+          webhookEvents.emit('campaignStatus', {
+            organizationId: campaign.organizationId,
+            campaignId: campaign.id,
+            sent: updatedCampaign.sentCount,
+            delivered: updatedCampaign.deliveredCount,
+            read: updatedCampaign.readCount,
+            failed: updatedCampaign.failedCount,
+            total: updatedCampaign.totalContacts,
+            percentage: Math.round(
+              ((updatedCampaign.sentCount + updatedCampaign.failedCount) / updatedCampaign.totalContacts) * 100
+            ),
+            status: 'RUNNING',
+          });
         }
       }
+
     } catch (e) {
-      console.error('processStatusUpdate error:', e);
+      console.error('updateCampaignContactStatus error:', e);
     }
   }
 
