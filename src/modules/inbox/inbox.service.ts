@@ -18,7 +18,7 @@ export class InboxService {
   async getConversations(organizationId: string, query: any = {}) {
     const {
       page = 1,
-      limit = 50,
+      limit = 200,  // ✅ Increased default limit
       search,
       isArchived,
       isRead,
@@ -32,13 +32,14 @@ export class InboxService {
       organizationId,
     };
 
-    // Filters
-    if (isArchived !== undefined) {
-      where.isArchived = isArchived;
+    // ✅ Only apply isArchived filter if explicitly provided
+    if (isArchived !== undefined && isArchived !== null && isArchived !== '') {
+      where.isArchived = isArchived === true || isArchived === 'true';
     }
 
-    if (isRead !== undefined) {
-      where.isRead = isRead;
+    // ✅ Only apply isRead filter if explicitly provided
+    if (isRead !== undefined && isRead !== null && isRead !== '') {
+      where.isRead = isRead === true || isRead === 'true';
     }
 
     if (assignedTo) {
@@ -50,7 +51,7 @@ export class InboxService {
     }
 
     // Search
-    if (search) {
+    if (search && search.trim()) {
       where.OR = [
         {
           contact: {
@@ -59,12 +60,15 @@ export class InboxService {
               { lastName: { contains: search, mode: 'insensitive' } },
               { phone: { contains: search } },
               { email: { contains: search, mode: 'insensitive' } },
+              { whatsappProfileName: { contains: search, mode: 'insensitive' } },
             ],
           },
         },
         { lastMessagePreview: { contains: search, mode: 'insensitive' } },
       ];
     }
+
+    console.log('📥 Fetching conversations with where:', JSON.stringify(where, null, 2));
 
     const [conversations, total] = await Promise.all([
       prisma.conversation.findMany({
@@ -83,7 +87,10 @@ export class InboxService {
             },
           },
         },
-        orderBy: { [sortBy]: sortOrder },
+        orderBy: [
+          { isPinned: 'desc' },  // ✅ Pinned first
+          { [sortBy]: sortOrder },
+        ],
         skip: (page - 1) * limit,
         take: limit,
       }),
@@ -102,6 +109,8 @@ export class InboxService {
             : conv.contact.phone),
       },
     }));
+
+    console.log(`✅ Found ${transformed.length} conversations (total: ${total})`);
 
     return {
       conversations: transformed,
