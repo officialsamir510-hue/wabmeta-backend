@@ -124,7 +124,17 @@ export class InboxController {
         ...req.body,
       };
 
+      // ✅ Send message
       const message = await inboxService.sendMessage(organizationId, userId, id, input);
+
+      // ✅ Emit socket event for real-time update
+      const { webhookEvents } = await import('../webhooks/webhook.service');
+      webhookEvents.emit('newMessage', {
+        organizationId,
+        conversationId: id,
+        message,
+      });
+
       return sendSuccess(res, message, 'Message sent successfully', 201);
     } catch (error) {
       next(error);
