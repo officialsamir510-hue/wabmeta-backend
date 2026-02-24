@@ -76,7 +76,7 @@ export const config = {
   email: {
     enabled: getEnv('EMAIL_ENABLED') === 'true',
     resendApiKey: getEnv('RESEND_API_KEY'),
-    from: getEnv('EMAIL_FROM', 'onboarding@resend.dev'),
+    from: getEnv('EMAIL_FROM', 'noreply@wabmeta.com'),
     fromName: getEnv('EMAIL_FROM_NAME', 'WabMeta'),
     smtp: {
       host: getEnv('SMTP_HOST'),
