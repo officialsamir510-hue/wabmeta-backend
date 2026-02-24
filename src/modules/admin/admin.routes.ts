@@ -140,7 +140,18 @@ router.delete(
   '/users/:id',
   requireSuperAdmin,
   validate(deleteUserSchema),
-  adminController.deleteUser.bind(adminController)
+  (req, res, next) => adminController.deleteUser(req, res, next)
+);
+
+/**
+ * @route   POST /api/v1/admin/transfer-ownership
+ * @desc    Transfer organization ownership
+ * @access  Super Admin
+ */
+router.post(
+  '/transfer-ownership',
+  requireSuperAdmin,
+  (req, res, next) => adminController.transferOwnership(req, res, next)
 );
 
 // ============================================

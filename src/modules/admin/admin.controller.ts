@@ -281,8 +281,39 @@ export class AdminController {
         throw new AppError('User ID is required', 400);
       }
 
-      const result = await adminService.deleteUser(id);
-      return sendSuccess(res, null, result.message);
+      // ✅ Get query params for delete options
+      const force = req.query.force === 'true';
+      const transferOwnership = req.query.transferOwnership === 'true';
+
+      const result = await adminService.deleteUser(id, {
+        force,
+        transferOwnership,
+      });
+
+      return sendSuccess(res, result, result.message);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ============================================
+  // TRANSFER OWNERSHIP
+  // ============================================
+
+  async transferOwnership(req: AdminRequest, res: Response, next: NextFunction) {
+    try {
+      const { organizationId, newOwnerId } = req.body;
+
+      if (!organizationId || !newOwnerId) {
+        throw new AppError('organizationId and newOwnerId are required', 400);
+      }
+
+      const result = await adminService.transferOrganizationOwnership(
+        organizationId,
+        newOwnerId
+      );
+
+      return sendSuccess(res, result, result.message);
     } catch (error) {
       next(error);
     }
