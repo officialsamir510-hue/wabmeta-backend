@@ -1,4 +1,4 @@
-// src/socket.ts - COMPLETE FIXED VERSION
+// src/socket.ts - SIMPLIFIED WORKING VERSION
 
 import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
@@ -12,281 +12,141 @@ interface AuthenticatedSocket extends Socket {
   email?: string;
 }
 
-interface JWTPayload {
-  userId?: string;
-  id?: string;
-  organizationId?: string;
-  email?: string;
-}
-
 let io: Server;
 
 export const initializeSocket = (server: HttpServer) => {
-  console.log('🔌 Initializing Socket.IO server...');
-  console.log('   CORS Origins:', config.frontend.corsOrigins);
+  console.log('🔌 Starting Socket.IO...');
 
+  // ✅ SIMPLIFIED CORS - allow all for debugging
   io = new Server(server, {
     cors: {
-      origin: (origin, callback) => {
-        // Allow all origins in development or if origin matches allowed list
-        const allowed = [
-          'http://localhost:3000',
-          'http://localhost:5173',
-          'http://localhost:5174',
-          'https://wabmeta.com',
-          'https://www.wabmeta.com',
-        ];
-
-        // Allow requests with no origin (mobile apps, curl, etc.)
-        if (!origin) {
-          return callback(null, true);
-        }
-
-        if (allowed.includes(origin) || origin.includes('wabmeta')) {
-          callback(null, true);
-        } else {
-          console.warn(`⚠️ Socket CORS blocked origin: ${origin}`);
-          callback(null, true); // Allow anyway for now
-        }
-      },
+      origin: '*', // Allow all origins for now
       methods: ['GET', 'POST'],
       credentials: true,
     },
+    transports: ['polling', 'websocket'],
+    path: '/socket.io/',
     pingTimeout: 60000,
     pingInterval: 25000,
-    transports: ['websocket', 'polling'],
-    path: '/socket.io',
-    allowEIO3: true, // ✅ Allow Engine.IO 3 clients
   });
 
-  // ✅ Auth middleware - more lenient
+  // ✅ Auth middleware - lenient
   io.use((socket: AuthenticatedSocket, next) => {
-    try {
-      const token =
-        (socket.handshake.auth as any)?.token ||
-        socket.handshake.headers.authorization?.split(' ')[1] ||
-        (socket.handshake.query as any)?.token;
+    const token = socket.handshake.auth?.token ||
+      socket.handshake.headers?.authorization?.split(' ')[1];
 
-      console.log(`🔐 Socket auth attempt: ${socket.id.substring(0, 8)}...`, {
-        hasToken: !!token,
-        authKeys: Object.keys(socket.handshake.auth || {}),
-      });
-
-      if (!token) {
-        console.log('⚠️ No token provided, allowing anonymous connection');
-        return next();
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, config.jwt.secret) as any;
+        socket.userId = decoded.userId || decoded.id;
+        socket.organizationId = decoded.organizationId || socket.handshake.auth?.organizationId;
+        socket.email = decoded.email;
+      } catch (e) {
+        console.warn('⚠️ Invalid token, allowing anyway');
       }
-
-      const decoded = jwt.verify(token, config.jwt.secret) as JWTPayload;
-
-      socket.userId = decoded.userId || decoded.id;
-      socket.organizationId = decoded.organizationId;
-      socket.email = decoded.email;
-
-      // Fallback org from handshake
-      const orgFromAuth = (socket.handshake.auth as any)?.organizationId;
-      if (!socket.organizationId && orgFromAuth) {
-        socket.organizationId = String(orgFromAuth);
-      }
-
-      console.log(`✅ Socket authenticated: ${socket.email || socket.userId}`);
-      next();
-    } catch (e: any) {
-      console.warn(`⚠️ Socket auth failed: ${e.message}, allowing connection anyway`);
-      next(); // Allow connection anyway
     }
+    next(); // Always allow connection
   });
 
   io.on('connection', (socket: AuthenticatedSocket) => {
-    console.log(`🔌 Socket connected: ${socket.email || socket.userId || 'anonymous'} (${socket.id})`);
+    console.log(`🔌 Connected: ${socket.id} (user: ${socket.userId || 'anon'})`);
 
     // Auto-join org room
     if (socket.organizationId) {
-      const rooms = [
-        `org:${socket.organizationId}`,
-        `org:${socket.organizationId}:campaigns`,
-        `org:${socket.organizationId}:inbox`,
-      ];
-      rooms.forEach(room => socket.join(room));
-      console.log(`📂 Auto-joined rooms:`, rooms);
+      socket.join(`org:${socket.organizationId}`);
+      console.log(`📂 Auto-joined org:${socket.organizationId}`);
     }
 
-    if (socket.userId) {
-      socket.join(`user:${socket.userId}`);
-    }
-
-    // ✅ Org join handler
+    // Manual org join
     socket.on('org:join', (orgId: string) => {
-      if (!orgId) return;
-
-      socket.organizationId = socket.organizationId || orgId;
-      const rooms = [
-        `org:${orgId}`,
-        `org:${orgId}:campaigns`,
-        `org:${orgId}:inbox`,
-      ];
-      rooms.forEach(room => socket.join(room));
-      console.log(`📂 Explicit org join: ${orgId}`);
+      if (orgId) {
+        socket.organizationId = orgId;
+        socket.join(`org:${orgId}`);
+        console.log(`📂 Joined org:${orgId}`);
+      }
     });
 
     // Campaign rooms
-    socket.on('campaign:join', (campaignId: string) => {
-      if (!campaignId) return;
-      socket.join(`campaign:${campaignId}`);
-      console.log(`📊 Joined campaign: ${campaignId}`);
+    socket.on('campaign:join', (id: string) => {
+      if (id) {
+        socket.join(`campaign:${id}`);
+        console.log(`📊 Joined campaign:${id}`);
+      }
     });
 
-    socket.on('campaign:leave', (campaignId: string) => {
-      if (!campaignId) return;
-      socket.leave(`campaign:${campaignId}`);
+    socket.on('campaign:leave', (id: string) => {
+      if (id) socket.leave(`campaign:${id}`);
     });
 
     // Conversation rooms
-    socket.on('join:conversation', (conversationId: string) => {
-      if (!conversationId) return;
-      socket.join(`conversation:${conversationId}`);
-      console.log(`💬 Joined conversation: ${conversationId}`);
-    });
-
-    socket.on('leave:conversation', (conversationId: string) => {
-      if (!conversationId) return;
-      socket.leave(`conversation:${conversationId}`);
-    });
-
-    // Typing indicators
-    socket.on('typing:start', ({ conversationId }) => {
-      if (conversationId) {
-        socket.to(`conversation:${conversationId}`).emit('typing:start', {
-          conversationId,
-          userId: socket.userId,
-        });
+    socket.on('join:conversation', (id: string) => {
+      if (id) {
+        socket.join(`conversation:${id}`);
+        console.log(`💬 Joined conversation:${id}`);
       }
     });
 
-    socket.on('typing:stop', ({ conversationId }) => {
-      if (conversationId) {
-        socket.to(`conversation:${conversationId}`).emit('typing:stop', {
-          conversationId,
-          userId: socket.userId,
-        });
-      }
+    socket.on('leave:conversation', (id: string) => {
+      if (id) socket.leave(`conversation:${id}`);
     });
 
-    // Ping/pong
+    // Ping
     socket.on('ping', () => {
-      socket.emit('pong', { timestamp: Date.now(), socketId: socket.id });
+      socket.emit('pong', { time: Date.now() });
     });
 
     socket.on('disconnect', (reason) => {
-      console.log(`🔌 Socket disconnected: ${socket.id} (${reason})`);
-    });
-
-    socket.on('error', (error) => {
-      console.error(`❌ Socket error for ${socket.id}:`, error);
+      console.log(`🔌 Disconnected: ${socket.id} (${reason})`);
     });
   });
 
-  // Log connection stats periodically
-  setInterval(() => {
-    const sockets = io.sockets.sockets.size;
-    if (sockets > 0) {
-      console.log(`📊 Socket stats: ${sockets} connected clients`);
-    }
-  }, 60000);
-
-  // ✅ Initialize campaign socket
+  // Init campaign socket
   initializeCampaignSocket(io);
-  console.log('✅ Campaign Socket Service initialized');
 
-  // ✅ Wire webhook events
-  initializeWebhookEvents().catch((e) => console.error('initializeWebhookEvents error', e));
+  // Wire webhook events
+  wireWebhookEvents();
 
-  console.log('✅ Socket.IO server initialized successfully');
+  console.log('✅ Socket.IO ready');
   return io;
 };
 
-async function initializeWebhookEvents() {
-  try {
-    const webhookModule = await import('./modules/webhooks/webhook.service');
-    const webhookEvents = webhookModule.webhookEvents;
+function wireWebhookEvents() {
+  import('./modules/webhooks/webhook.service')
+    .then((module) => {
+      const { webhookEvents } = module;
 
-    if (!webhookEvents) {
-      console.log('ℹ️ webhookEvents not found');
-      return;
-    }
+      if (!webhookEvents) return;
 
-    // New message
-    webhookEvents.on('newMessage', (data: any) => {
-      if (!data?.organizationId) return;
-
-      const rooms = [
-        `org:${data.organizationId}`,
-        `org:${data.organizationId}:inbox`,
-      ];
-
-      rooms.forEach(room => {
-        io.to(room).emit('message:new', data);
+      webhookEvents.on('newMessage', (data: any) => {
+        if (!data?.organizationId) return;
+        io.to(`org:${data.organizationId}`).emit('message:new', data);
+        if (data.conversationId) {
+          io.to(`conversation:${data.conversationId}`).emit('message:new', data);
+        }
+        console.log(`📡 Emitted message:new`);
       });
 
-      if (data.conversationId) {
-        io.to(`conversation:${data.conversationId}`).emit('message:new', data);
-      }
-
-      console.log(`📡 Emitted newMessage to org:${data.organizationId}`);
-    });
-
-    // Conversation updated
-    webhookEvents.on('conversationUpdated', (data: any) => {
-      if (!data?.organizationId) return;
-
-      io.to(`org:${data.organizationId}`).emit('conversation:updated', data);
-      io.to(`org:${data.organizationId}:inbox`).emit('conversation:updated', data);
-    });
-
-    // ✅ CRITICAL: Message status update
-    webhookEvents.on('messageStatus', (data: any) => {
-      if (!data?.organizationId) return;
-
-      console.log(`📡 Emitting messageStatus to org:${data.organizationId}`, {
-        messageId: data.messageId,
-        status: data.status,
+      webhookEvents.on('conversationUpdated', (data: any) => {
+        if (!data?.organizationId) return;
+        io.to(`org:${data.organizationId}`).emit('conversation:updated', data);
       });
 
-      // Emit to all relevant rooms
-      const rooms = [
-        `org:${data.organizationId}`,
-        `org:${data.organizationId}:inbox`,
-      ];
-
-      rooms.forEach(room => {
-        io.to(room).emit('message:status', data);
+      webhookEvents.on('messageStatus', (data: any) => {
+        if (!data?.organizationId) return;
+        io.to(`org:${data.organizationId}`).emit('message:status', data);
+        if (data.conversationId) {
+          io.to(`conversation:${data.conversationId}`).emit('message:status', data);
+        }
+        console.log(`📡 Emitted message:status: ${data.messageId} -> ${data.status}`);
       });
 
-      if (data.conversationId) {
-        io.to(`conversation:${data.conversationId}`).emit('message:status', data);
-      }
-    });
-
-    // Campaign status
-    webhookEvents.on('campaignStatus', (data: any) => {
-      if (!data?.organizationId) return;
-
-      io.to(`org:${data.organizationId}`).emit('campaign:progress', data);
-      io.to(`org:${data.organizationId}:campaigns`).emit('campaign:progress', data);
-
-      if (data.campaignId) {
-        io.to(`campaign:${data.campaignId}`).emit('campaign:progress', data);
-      }
-    });
-
-    console.log('✅ Webhook events wired to Socket.IO');
-  } catch (e) {
-    console.error('❌ Failed to initialize webhook events:', e);
-  }
+      console.log('✅ Webhook events wired');
+    })
+    .catch((e) => console.log('ℹ️ Webhook events not available'));
 }
 
 export const getIO = (): Server => {
-  if (!io) throw new Error('Socket.IO not initialized');
+  if (!io) throw new Error('Socket not initialized');
   return io;
 };
 
