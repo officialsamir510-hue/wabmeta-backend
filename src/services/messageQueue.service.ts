@@ -14,9 +14,29 @@ if (!redisUrl) {
     console.warn('⚠️ Messages will NOT be sent automatically!');
 }
 
-// Create queue
-export const messageQueue = new Bull('whatsapp-messages', {
-    redis: redisUrl || 'redis://localhost:6379',
+// ✅ Create queue with optimized Redis config
+const createRedisClient = () => {
+    if (!redisUrl) return undefined;
+
+    // Bull handles the connection, but we want to ensure TLS and retry settings are correct
+    const isSecure = redisUrl.startsWith('rediss://');
+
+    return {
+        redis: redisUrl,
+        // Optional: you can pass an object if you need more control
+        // 但 most of the time passing the URL string to Bull is fine 
+        // IF we handle the TLS correctly if it doesn't auto-detect.
+    };
+};
+
+// Bull actually prefers an options object for the whole thing or a URL
+export const messageQueue = new Bull('whatsapp-messages', redisUrl || 'redis://localhost:6379', {
+    redis: {
+        // Correct way to handle TLS with some providers
+        tls: redisUrl?.startsWith('rediss://') ? { rejectUnauthorized: false } : undefined,
+        maxRetriesPerRequest: null,
+        enableReadyCheck: false,
+    },
     limiter: {
         max: 80, // Meta allows 80 messages/sec
         duration: 1000,

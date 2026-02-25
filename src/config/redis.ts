@@ -13,9 +13,17 @@ export const initRedis = () => {
 
     redis = new Redis(config.redis.url, {
         maxRetriesPerRequest: 3,
+        tls: config.redis.url.startsWith('rediss://') ? { rejectUnauthorized: false } : undefined,
         retryStrategy(times) {
-            const delay = Math.min(times * 50, 2000);
+            const delay = Math.min(times * 100, 3000);
             return delay;
+        },
+        reconnectOnError(err) {
+            const targetError = 'READONLY';
+            if (err.message.includes(targetError)) {
+                return true;
+            }
+            return false;
         },
     });
 
