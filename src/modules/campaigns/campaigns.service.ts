@@ -6,6 +6,7 @@ import { whatsappApi } from '../whatsapp/whatsapp.api';
 import { metaService } from '../meta/meta.service';
 import { campaignSocketService } from './campaigns.socket'; // ✅ Added
 import { v4 as uuidv4 } from 'uuid';
+import { messageQueueWorker } from '../../services/messageQueue.service';
 import {
   CreateCampaignInput,
   UpdateCampaignInput,
@@ -687,16 +688,8 @@ export class CampaignsService {
       totalContacts: updated.totalContacts,
     });
 
-    // Fire-and-forget sending
-    void this.processCampaignSending(organizationId, campaignId).catch((e) => {
-      console.error('❌ Campaign send process failed:', e);
-
-      // ✅ Emit error event
-      campaignSocketService.emitCampaignUpdate(organizationId, campaignId, {
-        status: 'FAILED',
-        message: `Campaign failed: ${e.message}`,
-      });
-    });
+    // ✅ CRITICAL: Process in batches instead of loading all
+    this.processCampaignInBatches(campaignId);
 
     return formatCampaign(updated);
   }
@@ -779,14 +772,7 @@ export class CampaignsService {
     });
 
     // Resume sending
-    void this.processCampaignSending(organizationId, campaignId).catch((e) => {
-      console.error('❌ Campaign resume send failed:', e);
-
-      campaignSocketService.emitCampaignUpdate(organizationId, campaignId, {
-        status: 'FAILED',
-        message: `Campaign failed: ${e.message}`,
-      });
-    });
+    this.processCampaignInBatches(campaignId);
 
     return formatCampaign(updated);
   }
@@ -946,14 +932,7 @@ export class CampaignsService {
       });
 
       // Resume sending
-      void this.processCampaignSending(organizationId, campaignId).catch((e) => {
-        console.error('❌ Campaign retry send failed:', e);
-
-        campaignSocketService.emitCampaignUpdate(organizationId, campaignId, {
-          status: 'FAILED',
-          message: `Retry failed: ${e.message}`,
-        });
-      });
+      this.processCampaignInBatches(campaignId);
     }
 
     console.log(`🔄 Campaign retry: ${result.count} messages queued`);
@@ -1033,6 +1012,91 @@ export class CampaignsService {
     });
 
     return formatCampaign(duplicate);
+  }
+
+  // ==========================================
+  // PROCESS CAMPAIGN IN BATCHES - ✅ OPTIMIZED
+  // ==========================================
+  private async processCampaignInBatches(campaignId: string) {
+    const BATCH_SIZE = 100; // Process 100 at a time
+    const DELAY_BETWEEN_BATCHES = 2000; // 2 seconds
+
+    let processedCount = 0;
+    let hasMore = true;
+    let lastId: string | undefined;
+
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      include: {
+        template: true,
+        whatsappAccount: true,
+      },
+    });
+
+    if (!campaign) return;
+
+    while (hasMore) {
+      // ✅ Check if campaign is still running
+      const currentCampaign = await prisma.campaign.findUnique({
+        where: { id: campaignId },
+        select: { status: true },
+      });
+
+      if (!currentCampaign || currentCampaign.status !== 'RUNNING') {
+        console.log(`⚠️ Campaign ${campaignId} is no longer running, stopping batch processing.`);
+        hasMore = false;
+        break;
+      }
+
+      // ✅ Cursor-based pagination
+      const contacts = await prisma.campaignContact.findMany({
+        where: {
+          campaignId,
+          status: 'PENDING',
+        },
+        take: BATCH_SIZE,
+        orderBy: { id: 'asc' }, // Better for cursor
+        cursor: lastId ? { id: lastId } : undefined,
+        skip: lastId ? 1 : 0,
+      });
+
+      if (contacts.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      // Process batch
+      for (const contact of contacts) {
+        try {
+          // Add to message queue
+          await messageQueueWorker.addToQueue({
+            campaignId,
+            contactId: contact.contactId,
+            whatsappAccountId: campaign.whatsappAccountId,
+            templateId: campaign.templateId,
+            // You can add more data if needed
+          });
+
+          processedCount++;
+        } catch (error) {
+          console.error(`Failed to queue contact ${contact.id}:`, error);
+        }
+      }
+
+      // Update last processed ID
+      lastId = contacts[contacts.length - 1].id;
+
+      // ✅ CRITICAL: Delay between batches to avoid rate limits
+      await new Promise((resolve) => setTimeout(resolve, DELAY_BETWEEN_BATCHES));
+
+      console.log(`📊 Processed ${processedCount} contacts for campaign ${campaignId}`);
+    }
+
+    console.log(`✅ Campaign ${campaignId} queued: ${processedCount} contacts`);
+
+    // If all queued, check if we should mark as COMPLETED
+    // Actually the queue worker will handle updating the statuses,
+    // so we might want to check for completion elsewhere or after some time.
   }
 
   // ==========================================

@@ -1,4 +1,4 @@
-// src/socket.ts - SIMPLIFIED WORKING VERSION
+// src/socket.ts - OPTIMIZED VERSION
 
 import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
@@ -13,24 +13,39 @@ interface AuthenticatedSocket extends Socket {
 }
 
 let io: Server;
+let webhookListenersAttached = false; // ✅ Flag to prevent duplicate listeners
 
 export const initializeSocket = (server: HttpServer) => {
   console.log('🔌 Starting Socket.IO...');
 
-  // ✅ SIMPLIFIED CORS - allow all for debugging
   io = new Server(server, {
     cors: {
-      origin: '*', // Allow all origins for now
+      origin: config.frontendUrl,
       methods: ['GET', 'POST'],
       credentials: true,
     },
-    transports: ['polling', 'websocket'],
+    transports: ['websocket', 'polling'],
     path: '/socket.io/',
+
+    // ✅ CRITICAL: Connection limits
     pingTimeout: 60000,
     pingInterval: 25000,
+    maxHttpBufferSize: 1e6, // 1MB max message size
+
+    // ✅ NEW: Performance optimizations
+    perMessageDeflate: {
+      threshold: 1024, // Compress messages > 1KB
+    },
+    httpCompression: {
+      threshold: 1024,
+    },
   });
 
-  // ✅ Auth middleware - lenient
+  // ✅ Connection tracking
+  let connectionCount = 0;
+  const MAX_CONNECTIONS = 10000; // Safety limit
+
+  // Auth middleware
   io.use((socket: AuthenticatedSocket, next) => {
     const token = socket.handshake.auth?.token ||
       socket.handshake.headers?.authorization?.split(' ')[1];
@@ -42,19 +57,28 @@ export const initializeSocket = (server: HttpServer) => {
         socket.organizationId = decoded.organizationId || socket.handshake.auth?.organizationId;
         socket.email = decoded.email;
       } catch (e) {
-        console.warn('⚠️ Invalid token, allowing anyway');
+        console.warn('⚠️ Invalid token');
       }
     }
-    next(); // Always allow connection
+    next();
   });
 
   io.on('connection', (socket: AuthenticatedSocket) => {
-    console.log(`🔌 Connected: ${socket.id} (user: ${socket.userId || 'anon'})`);
+    connectionCount++;
+
+    // ✅ CRITICAL: Limit connections
+    if (connectionCount > MAX_CONNECTIONS) {
+      console.error('🚨 Max connections reached!');
+      socket.emit('error', 'Server capacity reached');
+      socket.disconnect(true);
+      return;
+    }
+
+    console.log(`🔌 Connected: ${socket.id} (total: ${connectionCount})`);
 
     // Auto-join org room
     if (socket.organizationId) {
       socket.join(`org:${socket.organizationId}`);
-      console.log(`📂 Auto-joined org:${socket.organizationId}`);
     }
 
     // Manual org join
@@ -62,16 +86,12 @@ export const initializeSocket = (server: HttpServer) => {
       if (orgId) {
         socket.organizationId = orgId;
         socket.join(`org:${orgId}`);
-        console.log(`📂 Joined org:${orgId}`);
       }
     });
 
     // Campaign rooms
     socket.on('campaign:join', (id: string) => {
-      if (id) {
-        socket.join(`campaign:${id}`);
-        console.log(`📊 Joined campaign:${id}`);
-      }
+      if (id) socket.join(`campaign:${id}`);
     });
 
     socket.on('campaign:leave', (id: string) => {
@@ -80,31 +100,32 @@ export const initializeSocket = (server: HttpServer) => {
 
     // Conversation rooms
     socket.on('join:conversation', (id: string) => {
-      if (id) {
-        socket.join(`conversation:${id}`);
-        console.log(`💬 Joined conversation:${id}`);
-      }
+      if (id) socket.join(`conversation:${id}`);
     });
 
     socket.on('leave:conversation', (id: string) => {
       if (id) socket.leave(`conversation:${id}`);
     });
 
-    // Ping
+    // Ping/pong
     socket.on('ping', () => {
       socket.emit('pong', { time: Date.now() });
     });
 
     socket.on('disconnect', (reason) => {
-      console.log(`🔌 Disconnected: ${socket.id} (${reason})`);
+      connectionCount--;
+      console.log(`🔌 Disconnected: ${socket.id} (${reason}), total: ${connectionCount}`);
     });
   });
 
   // Init campaign socket
   initializeCampaignSocket(io);
 
-  // Wire webhook events
-  wireWebhookEvents();
+  // ✅ CRITICAL FIX: Attach webhook listeners ONLY ONCE
+  if (!webhookListenersAttached) {
+    wireWebhookEvents();
+    webhookListenersAttached = true;
+  }
 
   console.log('✅ Socket.IO ready');
   return io;
@@ -117,13 +138,35 @@ function wireWebhookEvents() {
 
       if (!webhookEvents) return;
 
+      // ✅ CRITICAL: Remove all previous listeners first
+      webhookEvents.removeAllListeners('newMessage');
+      webhookEvents.removeAllListeners('conversationUpdated');
+      webhookEvents.removeAllListeners('messageStatus');
+
+      // ✅ NEW: Throttled event emission (max 10 events/sec per org)
+      const emissionQueue = new Map<string, NodeJS.Timeout>();
+
       webhookEvents.on('newMessage', (data: any) => {
         if (!data?.organizationId) return;
-        io.to(`org:${data.organizationId}`).emit('message:new', data);
-        if (data.conversationId) {
-          io.to(`conversation:${data.conversationId}`).emit('message:new', data);
+
+        const orgId = data.organizationId;
+        const key = `newMessage:${orgId}`;
+
+        // ✅ Throttle: Clear existing timeout
+        if (emissionQueue.has(key)) {
+          clearTimeout(emissionQueue.get(key));
         }
-        console.log(`📡 Emitted message:new`);
+
+        // ✅ Batch emit after 100ms
+        const timeout = setTimeout(() => {
+          io.to(`org:${orgId}`).emit('message:new', data);
+          if (data.conversationId) {
+            io.to(`conversation:${data.conversationId}`).emit('message:new', data);
+          }
+          emissionQueue.delete(key);
+        }, 100);
+
+        emissionQueue.set(key, timeout);
       });
 
       webhookEvents.on('conversationUpdated', (data: any) => {
@@ -137,10 +180,9 @@ function wireWebhookEvents() {
         if (data.conversationId) {
           io.to(`conversation:${data.conversationId}`).emit('message:status', data);
         }
-        console.log(`📡 Emitted message:status: ${data.messageId} -> ${data.status}`);
       });
 
-      console.log('✅ Webhook events wired');
+      console.log('✅ Webhook events wired with throttling');
     })
     .catch((e) => console.log('ℹ️ Webhook events not available'));
 }
@@ -150,4 +192,17 @@ export const getIO = (): Server => {
   return io;
 };
 
-export default { initializeSocket, getIO };
+// ✅ NEW: Graceful shutdown
+export const closeSocketIO = async () => {
+  if (io) {
+    console.log('🔌 Closing Socket.IO...');
+    await new Promise<void>((resolve) => {
+      io.close(() => {
+        console.log('✅ Socket.IO closed');
+        resolve();
+      });
+    });
+  }
+};
+
+export default { initializeSocket, getIO, closeSocketIO };

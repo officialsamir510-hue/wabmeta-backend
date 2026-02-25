@@ -93,6 +93,10 @@ export const config = {
     keyId: getEnv('RAZORPAY_KEY_ID'),
     keySecret: getEnv('RAZORPAY_KEY_SECRET'),
   },
+  // Redis
+  redis: {
+    url: getEnv('REDIS_URL'),
+  },
 } as const;
 
 export default config;

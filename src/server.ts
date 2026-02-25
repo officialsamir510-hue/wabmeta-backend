@@ -135,12 +135,22 @@ async function bootstrap() {
     initializeSocket(server);
     console.log('✅ Socket.io initialized');
 
-    // ============================================
+    // ================= ==========================
     // Step 7: Start Cron Jobs
     // ============================================
     console.log('⏰ Starting cron jobs...');
     startCronJobs();
     console.log('✅ Cron jobs started');
+
+    // ============================================
+    // Step 8: Initialize Redis (NEW)
+    // ============================================
+    try {
+      const { initRedis } = await import('./config/redis');
+      initRedis();
+    } catch (error) {
+      console.warn('⚠️  Redis initialization failed:', error);
+    }
 
     // ============================================
     // Step 8: Start Server

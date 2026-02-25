@@ -301,6 +301,10 @@ model Contact {
   @@index([tags])
   @@index([lastMessageAt])
   @@index([createdAt])
+
+  // ✅ CRITICAL INDEXES
+  @@index([organizationId, phone])
+  @@index([email])
 }
 
 model ContactGroup {
@@ -495,6 +499,10 @@ model Conversation {
   @@index([assignedTo])
   @@index([isArchived])
   @@index([phoneNumberId])
+  // ✅ CRITICAL INDEXES
+  @@index([organizationId, lastMessageAt(sort: Desc)])
+  @@index([organizationId, isArchived, lastMessageAt(sort: Desc)])
+  @@index([organizationId, isPinned, lastMessageAt(sort: Desc)])
 }
 
 model Message {
@@ -533,6 +541,9 @@ model Message {
   @@index([direction])
   @@index([status])
   @@index([createdAt])
+
+  // ✅ CRITICAL INDEXES
+  @@index([conversationId, createdAt(sort: Desc)])
 }
 
 model Chatbot {

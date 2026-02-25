@@ -2,6 +2,7 @@
 
 import { PrismaClient, Prisma } from '@prisma/client';
 import prisma from '../../config/database';
+import { getRedis } from '../../config/redis';
 
 class AppError extends Error {
   statusCode: number;
@@ -16,9 +17,39 @@ export class InboxService {
    * Get conversations with flexible query support
    */
   async getConversations(organizationId: string, query: any = {}) {
+    const redis = getRedis();
+
+    // ✅ Cache key
+    const cacheKey = `conversations:${organizationId}:${JSON.stringify(query)}`;
+
+    // ✅ Try cache first
+    if (redis) {
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        console.log('📦 Cache HIT:', cacheKey);
+        return JSON.parse(cached);
+      }
+    }
+
+    // ✅ Fetch from database
+    const result = await this.fetchConversationsFromDB(organizationId, query);
+
+    // ✅ Store in cache (5 minutes TTL)
+    if (redis) {
+      await redis.setex(cacheKey, 300, JSON.stringify(result));
+      console.log('📦 Cache SET:', cacheKey);
+    }
+
+    return result;
+  }
+
+  /**
+   * Internal method to fetch conversations from DB
+   */
+  private async fetchConversationsFromDB(organizationId: string, query: any = {}) {
     const {
       page = 1,
-      limit = 200,  // ✅ Increased default limit
+      limit = 50,
       search,
       isArchived,
       isRead,
@@ -32,12 +63,10 @@ export class InboxService {
       organizationId,
     };
 
-    // ✅ Only apply isArchived filter if explicitly provided
     if (isArchived !== undefined && isArchived !== null && isArchived !== '') {
       where.isArchived = isArchived === true || isArchived === 'true';
     }
 
-    // ✅ Only apply isRead filter if explicitly provided
     if (isRead !== undefined && isRead !== null && isRead !== '') {
       where.isRead = isRead === true || isRead === 'true';
     }
@@ -50,7 +79,6 @@ export class InboxService {
       where.labels = { hasSome: Array.isArray(labels) ? labels : [labels] };
     }
 
-    // Search
     if (search && search.trim()) {
       where.OR = [
         {
@@ -67,8 +95,6 @@ export class InboxService {
         { lastMessagePreview: { contains: search, mode: 'insensitive' } },
       ];
     }
-
-    console.log('📥 Fetching conversations with where:', JSON.stringify(where, null, 2));
 
     const [conversations, total] = await Promise.all([
       prisma.conversation.findMany({
@@ -88,7 +114,7 @@ export class InboxService {
           },
         },
         orderBy: [
-          { isPinned: 'desc' },  // ✅ Pinned first
+          { isPinned: 'desc' },
           { [sortBy]: sortOrder },
         ],
         skip: (page - 1) * limit,
@@ -97,7 +123,6 @@ export class InboxService {
       prisma.conversation.count({ where }),
     ]);
 
-    // Transform conversations
     const transformed = conversations.map((conv) => ({
       ...conv,
       contact: {
@@ -109,8 +134,6 @@ export class InboxService {
             : conv.contact.phone),
       },
     }));
-
-    console.log(`✅ Found ${transformed.length} conversations (total: ${total})`);
 
     return {
       conversations: transformed,
