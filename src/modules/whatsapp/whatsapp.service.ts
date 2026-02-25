@@ -534,6 +534,8 @@ class WhatsAppService {
         webhookEvents.emit('newMessage', {
           organizationId,
           conversationId,
+          tempId: tempId || (savedMessage.metadata as any)?.tempId,
+          clientMsgId: clientMsgId || (savedMessage.metadata as any)?.clientMsgId,
           message: {
             ...savedMessage,
             tempId: tempId || (savedMessage.metadata as any)?.tempId,
@@ -737,6 +739,8 @@ class WhatsAppService {
       webhookEvents.emit('newMessage', {
         organizationId,
         conversationId: conversation.id,
+        tempId: tempId || (message.metadata as any)?.tempId,
+        clientMsgId: clientMsgId || (message.metadata as any)?.clientMsgId,
         message: {
           id: message.id,
           conversationId: conversation.id,

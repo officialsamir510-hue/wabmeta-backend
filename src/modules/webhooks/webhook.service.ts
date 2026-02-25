@@ -385,6 +385,9 @@ export class WebhookService {
 
       console.log(`✅ Message status updated: ${message.id} -> ${newStatus}`);
 
+      // Retrieve metadata for tempId/clientMsgId
+      const metadata = (message.metadata as any) || {};
+
       // ✅ CRITICAL: Emit socket event for real-time update
       webhookEvents.emit('messageStatus', {
         organizationId: message.conversation?.organizationId || organizationId,
@@ -394,6 +397,8 @@ export class WebhookService {
         wamId: message.wamId,
         status: newStatus,
         timestamp: statusTime.toISOString(),
+        tempId: metadata.tempId,
+        clientMsgId: metadata.clientMsgId
       });
 
       // ✅ Update CampaignContact if this is a campaign message

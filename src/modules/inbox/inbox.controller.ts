@@ -141,8 +141,8 @@ export class InboxController {
         content: { text: { body: content } },
         conversationId: id,
         organizationId: organizationId,
-        tempId: tempId || req.body.localId,
-        clientMsgId: clientMsgId || req.body.client_msg_id
+        tempId: tempId || req.body.localId || req.body.local_id || req.body._id,
+        clientMsgId: clientMsgId || req.body.client_msg_id || req.body.clientMsgId
       });
 
       // 4. Clear Inbox Cache
@@ -470,7 +470,9 @@ export class InboxController {
         mediaUrl,
         caption,
         id,
-        organizationId
+        organizationId,
+        req.body.tempId || req.body.localId || req.body.local_id || req.body._id,
+        req.body.clientMsgId || req.body.client_msg_id || req.body.clientMsgId
       );
 
       // ✅ Clear Inbox Cache
