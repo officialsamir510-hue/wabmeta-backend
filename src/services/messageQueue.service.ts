@@ -60,6 +60,7 @@ messageQueue.process(async (job: Job) => {
     const {
         campaignId,
         campaignContactId,
+        contactId,
         phone,
         templateId,
         whatsappAccountId,
@@ -125,33 +126,126 @@ messageQueue.process(async (job: Job) => {
             },
         });
 
-        // ✅ Create message record
-        const conversation = await prisma.conversation.findFirst({
+        // ✅ Create or Update conversation and message record
+        let conversation = await prisma.conversation.findFirst({
             where: {
                 organizationId,
+                contactId: contactId,
+            },
+        });
+
+        const now = new Date();
+        const windowExpiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+        if (!conversation) {
+            // Try finding by phone variants if contactId lookup fails or to be extra safe
+            conversation = await prisma.conversation.findFirst({
+                where: {
+                    organizationId,
+                    contact: {
+                        phone: {
+                            in: [phone, `+91${phone}`, `91${phone}`],
+                        },
+                    },
+                },
+            });
+        }
+
+        if (!conversation) {
+            conversation = await prisma.conversation.create({
+                data: {
+                    organizationId,
+                    contactId: contactId,
+                    lastMessageAt: now,
+                    lastMessagePreview: `Template: ${template.name}`,
+                    isWindowOpen: true,
+                    windowExpiresAt: windowExpiresAt,
+                    unreadCount: 0,
+                    isRead: true,
+                },
+            });
+            console.log(`✅ New conversation created for outbound: ${conversation.id}`);
+        } else {
+            await prisma.conversation.update({
+                where: { id: conversation.id },
+                data: {
+                    lastMessageAt: now,
+                    lastMessagePreview: `Template: ${template.name}`,
+                    isWindowOpen: true,
+                    windowExpiresAt: windowExpiresAt,
+                },
+            });
+        }
+
+        const savedMessage = await prisma.message.create({
+            data: {
+                conversationId: conversation.id,
+                whatsappAccountId,
+                waMessageId: result.waMessageId,
+                wamId: result.waMessageId,
+                direction: 'OUTBOUND',
+                type: 'TEMPLATE',
+                content: JSON.stringify({
+                    templateName: template.name,
+                    variables,
+                }),
+                status: 'SENT',
+                sentAt: now,
+                templateId: template.id,
+                metadata: {
+                    campaignId,
+                },
+            },
+        });
+
+        // ✅ Emit socket events for real-time inbox updates
+        const { webhookEvents } = await import('../modules/webhooks/webhook.service');
+        const updatedConversation = await prisma.conversation.findUnique({
+            where: { id: conversation.id },
+            include: {
                 contact: {
-                    phone: {
-                        in: [phone, `+91${phone}`, `91${phone}`],
+                    select: {
+                        id: true,
+                        phone: true,
+                        firstName: true,
+                        lastName: true,
+                        avatar: true,
+                        whatsappProfileName: true,
                     },
                 },
             },
         });
 
-        if (conversation) {
-            await prisma.message.create({
-                data: {
-                    conversationId: conversation.id,
-                    whatsappAccountId,
-                    waMessageId: result.waMessageId,
-                    wamId: result.waMessageId,
-                    direction: 'OUTBOUND',
-                    type: 'TEMPLATE',
-                    content: JSON.stringify({
-                        templateName: template.name,
-                        variables,
-                    }),
-                    status: 'SENT',
-                    sentAt: new Date(),
+        if (updatedConversation) {
+            webhookEvents.emit('newMessage', {
+                organizationId,
+                conversationId: updatedConversation.id,
+                message: {
+                    id: savedMessage.id,
+                    conversationId: updatedConversation.id,
+                    waMessageId: savedMessage.waMessageId,
+                    wamId: savedMessage.wamId,
+                    direction: savedMessage.direction,
+                    type: savedMessage.type,
+                    content: savedMessage.content,
+                    mediaUrl: savedMessage.mediaUrl,
+                    status: savedMessage.status,
+                    createdAt: savedMessage.createdAt,
+                },
+            });
+
+            webhookEvents.emit('conversationUpdated', {
+                organizationId,
+                conversation: {
+                    id: updatedConversation.id,
+                    lastMessageAt: updatedConversation.lastMessageAt,
+                    lastMessagePreview: updatedConversation.lastMessagePreview,
+                    unreadCount: updatedConversation.unreadCount,
+                    isRead: updatedConversation.isRead,
+                    isArchived: updatedConversation.isArchived,
+                    isWindowOpen: updatedConversation.isWindowOpen,
+                    windowExpiresAt: updatedConversation.windowExpiresAt,
+                    contact: updatedConversation.contact,
                 },
             });
         }
