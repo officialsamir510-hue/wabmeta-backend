@@ -235,7 +235,7 @@ class WhatsAppService {
   private async getOrCreateConversation(
     organizationId: string,
     contactId: string,
-    phoneNumberId: string,
+    phoneNumberId: string, // This is the Meta Phone ID
     messagePreview: string,
     existingConversationId?: string
   ): Promise<any> {
@@ -265,7 +265,8 @@ class WhatsAppService {
         conversation = await prisma.conversation.create({
           data: {
             organizationId,
-            phoneNumberId,
+            // ❌ Removing phoneNumberId here because it's a FK to PhoneNumber.id (CUID)
+            // but we are passing Meta's numeric Phone ID. This was causing crashes.
             contactId,
             lastMessageAt: new Date(),
             lastMessagePreview: messagePreview,
@@ -376,102 +377,14 @@ class WhatsAppService {
     conversationId?: string,
     organizationId?: string
   ) {
-    try {
-      const accountData = await this.getAccountWithToken(accountId);
-      if (!accountData) {
-        throw new Error('WhatsApp account not found or token unavailable');
-      }
-
-      const { account, accessToken } = accountData;
-      const formattedTo = to.replace(/\D/g, '');
-
-      // Send via Meta API
-      const response = await metaApi.sendMessage(
-        account.phoneNumberId,
-        accessToken,
-        formattedTo,
-        {
-          messaging_product: 'whatsapp',
-          to: formattedTo,
-          type: 'text',
-          text: { body: message },
-        }
-      );
-
-      const waMessageId = (response as any)?.messages?.[0]?.id || response?.messageId;
-
-      if (!waMessageId) {
-        throw new Error('No message ID returned from WhatsApp API');
-      }
-
-      console.log(`✅ Text message sent: ${waMessageId}`);
-
-      // Save to database
-      let savedMessage = null;
-
-      if (conversationId && organizationId) {
-        const now = new Date();
-
-        savedMessage = await prisma.message.create({
-          data: {
-            conversationId,
-            whatsappAccountId: account.id,
-            waMessageId,
-            wamId: waMessageId,
-            direction: MessageDirection.OUTBOUND,
-            type: MessageType.TEXT,
-            content: message,
-            status: MessageStatus.SENT,
-            sentAt: now,
-          },
-        });
-
-        // Update conversation
-        await prisma.conversation.update({
-          where: { id: conversationId },
-          data: {
-            lastMessageAt: now,
-            lastMessagePreview: message.substring(0, 100),
-            isWindowOpen: true,
-            windowExpiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
-          },
-        });
-
-        // Emit socket event
-        const { webhookEvents } = await import('../webhooks/webhook.service');
-        webhookEvents.emit('newMessage', {
-          organizationId,
-          conversationId,
-          message: {
-            id: savedMessage.id,
-            conversationId,
-            waMessageId: savedMessage.waMessageId,
-            wamId: savedMessage.wamId,
-            direction: MessageDirection.OUTBOUND,
-            type: MessageType.TEXT,
-            content: message,
-            status: 'SENT',
-            createdAt: savedMessage.createdAt,
-          },
-        });
-      }
-
-      // ✅ Return with waMessageId
-      return {
-        success: true,
-        waMessageId,
-        wamId: waMessageId,
-        message: savedMessage || {
-          waMessageId,
-          wamId: waMessageId,
-          status: 'SENT',
-        },
-      };
-
-    } catch (error: any) {
-      console.error('❌ sendTextMessage error:', error);
-      throw error;
-    }
+    return this.sendMessage({
+      accountId,
+      to,
+      type: 'text',
+      content: { text: { body: message } },
+      conversationId,
+      organizationId,
+    });
   }
 
   // Helper function to hydrate template text

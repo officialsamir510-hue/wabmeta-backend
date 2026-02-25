@@ -182,7 +182,6 @@ export class WebhookService {
           data: {
             organizationId,
             contactId: contact.id,
-            phoneNumberId,
             isWindowOpen: true,
             windowExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
             unreadCount: 0,
