@@ -159,21 +159,27 @@ function wireWebhookEvents() {
         if (!data?.organizationId) return;
 
         const orgId = data.organizationId;
-        const key = `newMessage:${orgId}`;
+        const conversationId = data.conversationId;
+        // ✅ Fix: Key should be conversation-specific to avoid collisions across different chats
+        const key = `newMessage:${orgId}:${conversationId || 'global'}`;
 
         // ✅ Throttle: Clear existing timeout
         if (emissionQueue.has(key)) {
           clearTimeout(emissionQueue.get(key));
         }
 
-        // ✅ Batch emit after 100ms
+        // ✅ Batch emit after 50ms (shorter for better snappy feel)
         const timeout = setTimeout(() => {
-          io.to(`org:${orgId}`).emit('message:new', data);
-          if (data.conversationId) {
-            io.to(`conversation:${data.conversationId}`).emit('message:new', data);
+          // ✅ FIX: Use room chaining to send a SINGLE emission to the union of rooms
+          // This prevents users in both rooms from receiving the message twice
+          let target = io.to(`org:${orgId}`);
+          if (conversationId) {
+            target = target.to(`conversation:${conversationId}`);
           }
+
+          target.emit('message:new', data);
           emissionQueue.delete(key);
-        }, 100);
+        }, 50);
 
         emissionQueue.set(key, timeout);
       });
@@ -185,10 +191,14 @@ function wireWebhookEvents() {
 
       webhookEvents.on('messageStatus', (data: any) => {
         if (!data?.organizationId) return;
-        io.to(`org:${data.organizationId}`).emit('message:status', data);
+
+        // ✅ FIX: Use room chaining here as well
+        let target = io.to(`org:${data.organizationId}`);
         if (data.conversationId) {
-          io.to(`conversation:${data.conversationId}`).emit('message:status', data);
+          target = target.to(`conversation:${data.conversationId}`);
         }
+
+        target.emit('message:status', data);
       });
 
       console.log('✅ Webhook events wired with throttling');
