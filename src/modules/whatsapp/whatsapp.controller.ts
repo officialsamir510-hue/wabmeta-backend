@@ -271,7 +271,10 @@ class WhatsAppController {
         accountId,
         to,
         cleanText,
-        conversationId
+        conversationId,
+        req.user?.organizationId,
+        req.body.tempId || req.body.localId,
+        req.body.clientMsgId || req.body.client_msg_id
       );
 
       console.log('✅ Text message sent successfully:', {
@@ -297,7 +300,10 @@ class WhatsAppController {
    */
   async sendTemplate(req: Request, res: Response) {
     try {
-      const { whatsappAccountId, to, templateName, language, parameters, conversationId } = req.body;
+      const {
+        whatsappAccountId, to, templateName, language, parameters, conversationId,
+        tempId, clientMsgId
+      } = req.body;
       const organizationId = req.user?.organizationId;
 
       if (!organizationId) {
@@ -312,6 +318,8 @@ class WhatsAppController {
         templateLanguage: language,
         components: parameters,
         conversationId,
+        tempId: tempId || req.body.localId,
+        clientMsgId: clientMsgId || req.body.client_msg_id
       });
 
       return successResponse(res, {
@@ -392,7 +400,10 @@ class WhatsAppController {
         mediaType.toLowerCase() as 'image' | 'video' | 'audio' | 'document',
         mediaUrl,
         caption,
-        conversationId
+        conversationId,
+        req.user?.organizationId,
+        req.body.tempId || req.body.localId,
+        req.body.clientMsgId || req.body.client_msg_id
       );
 
       console.log('✅ Media message sent successfully:', {

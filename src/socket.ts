@@ -160,8 +160,9 @@ function wireWebhookEvents() {
 
         const orgId = data.organizationId;
         const conversationId = data.conversationId;
-        // ✅ Fix: Key should be conversation-specific to avoid collisions across different chats
-        const key = `newMessage:${orgId}:${conversationId || 'global'}`;
+        const messageId = data.message?.id || Math.random().toString();
+        // ✅ Fix: Key should be message-specific to avoid collisions between different messages
+        const key = `newMessage:${messageId}`;
 
         // ✅ Throttle: Clear existing timeout
         if (emissionQueue.has(key)) {

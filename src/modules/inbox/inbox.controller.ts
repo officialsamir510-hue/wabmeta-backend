@@ -118,7 +118,7 @@ export class InboxController {
       }
 
       const { id } = req.params as { id: string };
-      const { content } = req.body;
+      const { content, tempId, clientMsgId } = req.body;
 
       if (!content) {
         throw new AppError('Message content is required', 400);
@@ -140,7 +140,9 @@ export class InboxController {
         type: 'text',
         content: { text: { body: content } },
         conversationId: id,
-        organizationId: organizationId
+        organizationId: organizationId,
+        tempId: tempId || req.body.localId,
+        clientMsgId: clientMsgId || req.body.client_msg_id
       });
 
       // 4. Clear Inbox Cache

@@ -22,6 +22,8 @@ interface SendMessageOptions {
   content: any;
   conversationId?: string;
   organizationId?: string;
+  tempId?: string;
+  clientMsgId?: string;
 }
 
 interface SendTemplateOptions {
@@ -32,6 +34,8 @@ interface SendTemplateOptions {
   components?: any[];
   conversationId?: string;
   organizationId?: string;
+  tempId?: string;
+  clientMsgId?: string;
 }
 
 interface CampaignSendResult {
@@ -375,7 +379,9 @@ class WhatsAppService {
     to: string,
     message: string,
     conversationId?: string,
-    organizationId?: string
+    organizationId?: string,
+    tempId?: string,
+    clientMsgId?: string
   ) {
     return this.sendMessage({
       accountId,
@@ -384,6 +390,8 @@ class WhatsAppService {
       content: { text: { body: message } },
       conversationId,
       organizationId,
+      tempId,
+      clientMsgId
     });
   }
 
@@ -426,6 +434,8 @@ class WhatsAppService {
       components,
       conversationId,
       organizationId,
+      tempId,
+      clientMsgId,
     } = options;
 
     console.log(`📋 Sending template message: ${templateName}`);
@@ -501,6 +511,10 @@ class WhatsAppService {
             status: 'SENT',
             sentAt: now,
             createdAt: now,
+            metadata: {
+              ...(tempId ? { tempId } : {}),
+              ...(clientMsgId ? { clientMsgId } : {}),
+            } as any,
           },
         });
 
@@ -520,7 +534,11 @@ class WhatsAppService {
         webhookEvents.emit('newMessage', {
           organizationId,
           conversationId,
-          message: savedMessage
+          message: {
+            ...savedMessage,
+            tempId: tempId || (savedMessage.metadata as any)?.tempId,
+            clientMsgId: clientMsgId || (savedMessage.metadata as any)?.clientMsgId,
+          }
         });
       }
 
@@ -542,7 +560,9 @@ class WhatsAppService {
     mediaUrl: string,
     caption?: string,
     conversationId?: string,
-    organizationId?: string
+    organizationId?: string,
+    tempId?: string,
+    clientMsgId?: string
   ) {
     const content: any = {
       [mediaType]: {
@@ -561,6 +581,8 @@ class WhatsAppService {
       content,
       conversationId,
       organizationId,
+      tempId,
+      clientMsgId
     });
   }
 
@@ -568,7 +590,7 @@ class WhatsAppService {
    * Core send message function - WITH CONTACT CHECK
    */
   async sendMessage(options: SendMessageOptions) {
-    const { accountId, to, type, content, conversationId } = options;
+    const { accountId, to, type, content, conversationId, tempId, clientMsgId } = options;
 
     console.log(`\n📤 ========== SEND MESSAGE START ==========`);
     console.log(`   Type: ${type}`);
@@ -685,6 +707,10 @@ class WhatsAppService {
           content: messageContent,
           status: MessageStatus.SENT,
           sentAt: new Date(),
+          metadata: {
+            ...(tempId ? { tempId } : {}),
+            ...(clientMsgId ? { clientMsgId } : {}),
+          } as any,
         },
         include: {
           conversation: {
@@ -712,6 +738,8 @@ class WhatsAppService {
           content: message.content,
           status: message.status,
           createdAt: message.createdAt,
+          tempId: tempId || (message.metadata as any)?.tempId,
+          clientMsgId: clientMsgId || (message.metadata as any)?.clientMsgId,
         },
       });
 
