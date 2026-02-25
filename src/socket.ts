@@ -169,18 +169,17 @@ function wireWebhookEvents() {
           clearTimeout(emissionQueue.get(key));
         }
 
-        // ✅ Batch emit after 50ms (shorter for better snappy feel)
+        // ✅ Batch emit after 30ms 
         const timeout = setTimeout(() => {
-          // ✅ FIX: Use room chaining to send a SINGLE emission to the union of rooms
-          // This prevents users in both rooms from receiving the message twice
-          let target = io.to(`org:${orgId}`);
+          // ✅ FIX: Use array room targeting for robust single emission
+          const rooms = [`org:${orgId}`];
           if (conversationId) {
-            target = target.to(`conversation:${conversationId}`);
+            rooms.push(`conversation:${conversationId}`);
           }
 
-          target.emit('message:new', data);
+          io.to(rooms).emit('message:new', data);
           emissionQueue.delete(key);
-        }, 50);
+        }, 30);
 
         emissionQueue.set(key, timeout);
       });

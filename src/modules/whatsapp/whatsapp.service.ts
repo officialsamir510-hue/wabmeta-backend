@@ -542,7 +542,16 @@ class WhatsAppService {
         });
       }
 
-      return { success: true, waMessageId, wamId: waMessageId, message: savedMessage };
+      return {
+        success: true,
+        waMessageId,
+        wamId: waMessageId,
+        message: savedMessage ? {
+          ...(savedMessage as any),
+          tempId: tempId || (savedMessage.metadata as any)?.tempId,
+          clientMsgId: clientMsgId || (savedMessage.metadata as any)?.clientMsgId,
+        } : null
+      };
 
     } catch (error: any) {
       console.error('❌ sendTemplate error:', error);
@@ -762,7 +771,11 @@ class WhatsAppService {
       return {
         success: true,
         messageId: result.messageId,
-        message,
+        message: {
+          ...message,
+          tempId: tempId || (message.metadata as any)?.tempId,
+          clientMsgId: clientMsgId || (message.metadata as any)?.clientMsgId,
+        },
       };
     } catch (error: any) {
       console.error(`❌ Failed to send message:`, {
