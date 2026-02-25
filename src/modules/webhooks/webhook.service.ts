@@ -247,6 +247,10 @@ export class WebhookService {
 
       console.log(`✅ Incoming message saved: ${savedMessage.id} wa:${waMessageId}`);
 
+      // ✅ Clear inbox cache
+      const { inboxService } = await import('../inbox/inbox.service');
+      await inboxService.clearCache(organizationId);
+
       // ✅ Emit events
       webhookEvents.emit('newMessage', {
         organizationId,
@@ -306,7 +310,7 @@ export class WebhookService {
       console.log(`📬 Processing status update: ${waMessageId} -> ${st}`);
 
       // ✅ Find message by waMessageId OR wamId
-      const message = await prisma.message.findFirst({
+      let message = await prisma.message.findFirst({
         where: {
           OR: [
             { waMessageId },
@@ -324,8 +328,34 @@ export class WebhookService {
         },
       });
 
+      // ✅ Race Condition Fix: If message not found, wait 1s and retry once
+      // (Meta sometimes sends status updates faster than we can save the message)
       if (!message) {
-        console.log(`⚠️ Message not found for waMessageId: ${waMessageId}`);
+        console.log(`⏳ Message not found yet, retrying in 1s for waMessageId: ${waMessageId}`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        message = await prisma.message.findFirst({
+          where: {
+            OR: [
+              { waMessageId },
+              { wamId: waMessageId },
+            ],
+          },
+          include: {
+            conversation: {
+              select: {
+                id: true,
+                contactId: true,
+                organizationId: true,
+              },
+            },
+          },
+        });
+      }
+
+      if (!message) {
+        console.log(`⚠️ Message still not found for waMessageId: ${waMessageId}`);
+        // Optionally: We could "stub" the message here if we had recipient_id
         return;
       }
 

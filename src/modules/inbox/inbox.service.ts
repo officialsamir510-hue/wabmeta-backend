@@ -44,6 +44,26 @@ export class InboxService {
   }
 
   /**
+   * Clear conversation cache for an organization
+   */
+  async clearCache(organizationId: string) {
+    const redis = getRedis();
+    if (!redis) return;
+
+    try {
+      // Find all keys starting with conversations:organizationId
+      const pattern = `conversations:${organizationId}:*`;
+      const keys = await redis.keys(pattern);
+      if (keys.length > 0) {
+        await redis.del(...keys);
+        console.log(`🧹 Cache cleared for org ${organizationId}: ${keys.length} keys`);
+      }
+    } catch (err) {
+      console.error('❌ Failed to clear inbox cache:', err);
+    }
+  }
+
+  /**
    * Internal method to fetch conversations from DB
    */
   private async fetchConversationsFromDB(organizationId: string, query: any = {}) {

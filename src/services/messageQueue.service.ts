@@ -198,6 +198,10 @@ messageQueue.process(async (job: Job) => {
             },
         });
 
+        // ✅ Clear inbox cache so the new message shows up
+        const { inboxService } = await import('../modules/inbox/inbox.service');
+        await inboxService.clearCache(organizationId);
+
         // ✅ Emit socket events for real-time inbox updates
         const { webhookEvents } = await import('../modules/webhooks/webhook.service');
         const updatedConversation = await prisma.conversation.findUnique({
