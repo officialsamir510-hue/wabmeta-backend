@@ -20,9 +20,18 @@ export const initializeSocket = (server: HttpServer) => {
 
   io = new Server(server, {
     cors: {
-      origin: config.frontendUrl,
+      origin: [...config.frontend.corsOrigins],
       methods: ['GET', 'POST'],
       credentials: true,
+      allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'X-Requested-With',
+        'X-Organization-Id',
+        'x-organization-id',
+        'Accept',
+        'Origin',
+      ],
     },
     transports: ['websocket', 'polling'],
     path: '/socket.io/',

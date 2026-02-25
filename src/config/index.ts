@@ -34,7 +34,9 @@ export const config = {
     corsOrigins: [
       getEnv('FRONTEND_URL', 'http://localhost:5173'),
       'https://wabmeta.com',
+      'https://www.wabmeta.com',
       'http://localhost:3000',
+      'http://localhost:5173',
     ],
   },
 
