@@ -1,85 +1,227 @@
 // src/services/messageQueue.service.ts
 
-import Bull, { Job } from 'bull';
+import Bull, { Queue, Job } from 'bull';
 import { EventEmitter } from 'events';
 import { config } from '../config';
-import { whatsappApi } from '../modules/whatsapp/whatsapp.api';
+import whatsappApi from '../modules/whatsapp/whatsapp.api';
 import prisma from '../config/database';
 
-// ✅ Create queue with Redis
-const whatsappQueue = new Bull('whatsapp-messages', {
-    redis: config.redis.url || 'redis://localhost:6379',
+// ✅ Check if Redis is configured
+const redisUrl = process.env.REDIS_URL || config.redis?.url;
+
+if (!redisUrl) {
+    console.warn('⚠️ Redis not configured. Message queue will NOT work!');
+    console.warn('⚠️ Messages will NOT be sent automatically!');
+}
+
+// Create queue
+export const messageQueue = new Bull('whatsapp-messages', {
+    redis: redisUrl || 'redis://localhost:6379',
     limiter: {
-        max: 80, // ✅ Meta allows 80 messages/sec (Cloud API)
+        max: 80, // Meta allows 80 messages/sec
         duration: 1000,
+    },
+    defaultJobOptions: {
+        attempts: 3,
+        backoff: {
+            type: 'exponential',
+            delay: 2000,
+        },
+        removeOnComplete: 100, // Keep last 100 completed
+        removeOnFail: 500, // Keep last 500 failed
     },
 });
 
-// ✅ Process queue
-whatsappQueue.process(async (job: Job) => {
-    const data = job.data;
-    console.log(`📨 Processing job ${job.id}:`, data);
+// ✅ Process messages
+messageQueue.process(async (job: Job) => {
+    console.log(`📤 Processing message job: ${job.id}`);
+    console.log(`📞 Phone: ${job.data.phone}`);
+
+    const {
+        campaignId,
+        campaignContactId,
+        phone,
+        templateId,
+        whatsappAccountId,
+        organizationId,
+        variables = {},
+    } = job.data;
 
     try {
-        if (data.campaignId && data.contactId) {
-            const contact = await prisma.contact.findUnique({ where: { id: data.contactId } });
-            const campaign = await prisma.campaign.findUnique({
-                where: { id: data.campaignId },
-                include: { template: true, whatsappAccount: true }
-            });
+        // Get template
+        const template = await prisma.template.findUnique({
+            where: { id: templateId },
+        });
 
-            if (!contact || !campaign) {
-                throw new Error(`Missing data for campaign ${data.campaignId} / contact ${data.contactId}`);
-            }
-
-            console.log(`📤 Sending campaign message to ${contact.phone}`);
-            // Logic to send template message via whatsappApi
-            // This should be implemented properly based on your whatsappApi methods
-        } else if (data.type === 'text') {
-            await (whatsappApi as any).sendTextMessage(data.phoneNumberId, data.to, data.message, data.accessToken);
+        if (!template) {
+            throw new Error(`Template not found: ${templateId}`);
         }
 
-        console.log(`✅ Job ${job.id} completed`);
+        // Get WhatsApp account
+        const account = await prisma.whatsAppAccount.findUnique({
+            where: { id: whatsappAccountId },
+        });
+
+        if (!account || !account.accessToken) {
+            throw new Error(`WhatsApp account not found or no token: ${whatsappAccountId}`);
+        }
+
+        console.log(`📧 Sending template: ${template.name} to ${phone}`);
+
+        // ✅ Build template components
+        const components: any = {};
+
+        // Map variables to template parameters
+        const templateVars = (template as any).variables;
+        if (templateVars && Array.isArray(templateVars) && Object.keys(variables).length > 0) {
+            components.body = templateVars.map((varName: string) =>
+                variables[varName] || ''
+            );
+        }
+
+        // ✅ Decrypt token
+        const { decrypt } = await import('../utils/encryption');
+        const token = decrypt(account.accessToken);
+
+        // ✅ Send message via WhatsApp API
+        const result = await whatsappApi.sendTemplateMessage(
+            account.phoneNumberId,
+            phone,
+            template.name,
+            template.language,
+            components,
+            token || undefined
+        );
+
+        console.log(`✅ Message sent: ${result.waMessageId}`);
+
+        // ✅ Update campaign contact
+        await prisma.campaignContact.update({
+            where: { id: campaignContactId },
+            data: {
+                status: 'SENT',
+                waMessageId: result.waMessageId,
+                sentAt: new Date(),
+            },
+        });
+
+        // ✅ Create message record
+        const conversation = await prisma.conversation.findFirst({
+            where: {
+                organizationId,
+                contact: {
+                    phone: {
+                        in: [phone, `+91${phone}`, `91${phone}`],
+                    },
+                },
+            },
+        });
+
+        if (conversation) {
+            await prisma.message.create({
+                data: {
+                    conversationId: conversation.id,
+                    whatsappAccountId,
+                    waMessageId: result.waMessageId,
+                    wamId: result.waMessageId,
+                    direction: 'OUTBOUND',
+                    type: 'TEMPLATE',
+                    content: JSON.stringify({
+                        templateName: template.name,
+                        variables,
+                    }),
+                    status: 'SENT',
+                    sentAt: new Date(),
+                },
+            });
+        }
+
+        console.log(`✅ Job ${job.id} completed successfully`);
+        return { success: true, waMessageId: result.waMessageId };
     } catch (error: any) {
         console.error(`❌ Job ${job.id} failed:`, error.message);
-        throw error;
+
+        // Update campaign contact as failed
+        if (campaignContactId) {
+            await prisma.campaignContact.update({
+                where: { id: campaignContactId },
+                data: {
+                    status: 'FAILED',
+                    failureReason: error.message,
+                    failedAt: new Date(),
+                },
+            });
+        }
+
+        throw error; // Will be retried by Bull
     }
 });
 
-// ✅ Worker interface
+// ✅ Event listeners
+messageQueue.on('completed', (job, result) => {
+    console.log(`✅ Job ${job.id} completed:`, result);
+});
+
+messageQueue.on('failed', (job, err) => {
+    console.error(`❌ Job ${job?.id} failed:`, err.message);
+});
+
+messageQueue.on('error', (error) => {
+    console.error('❌ Queue error:', error);
+});
+
+// ✅ Export functions
+export const addMessage = async (data: any) => {
+    console.log(`➕ Adding message to queue: ${data.phone}`);
+
+    const job = await messageQueue.add(data, {
+        jobId: `${data.campaignId}-${data.phone}-${Date.now()}`,
+    });
+
+    console.log(`✅ Job created: ${job.id}`);
+    return job;
+};
+
+export const getQueueStats = async () => {
+    const [waiting, active, completed, failed, delayed] = await Promise.all([
+        messageQueue.getWaitingCount(),
+        messageQueue.getActiveCount(),
+        messageQueue.getCompletedCount(),
+        messageQueue.getFailedCount(),
+        messageQueue.getDelayedCount(),
+    ]);
+
+    const total = waiting + active + completed + failed + delayed;
+
+    return {
+        waiting,
+        active,
+        completed,
+        failed,
+        delayed,
+        total,
+        // Aligned with campaigns.routes.ts expectations
+        pending: waiting,
+        processing: active,
+        sent: completed
+    };
+};
+
+/**
+ * messageQueueWorker object to maintain compatibility with server.ts and routes
+ */
 export const messageQueueWorker = Object.assign(new EventEmitter(), {
     isRunning: true,
     start: async () => {
-        console.log('🚀 Bull Queue Worker is ready');
+        console.log('🚀 Message Queue Worker started');
     },
     stop: async () => {
-        await whatsappQueue.close();
+        await messageQueue.close();
     },
-    addToQueue: async (data: any) => {
-        return whatsappQueue.add(data, {
-            attempts: 3,
-            backoff: {
-                type: 'exponential',
-                delay: 2000,
-            },
-        });
-    },
-
-    // ✅ Campaign specific methods needed by routes
-    getQueueStats: async () => {
-        const [pending, active, completed, failed, delayed] = await Promise.all([
-            whatsappQueue.getJobCountByTypes(['waiting']),
-            whatsappQueue.getJobCountByTypes(['active']),
-            whatsappQueue.getJobCountByTypes(['completed']),
-            whatsappQueue.getJobCountByTypes(['failed']),
-            whatsappQueue.getJobCountByTypes(['delayed']),
-        ]);
-        const total = pending + active + completed + failed + delayed;
-        return { pending, processing: active, sent: completed, failed, total };
-    },
-
+    addToQueue: addMessage,
+    getQueueStats,
     retryFailedMessages: async (campaignId?: string) => {
-        const failedJobs = await whatsappQueue.getFailed();
+        const failedJobs = await messageQueue.getFailed();
         let count = 0;
         for (const job of failedJobs) {
             if (!campaignId || job.data.campaignId === campaignId) {
@@ -89,15 +231,13 @@ export const messageQueueWorker = Object.assign(new EventEmitter(), {
         }
         return count;
     },
-
     clearFailedMessages: async () => {
-        const failedJobs = await whatsappQueue.getFailed();
+        const failedJobs = await messageQueue.getFailed();
         await Promise.all(failedJobs.map(job => job.remove()));
         return failedJobs.length;
     },
-
     getHealthStatus: async () => {
-        const stats = await messageQueueWorker.getQueueStats();
+        const stats = await getQueueStats();
         return {
             status: 'RUNNING',
             healthy: true,
@@ -105,10 +245,9 @@ export const messageQueueWorker = Object.assign(new EventEmitter(), {
             timestamp: new Date(),
         };
     },
-
-    whatsappQueue
+    whatsappQueue: messageQueue
 });
 
-export const addToWhatsAppQueue = messageQueueWorker.addToQueue;
+export const addToWhatsAppQueue = addMessage;
 
-export default messageQueueWorker;
+export default messageQueue;
