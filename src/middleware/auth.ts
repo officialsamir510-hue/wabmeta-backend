@@ -5,6 +5,11 @@ import { AuthRequest } from '../types/express';
 import { verifyAccessToken, TokenPayload } from '../utils/jwt';
 import { AppError } from './errorHandler';
 import prisma from '../config/database';
+import { getRedis } from '../config/redis';
+
+const redis = getRedis();
+const USER_CACHE_PREFIX = 'user:auth:';
+const CACHE_TTL = 120; // 120 seconds
 
 export const authenticate = async (
   req: AuthRequest,
@@ -24,16 +29,38 @@ export const authenticate = async (
     // Verify token
     const decoded = verifyAccessToken(token) as TokenPayload;
 
-    // Check if user exists
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      select: {
-        id: true,
-        email: true,
-        status: true,
-        emailVerified: true,
-      },
-    });
+    // ✅ Distributed Caching for Production
+    let user: any = null;
+
+    if (redis) {
+      const cachedUser = await redis.get(`${USER_CACHE_PREFIX}${decoded.userId}`);
+      if (cachedUser) {
+        user = JSON.parse(cachedUser);
+      }
+    }
+
+    if (!user) {
+      // Check if user exists
+      user = await prisma.user.findUnique({
+        where: { id: decoded.userId },
+        select: {
+          id: true,
+          email: true,
+          status: true,
+          emailVerified: true,
+        },
+      });
+
+      if (user && redis) {
+        // Cache user status for 2 minutes to reduce DB hits
+        await redis.set(
+          `${USER_CACHE_PREFIX}${decoded.userId}`,
+          JSON.stringify(user),
+          'EX',
+          CACHE_TTL
+        );
+      }
+    }
 
     if (!user) {
       throw new AppError('User not found', 401);

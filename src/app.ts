@@ -7,6 +7,7 @@ import morgan from 'morgan';
 import path from 'path';
 import { errorHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
+import { logger } from './utils/logger';
 
 // ============================================
 // IMPORT ALL ROUTES
@@ -300,9 +301,9 @@ try {
   app.use('/api/analytics', analyticsRoutes);
   console.log('  ✅ /api/analytics');
 
-  console.log('✅ All API routes registered successfully');
-} catch (error) {
-  console.error('❌ CRITICAL ERROR registering routes:', error);
+  logger.info('✅ All API routes registered successfully');
+} catch (error: any) {
+  logger.error('❌ CRITICAL ERROR registering routes', error);
 }
 
 // ============================================

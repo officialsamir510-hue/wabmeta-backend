@@ -6,6 +6,7 @@ import { config } from './config';
 import prisma from './config/database';
 import { initializeSocket } from './socket';
 import { validateEncryptionKey } from './utils/encryption';
+import { logger } from './utils/logger';
 
 // Optional services
 let messageQueueWorker: any = null;

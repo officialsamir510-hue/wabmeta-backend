@@ -26,8 +26,10 @@ import { OAuth2Client } from 'google-auth-library';
 // Google OAuth Client
 const googleClient = new OAuth2Client(config.google.clientId);
 
-// In-memory OTP storage (Use Redis in production)
-const otpStore = new Map<string, OTPData>();
+import { getRedis } from '../../config/redis';
+const redis = getRedis();
+
+const OTP_PREFIX = 'otp:';
 
 // ============================================
 // HELPER FUNCTIONS
@@ -505,12 +507,18 @@ export class AuthService {
     const otp = generateOTP(6);
     const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
 
-    // Store OTP (Use Redis in production)
-    otpStore.set(normalizedEmail, {
-      otp,
-      expiresAt,
-      attempts: 0,
-    });
+    // Store OTP in Redis (10 minutes TTL)
+    if (redis) {
+      await redis.set(
+        `${OTP_PREFIX}${normalizedEmail}`,
+        JSON.stringify({ otp, attempts: 0 }),
+        'EX',
+        600 // 10 minutes
+      );
+    } else {
+      console.warn('⚠️ Redis not available, OTP not stored!');
+      throw new AppError('Service temporarily unavailable', 503);
+    }
 
     // Send OTP email (✅ non-blocking)
     const emailContent = emailTemplates.otp(user.firstName, otp);
@@ -529,33 +537,35 @@ export class AuthService {
   // ==========================================
   async verifyOTP(email: string, otp: string): Promise<AuthResponse> {
     const normalizedEmail = normalizeEmail(email);
+    if (!redis) throw new AppError('Service temporarily unavailable', 503);
 
-    const storedOTP = otpStore.get(normalizedEmail);
+    const storedData = await redis.get(`${OTP_PREFIX}${normalizedEmail}`);
 
-    if (!storedOTP) {
+    if (!storedData) {
       throw new AppError('OTP expired or not found', 400);
     }
 
-    // Check expiry
-    if (Date.now() > storedOTP.expiresAt) {
-      otpStore.delete(normalizedEmail);
-      throw new AppError('OTP expired', 400);
-    }
+    const { otp: storedOtp, attempts } = JSON.parse(storedData);
 
     // Check attempts
-    if (storedOTP.attempts >= 5) {
-      otpStore.delete(normalizedEmail);
+    if (attempts >= 5) {
+      await redis.del(`${OTP_PREFIX}${normalizedEmail}`);
       throw new AppError('Too many attempts. Please request a new OTP', 429);
     }
 
     // Verify OTP
-    if (storedOTP.otp !== otp) {
-      storedOTP.attempts++;
+    if (storedOtp !== otp) {
+      // Increment attempts
+      await redis.set(
+        `${OTP_PREFIX}${normalizedEmail}`,
+        JSON.stringify({ otp: storedOtp, attempts: attempts + 1 }),
+        'KEEPTTL'
+      );
       throw new AppError('Invalid OTP', 400);
     }
 
     // Clear OTP
-    otpStore.delete(normalizedEmail);
+    await redis.del(`${OTP_PREFIX}${normalizedEmail}`);
 
     // Get user
     const user = await prisma.user.findUnique({
