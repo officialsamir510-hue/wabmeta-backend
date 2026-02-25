@@ -396,14 +396,13 @@ class WhatsAppService {
           data: {
             conversationId,
             whatsappAccountId: account.id,
-            waMessageId,      // ✅ Critical
-            wamId: waMessageId, // ✅ Critical
-            direction: 'OUTBOUND',
-            type: 'TEXT',
+            waMessageId,
+            wamId: waMessageId,
+            direction: MessageDirection.OUTBOUND,
+            type: MessageType.TEXT,
             content: message,
-            status: 'SENT',
+            status: MessageStatus.SENT,
             sentAt: now,
-            createdAt: now,
           },
         });
 
@@ -428,8 +427,8 @@ class WhatsAppService {
             conversationId,
             waMessageId: savedMessage.waMessageId,
             wamId: savedMessage.wamId,
-            direction: 'OUTBOUND',
-            type: 'TEXT',
+            direction: MessageDirection.OUTBOUND,
+            type: MessageType.TEXT,
             content: message,
             status: 'SENT',
             createdAt: savedMessage.createdAt,

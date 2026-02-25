@@ -211,15 +211,18 @@ export class InboxService {
     const [messages, total] = await Promise.all([
       prisma.message.findMany({
         where,
-        orderBy: { createdAt: 'asc' },
+        orderBy: { createdAt: 'desc' }, // Latest first
         skip: (page - 1) * limit,
         take: limit,
       }),
       prisma.message.count({ where }),
     ]);
 
+    // ✅ Reverse back to chronological order for the UI (Bottom = Newest)
+    const chronologicalMessages = [...messages].reverse();
+
     return {
-      messages,
+      messages: chronologicalMessages,
       meta: {
         page,
         limit,
