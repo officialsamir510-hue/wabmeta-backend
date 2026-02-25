@@ -764,6 +764,39 @@ class WhatsAppService {
       });
 
       console.log(`💾 Message saved to DB: ${message.id}`);
+
+      // ✅ Emit socket event for real-time update
+      const { webhookEvents } = await import('../webhooks/webhook.service');
+      webhookEvents.emit('newMessage', {
+        organizationId,
+        conversationId: conversation.id,
+        message: {
+          id: message.id,
+          conversationId: conversation.id,
+          waMessageId: message.waMessageId,
+          wamId: message.wamId,
+          direction: message.direction,
+          type: message.type,
+          content: message.content,
+          status: message.status,
+          createdAt: message.createdAt,
+        },
+      });
+
+      webhookEvents.emit('conversationUpdated', {
+        organizationId,
+        conversation: {
+          id: conversation.id,
+          lastMessageAt: conversation.lastMessageAt,
+          lastMessagePreview: conversation.lastMessagePreview,
+          unreadCount: conversation.unreadCount,
+          isRead: conversation.isRead,
+          isWindowOpen: conversation.isWindowOpen,
+          windowExpiresAt: (conversation as any).windowExpiresAt,
+          contact: (message as any).conversation?.contact,
+        },
+      });
+
       console.log(`📤 ========== SEND MESSAGE END ==========\n`);
 
       return {

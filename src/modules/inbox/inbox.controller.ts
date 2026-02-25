@@ -113,29 +113,39 @@ export class InboxController {
   async sendMessage(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const organizationId = req.user!.organizationId;
-      const userId = req.user!.id;
       if (!organizationId) {
         throw new AppError('Organization context required', 400);
       }
 
       const { id } = req.params as { id: string };
-      const input: SendMessageInput = {
-        conversationId: id,
-        ...req.body,
-      };
+      const { content } = req.body;
 
-      // ✅ Send message
-      const message = await inboxService.sendMessage(organizationId, userId, id, input);
+      if (!content) {
+        throw new AppError('Message content is required', 400);
+      }
 
-      // ✅ Emit socket event for real-time update
-      const { webhookEvents } = await import('../webhooks/webhook.service');
-      webhookEvents.emit('newMessage', {
-        organizationId,
-        conversationId: id,
-        message,
-      });
+      // 1. Get Conversation detail to get contact phone
+      const conversation = await inboxService.getConversationById(organizationId, id);
 
-      return sendSuccess(res, message, 'Message sent successfully', 201);
+      // 2. Get Default WA Account
+      const account = await whatsappService.getDefaultAccount(organizationId);
+      if (!account?.id) {
+        throw new AppError('No connected WhatsApp account found', 400);
+      }
+
+      // 3. Send via WhatsApp Service (this handles DB save, Socket emit, and Cache clear)
+      const result = await whatsappService.sendTextMessage(
+        account.id,
+        conversation.contact.phone,
+        content,
+        id,
+        organizationId
+      );
+
+      // 4. Clear Inbox Cache
+      await inboxService.clearCache(organizationId);
+
+      return sendSuccess(res, result.message, 'Message sent successfully', 201);
     } catch (error) {
       next(error);
     }
@@ -459,6 +469,9 @@ export class InboxController {
         id,
         organizationId
       );
+
+      // ✅ Clear Inbox Cache
+      await inboxService.clearCache(organizationId);
 
       return sendSuccess(res, result, 'Media message sent successfully', 201);
     } catch (error) {
