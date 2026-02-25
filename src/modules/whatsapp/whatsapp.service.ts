@@ -239,11 +239,18 @@ class WhatsAppService {
     messagePreview: string,
     existingConversationId?: string
   ): Promise<any> {
-    let conversation = existingConversationId
-      ? await prisma.conversation.findUnique({
+    let conversation = null;
+
+    // 1. Try by ID if provided
+    if (existingConversationId) {
+      conversation = await prisma.conversation.findUnique({
         where: { id: existingConversationId },
-      })
-      : await prisma.conversation.findUnique({
+      });
+    }
+
+    // 2. Fallback or primary check by Org + Contact
+    if (!conversation) {
+      conversation = await prisma.conversation.findUnique({
         where: {
           organizationId_contactId: {
             organizationId,
@@ -251,27 +258,40 @@ class WhatsAppService {
           },
         },
       });
+    }
 
     if (!conversation) {
-      conversation = await prisma.conversation.create({
-        data: {
-          organizationId,
-          phoneNumberId,
-          contactId,
-          lastMessageAt: new Date(),
-          lastMessagePreview: messagePreview,
-          unreadCount: 0,
-          isWindowOpen: true
-        },
-      });
-      console.log(`💬 Created new conversation: ${conversation.id}`);
+      try {
+        conversation = await prisma.conversation.create({
+          data: {
+            organizationId,
+            phoneNumberId,
+            contactId,
+            lastMessageAt: new Date(),
+            lastMessagePreview: messagePreview,
+            unreadCount: 0,
+            isWindowOpen: true,
+            isRead: true
+          },
+        });
+        console.log(`💬 Created new conversation: ${conversation.id}`);
+      } catch (err) {
+        // Double check if it was created in the meantime (race condition)
+        conversation = await prisma.conversation.findUnique({
+          where: {
+            organizationId_contactId: { organizationId, contactId },
+          },
+        });
+        if (!conversation) throw err;
+      }
     } else {
       await prisma.conversation.update({
         where: { id: conversation.id },
         data: {
           lastMessageAt: new Date(),
           lastMessagePreview: messagePreview,
-          isWindowOpen: true
+          isWindowOpen: true,
+          isRead: true
         },
       });
     }
