@@ -133,14 +133,15 @@ export class InboxController {
         throw new AppError('No connected WhatsApp account found', 400);
       }
 
-      // 3. Send via WhatsApp Service (this handles DB save, Socket emit, and Cache clear)
-      const result = await whatsappService.sendTextMessage(
-        account.id,
-        conversation.contact.phone,
-        content,
-        id,
-        organizationId
-      );
+      // 3. Send via WhatsApp Service- using generic sendMessage for consistency
+      const result = await whatsappService.sendMessage({
+        accountId: account.id,
+        to: conversation.contact.phone,
+        type: 'text',
+        content: { text: { body: content } },
+        conversationId: id,
+        organizationId: organizationId
+      });
 
       // 4. Clear Inbox Cache
       await inboxService.clearCache(organizationId);
