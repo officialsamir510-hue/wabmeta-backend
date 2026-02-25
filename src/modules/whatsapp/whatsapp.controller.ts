@@ -275,7 +275,7 @@ class WhatsAppController {
       );
 
       console.log('✅ Text message sent successfully:', {
-        messageId: result?.waMessageId || 'N/A',
+        messageId: result?.messageId || 'N/A',
       });
 
       return successResponse(res, {
