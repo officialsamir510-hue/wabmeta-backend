@@ -666,6 +666,21 @@ export class AuthService {
           joinedAt: new Date(),
         },
       });
+
+      // ✅ Assign FREE_DEMO subscription
+      const freePlan = await prisma.plan.findUnique({ where: { type: 'FREE_DEMO' } });
+      if (freePlan) {
+        await prisma.subscription.create({
+          data: {
+            organizationId: organization.id,
+            planId: freePlan.id,
+            status: 'ACTIVE',
+            billingCycle: 'monthly',
+            currentPeriodStart: new Date(),
+            currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          },
+        });
+      }
     }
 
     // Update last login

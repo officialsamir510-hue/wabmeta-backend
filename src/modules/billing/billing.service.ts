@@ -281,18 +281,37 @@ class BillingService {
     message?: string;
   }> {
     try {
-      const subscription = await prisma.subscription.findUnique({
+      let subscription = await prisma.subscription.findUnique({
         where: { organizationId },
         include: { plan: true },
       });
 
+      // ✅ SELF-HEALING: If no subscription found, assign FREE_DEMO automatically
       if (!subscription) {
-        return {
-          isValid: false,
-          isExpired: true,
-          daysRemaining: 0,
-          message: 'No active subscription found. Please subscribe to a plan.',
-        };
+        console.log(`🔍 No subscription found for Org ${organizationId}. Assigning FREE_DEMO...`);
+        const freePlan = await prisma.plan.findUnique({ where: { type: 'FREE_DEMO' } });
+
+        if (freePlan) {
+          subscription = await prisma.subscription.create({
+            data: {
+              organizationId,
+              planId: freePlan.id,
+              status: SubscriptionStatus.ACTIVE,
+              billingCycle: 'monthly',
+              currentPeriodStart: new Date(),
+              currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days trial
+            },
+            include: { plan: true }
+          });
+          console.log(`✅ Assigned FREE_DEMO to Org ${organizationId}`);
+        } else {
+          return {
+            isValid: false,
+            isExpired: true,
+            daysRemaining: 0,
+            message: 'No active subscription found and default plan not available. Please contact support.',
+          };
+        }
       }
 
       const now = new Date();
