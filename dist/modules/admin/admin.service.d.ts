@@ -181,7 +181,18 @@ export declare class AdminService {
         lastName: string | null;
         status: import(".prisma/client").$Enums.UserStatus;
     }>;
-    deleteUser(id: string): Promise<{
+    /**
+     * Transfer organization ownership to another user
+     */
+    transferOrganizationOwnership(organizationId: string, newOwnerId: string): Promise<{
+        success: boolean;
+        message: string;
+    }>;
+    deleteUser(userId: string, options?: {
+        force?: boolean;
+        transferOwnership?: boolean;
+    }): Promise<{
+        success: boolean;
         message: string;
     }>;
     getOrganizations(input: GetOrganizationsInput): Promise<{
@@ -258,6 +269,8 @@ export declare class AdminService {
                 maxCampaignsPerMonth: number;
                 maxAutomations: number;
                 maxApiCalls: number;
+                validityDays: number;
+                isRecommended: boolean;
                 features: import("@prisma/client/runtime/library").JsonValue;
                 isActive: boolean;
             };
@@ -365,6 +378,8 @@ export declare class AdminService {
                 maxCampaignsPerMonth: number;
                 maxAutomations: number;
                 maxApiCalls: number;
+                validityDays: number;
+                isRecommended: boolean;
                 features: import("@prisma/client/runtime/library").JsonValue;
                 isActive: boolean;
             };
@@ -458,6 +473,8 @@ export declare class AdminService {
         maxCampaignsPerMonth: number;
         maxAutomations: number;
         maxApiCalls: number;
+        validityDays: number;
+        isRecommended: boolean;
         features: import("@prisma/client/runtime/library").JsonValue;
         isActive: boolean;
     })[]>;
@@ -482,6 +499,8 @@ export declare class AdminService {
         maxCampaignsPerMonth: number;
         maxAutomations: number;
         maxApiCalls: number;
+        validityDays: number;
+        isRecommended: boolean;
         features: import("@prisma/client/runtime/library").JsonValue;
         isActive: boolean;
     }>;
@@ -506,6 +525,8 @@ export declare class AdminService {
         maxCampaignsPerMonth: number;
         maxAutomations: number;
         maxApiCalls: number;
+        validityDays: number;
+        isRecommended: boolean;
         features: import("@prisma/client/runtime/library").JsonValue;
         isActive: boolean;
     }>;

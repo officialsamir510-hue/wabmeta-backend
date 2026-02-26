@@ -1,73 +1,57 @@
+import Bull from 'bull';
 import { EventEmitter } from 'events';
-interface QueueWorkerConfig {
-    batchSize: number;
-    pollInterval: number;
-    maxRetries: number;
-    retryDelays: number[];
-    concurrentWorkers: number;
-}
-declare class MessageQueueWorker extends EventEmitter {
-    private config;
-    private isRunning;
-    private workers;
-    private stopRequested;
-    constructor(config?: Partial<QueueWorkerConfig>);
-    start(): Promise<void>;
-    stop(): Promise<void>;
-    private workerLoop;
-    private processNextBatch;
-    private processMessage;
-    private checkRateLimits;
-    private handleFailure;
-    private createConversationMessage;
-    private parseTemplateParams;
-    private sleep;
-    addToQueue(data: {
-        campaignId?: string;
-        contactId: string;
-        whatsappAccountId: string;
-        templateId: string;
-        templateParams?: any;
-        priority?: number;
-    }): Promise<string>;
-    addBatchToQueue(messages: Array<{
-        campaignId?: string;
-        contactId: string;
-        whatsappAccountId: string;
-        templateId: string;
-        templateParams?: any;
-        priority?: number;
-    }>): Promise<number>;
-    getQueueStats(): Promise<{
-        pending: any;
-        processing: any;
-        sent: any;
-        failed: any;
-        total: any;
-        isRunning: boolean;
-        workers: number;
+export declare const messageQueue: Bull.Queue<any>;
+export declare const addMessage: (data: any) => Promise<Bull.Job<any>>;
+export declare const getQueueStats: () => Promise<{
+    waiting: number;
+    active: number;
+    completed: number;
+    failed: number;
+    delayed: number;
+    total: number;
+    pending: number;
+    processing: number;
+    sent: number;
+}>;
+/**
+ * messageQueueWorker object to maintain compatibility with server.ts and routes
+ */
+export declare const messageQueueWorker: EventEmitter<any> & {
+    isRunning: boolean;
+    start: () => Promise<void>;
+    stop: () => Promise<void>;
+    addToQueue: (data: any) => Promise<Bull.Job<any>>;
+    getQueueStats: () => Promise<{
+        waiting: number;
+        active: number;
+        completed: number;
+        failed: number;
+        delayed: number;
+        total: number;
+        pending: number;
+        processing: number;
+        sent: number;
     }>;
-    cleanupOldMessages(daysOld?: number): Promise<any>;
-    cancelPendingMessages(campaignId: string): Promise<any>;
-    retryFailedMessages(campaignId?: string): Promise<any>;
-    clearFailedMessages(): Promise<any>;
-    getHealthStatus(): Promise<{
+    retryFailedMessages: (campaignId?: string) => Promise<number>;
+    clearFailedMessages: () => Promise<number>;
+    getHealthStatus: () => Promise<{
         status: string;
         healthy: boolean;
-        activeWorkers: number;
         stats: {
-            pending: any;
-            processing: any;
-            sent: any;
-            failed: any;
-            total: any;
-            isRunning: boolean;
-            workers: number;
+            waiting: number;
+            active: number;
+            completed: number;
+            failed: number;
+            delayed: number;
+            total: number;
+            pending: number;
+            processing: number;
+            sent: number;
         };
-        uptime: number;
         timestamp: Date;
     }>;
-}
-export declare const messageQueueWorker: MessageQueueWorker;
-export default messageQueueWorker;
+    whatsappQueue: Bull.Queue<any>;
+};
+export declare const addToWhatsAppQueue: (data: any) => Promise<Bull.Job<any>>;
+export default messageQueue;
 //# sourceMappingURL=messageQueue.service.d.ts.map

@@ -251,7 +251,9 @@ class ContactsService {
     // ==========================================
     async getList(organizationId, query) {
         const { page = 1, limit = 20, search, status, tags, groupId, sortBy = 'createdAt', sortOrder = 'desc', hasWhatsAppProfile, } = query;
-        const skip = (page - 1) * limit;
+        // ✅ Allow higher limits but cap at 10000
+        const safeLimit = Math.min(limit, 10000);
+        const skip = (page - 1) * safeLimit;
         const where = { organizationId };
         if (search) {
             where.OR = [
@@ -273,14 +275,14 @@ class ContactsService {
             database_1.default.contact.findMany({
                 where,
                 skip,
-                take: limit,
+                take: safeLimit,
                 orderBy: { [sortBy]: sortOrder },
             }),
             database_1.default.contact.count({ where }),
         ]);
         return {
             contacts: contacts.map(formatContact),
-            meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+            meta: { page, limit: safeLimit, total, totalPages: Math.ceil(total / safeLimit) },
         };
     }
     // ==========================================
@@ -365,20 +367,45 @@ class ContactsService {
         return { message: 'Contact deleted successfully' };
     }
     // ==========================================
-    // IMPORT CONTACTS
+    // IMPORT CONTACTS (Updated with Group Support)
     // ==========================================
     async import(organizationId, input) {
-        const { contacts, groupId, tags = [], skipDuplicates = true } = input;
+        const { contacts, groupId, groupName, tags = [], skipDuplicates = true } = input;
         if (!contacts || contacts.length === 0) {
             throw new errorHandler_1.AppError('At least one contact is required', 400);
         }
-        if (groupId) {
+        // 1. Resolve Target Group (Existing ID or New Name)
+        let targetGroupId = groupId;
+        if (!targetGroupId && groupName) {
+            // Check if group exists by name
+            const existingGroup = await database_1.default.contactGroup.findUnique({
+                where: { organizationId_name: { organizationId, name: groupName } },
+            });
+            if (existingGroup) {
+                targetGroupId = existingGroup.id;
+            }
+            else {
+                // Create new group
+                const newGroup = await database_1.default.contactGroup.create({
+                    data: {
+                        organizationId,
+                        name: groupName,
+                        description: 'Created via CSV Import',
+                        color: '#25D366',
+                    },
+                });
+                targetGroupId = newGroup.id;
+            }
+        }
+        else if (targetGroupId) {
+            // Verify existing group ID
             const group = await database_1.default.contactGroup.findFirst({
-                where: { id: groupId, organizationId },
+                where: { id: targetGroupId, organizationId },
             });
             if (!group)
                 throw new errorHandler_1.AppError('Contact group not found', 404);
         }
+        // 2. Check Limits
         const org = await database_1.default.organization.findUnique({
             where: { id: organizationId },
             include: {
@@ -392,10 +419,10 @@ class ContactsService {
         if (availableSlots <= 0) {
             throw new errorHandler_1.AppError('Contact limit reached. Please upgrade your plan.', 400);
         }
+        // 3. Process Contacts
         const sliced = contacts.slice(0, availableSlots);
         const validContacts = [];
         const errors = [];
-        // Validate each contact
         for (let i = 0; i < sliced.length; i++) {
             const c = sliced[i];
             try {
@@ -424,9 +451,9 @@ class ContactsService {
             }
         }
         if (validContacts.length === 0) {
-            throw new errorHandler_1.AppError('No valid Indian phone numbers found. Only +91 numbers starting with 6-9 are allowed.', 400);
+            throw new errorHandler_1.AppError('No valid Indian phone numbers found.', 400);
         }
-        // Remove duplicates within batch
+        // 4. Remove Duplicates in Batch
         const seen = new Set();
         const unique = validContacts.filter((c) => {
             if (seen.has(c.phone))
@@ -434,70 +461,50 @@ class ContactsService {
             seen.add(c.phone);
             return true;
         });
-        // Check existing in database
-        const candidatePhones = new Set();
-        for (const u of unique) {
-            const variants = (0, phone_1.buildINPhoneVariants)(u.phone);
-            variants.forEach(v => candidatePhones.add(v));
-        }
-        const existing = await database_1.default.contact.findMany({
-            where: {
-                organizationId,
-                phone: { in: Array.from(candidatePhones) },
-            },
-            select: { phone: true },
-        });
-        const existingCanon = new Set();
-        for (const e of existing) {
-            const canon = (0, phone_1.normalizeINNational10)(e.phone) || e.phone;
-            if (canon)
-                existingCanon.add(canon);
-        }
-        const toInsert = unique.filter((u) => !existingCanon.has(u.phone));
-        // Insert contacts
+        // 5. Insert Contacts
+        // Note: We use createMany for speed.
+        // If skipDuplicates=true, phones already in DB won't be re-inserted.
+        // BUT we still need to add them to the group. So we need IDs.
         const createdRes = await database_1.default.contact.createMany({
-            data: toInsert,
-            skipDuplicates,
+            data: unique,
+            skipDuplicates: true,
         });
         const imported = createdRes.count;
-        const skipped = unique.length - imported;
-        // Add to group if specified
+        const skipped = unique.length - imported; // roughly
+        // 6. Add ALL Valid Contacts to Group
         let addedToGroup = 0;
-        if (groupId && imported > 0) {
+        if (targetGroupId) {
             try {
-                const phones = toInsert.map((c) => c.phone);
-                const createdContacts = await database_1.default.contact.findMany({
-                    where: { organizationId, phone: { in: phones }, source: 'import' },
+                const phones = unique.map((c) => c.phone);
+                // Fetch ALL valid contact IDs (newly created + existing)
+                const allContactIds = await database_1.default.contact.findMany({
+                    where: { organizationId, phone: { in: phones } },
                     select: { id: true },
                 });
-                if (createdContacts.length > 0) {
+                if (allContactIds.length > 0) {
                     const groupMembers = await database_1.default.contactGroupMember.createMany({
-                        data: createdContacts.map((ct) => ({ groupId, contactId: ct.id })),
-                        skipDuplicates: true,
+                        data: allContactIds.map((ct) => ({
+                            groupId: targetGroupId,
+                            contactId: ct.id,
+                        })),
+                        skipDuplicates: true, // Ignore if already in group
                     });
                     addedToGroup = groupMembers.count;
                 }
             }
             catch (err) {
                 console.error('Failed to add contacts to group:', err);
-                errors.push({ row: 0, error: `Failed to add contacts to group: ${err.message}` });
+                errors.push({ row: 0, error: `Group add failed: ${err.message}` });
             }
         }
-        // Update subscription
+        // 7. Update Subscription
         if (org?.subscription && imported > 0) {
             await database_1.default.subscription.update({
                 where: { id: org.subscription.id },
                 data: { contactsUsed: { increment: imported } },
             });
         }
-        console.log(`✅ Import complete:`, {
-            organizationId,
-            total: contacts.length,
-            imported,
-            skipped,
-            failed: errors.length,
-            addedToGroup,
-        });
+        console.log(`✅ Import complete: ${imported} imported, ${addedToGroup} added to group ${targetGroupId}`);
         return {
             imported,
             skipped,

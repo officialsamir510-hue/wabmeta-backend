@@ -15,8 +15,9 @@ const errorHandler_1 = require("../../middleware/errorHandler");
 const google_auth_library_1 = require("google-auth-library");
 // Google OAuth Client
 const googleClient = new google_auth_library_1.OAuth2Client(config_1.config.google.clientId);
-// In-memory OTP storage (Use Redis in production)
-const otpStore = new Map();
+const redis_1 = require("../../config/redis");
+const redis = (0, redis_1.getRedis)();
+const OTP_PREFIX = 'otp:';
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
@@ -145,7 +146,7 @@ class AuthService {
                         name: organizationName.trim(),
                         slug: (0, otp_1.generateSlug)(organizationName),
                         ownerId: user.id,
-                        planType: 'FREE',
+                        planType: 'FREE_DEMO',
                     },
                 });
                 // Add user as organization member
@@ -157,10 +158,10 @@ class AuthService {
                         joinedAt: new Date(),
                     },
                 });
-                // Create free subscription
-                const freePlan = await tx.plan.findUnique({ where: { type: 'FREE' } });
+                // Wait, we can define the subscription for FREE_DEMO if needed, else it is handled
+                const freePlan = await tx.plan.findUnique({ where: { type: 'FREE_DEMO' } });
                 if (!freePlan) {
-                    throw new errorHandler_1.AppError('FREE plan not found. Please run db:seed.', 500);
+                    throw new errorHandler_1.AppError('FREE_DEMO plan not found. Please run db:seed.', 500);
                 }
                 await tx.subscription.create({
                     data: {
@@ -405,12 +406,15 @@ class AuthService {
         // Generate OTP
         const otp = (0, otp_1.generateOTP)(6);
         const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
-        // Store OTP (Use Redis in production)
-        otpStore.set(normalizedEmail, {
-            otp,
-            expiresAt,
-            attempts: 0,
-        });
+        // Store OTP in Redis (10 minutes TTL)
+        if (redis) {
+            await redis.set(`${OTP_PREFIX}${normalizedEmail}`, JSON.stringify({ otp, attempts: 0 }), 'EX', 600 // 10 minutes
+            );
+        }
+        else {
+            console.warn('⚠️ Redis not available, OTP not stored!');
+            throw new errorHandler_1.AppError('Service temporarily unavailable', 503);
+        }
         // Send OTP email (✅ non-blocking)
         const emailContent = email_resend_1.emailTemplates.otp(user.firstName, otp);
         sendEmailNonBlocking({
@@ -425,27 +429,26 @@ class AuthService {
     // ==========================================
     async verifyOTP(email, otp) {
         const normalizedEmail = normalizeEmail(email);
-        const storedOTP = otpStore.get(normalizedEmail);
-        if (!storedOTP) {
+        if (!redis)
+            throw new errorHandler_1.AppError('Service temporarily unavailable', 503);
+        const storedData = await redis.get(`${OTP_PREFIX}${normalizedEmail}`);
+        if (!storedData) {
             throw new errorHandler_1.AppError('OTP expired or not found', 400);
         }
-        // Check expiry
-        if (Date.now() > storedOTP.expiresAt) {
-            otpStore.delete(normalizedEmail);
-            throw new errorHandler_1.AppError('OTP expired', 400);
-        }
+        const { otp: storedOtp, attempts } = JSON.parse(storedData);
         // Check attempts
-        if (storedOTP.attempts >= 5) {
-            otpStore.delete(normalizedEmail);
+        if (attempts >= 5) {
+            await redis.del(`${OTP_PREFIX}${normalizedEmail}`);
             throw new errorHandler_1.AppError('Too many attempts. Please request a new OTP', 429);
         }
         // Verify OTP
-        if (storedOTP.otp !== otp) {
-            storedOTP.attempts++;
+        if (storedOtp !== otp) {
+            // Increment attempts
+            await redis.set(`${OTP_PREFIX}${normalizedEmail}`, JSON.stringify({ otp: storedOtp, attempts: attempts + 1 }), 'KEEPTTL');
             throw new errorHandler_1.AppError('Invalid OTP', 400);
         }
         // Clear OTP
-        otpStore.delete(normalizedEmail);
+        await redis.del(`${OTP_PREFIX}${normalizedEmail}`);
         // Get user
         const user = await database_1.default.user.findUnique({
             where: { email: normalizedEmail },
@@ -532,7 +535,7 @@ class AuthService {
                     name: `${given_name}'s Workspace`,
                     slug: (0, otp_1.generateSlug)(`${given_name}-workspace`),
                     ownerId: user.id,
-                    planType: 'FREE',
+                    planType: 'FREE_DEMO',
                 },
             });
             await database_1.default.organizationMember.create({
@@ -543,6 +546,20 @@ class AuthService {
                     joinedAt: new Date(),
                 },
             });
+            // ✅ Assign FREE_DEMO subscription
+            const freePlan = await database_1.default.plan.findUnique({ where: { type: 'FREE_DEMO' } });
+            if (freePlan) {
+                await database_1.default.subscription.create({
+                    data: {
+                        organizationId: organization.id,
+                        planId: freePlan.id,
+                        status: 'ACTIVE',
+                        billingCycle: 'monthly',
+                        currentPeriodStart: new Date(),
+                        currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+                    },
+                });
+            }
         }
         // Update last login
         await database_1.default.user.update({

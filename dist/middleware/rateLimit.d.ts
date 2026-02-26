@@ -1,10 +1,12 @@
-import { Request, Response, NextFunction } from 'express';
-interface RateLimitOptions {
-    windowMs?: number;
-    max?: number;
+import rateLimit from 'express-rate-limit';
+export { rateLimit };
+export declare const createRateLimiter: (options: {
+    windowMs: number;
+    max: number;
     message?: string;
-}
-export declare const rateLimit: (options?: RateLimitOptions) => (req: Request, res: Response, next: NextFunction) => void | Response<any, Record<string, any>>;
-export declare const authRateLimit: (req: Request, res: Response, next: NextFunction) => void | Response<any, Record<string, any>>;
-export {};
+}) => import("express-rate-limit").RateLimitRequestHandler;
+export declare const authLimiter: import("express-rate-limit").RateLimitRequestHandler;
+export declare const authRateLimit: import("express-rate-limit").RateLimitRequestHandler;
+export declare const apiLimiter: import("express-rate-limit").RateLimitRequestHandler;
+export declare const campaignLimiter: import("express-rate-limit").RateLimitRequestHandler;
 //# sourceMappingURL=rateLimit.d.ts.map

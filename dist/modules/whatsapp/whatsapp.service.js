@@ -1,5 +1,38 @@
 "use strict";
 // 📁 src/modules/whatsapp/whatsapp.service.ts - COMPLETE FINAL VERSION
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -158,12 +191,18 @@ class WhatsAppService {
     /**
      * Get or create conversation
      */
-    async getOrCreateConversation(organizationId, contactId, phoneNumberId, messagePreview, existingConversationId) {
-        let conversation = existingConversationId
-            ? await database_1.default.conversation.findUnique({
+    async getOrCreateConversation(organizationId, contactId, phoneNumberId, // This is the Meta Phone ID
+    messagePreview, existingConversationId) {
+        let conversation = null;
+        // 1. Try by ID if provided
+        if (existingConversationId) {
+            conversation = await database_1.default.conversation.findUnique({
                 where: { id: existingConversationId },
-            })
-            : await database_1.default.conversation.findUnique({
+            });
+        }
+        // 2. Fallback or primary check by Org + Contact
+        if (!conversation) {
+            conversation = await database_1.default.conversation.findUnique({
                 where: {
                     organizationId_contactId: {
                         organizationId,
@@ -171,19 +210,34 @@ class WhatsAppService {
                     },
                 },
             });
+        }
         if (!conversation) {
-            conversation = await database_1.default.conversation.create({
-                data: {
-                    organizationId,
-                    phoneNumberId,
-                    contactId,
-                    lastMessageAt: new Date(),
-                    lastMessagePreview: messagePreview,
-                    unreadCount: 0,
-                    isWindowOpen: true
-                },
-            });
-            console.log(`💬 Created new conversation: ${conversation.id}`);
+            try {
+                conversation = await database_1.default.conversation.create({
+                    data: {
+                        organizationId,
+                        // ❌ Removing phoneNumberId here because it's a FK to PhoneNumber.id (CUID)
+                        // but we are passing Meta's numeric Phone ID. This was causing crashes.
+                        contactId,
+                        lastMessageAt: new Date(),
+                        lastMessagePreview: messagePreview,
+                        unreadCount: 0,
+                        isWindowOpen: true,
+                        isRead: true
+                    },
+                });
+                console.log(`💬 Created new conversation: ${conversation.id}`);
+            }
+            catch (err) {
+                // Double check if it was created in the meantime (race condition)
+                conversation = await database_1.default.conversation.findUnique({
+                    where: {
+                        organizationId_contactId: { organizationId, contactId },
+                    },
+                });
+                if (!conversation)
+                    throw err;
+            }
         }
         else {
             await database_1.default.conversation.update({
@@ -191,7 +245,8 @@ class WhatsAppService {
                 data: {
                     lastMessageAt: new Date(),
                     lastMessagePreview: messagePreview,
-                    isWindowOpen: true
+                    isWindowOpen: true,
+                    isRead: true
                 },
             });
         }
@@ -252,43 +307,161 @@ class WhatsAppService {
     /**
      * Send a text message
      */
-    async sendTextMessage(accountId, to, text, conversationId, organizationId) {
+    async sendTextMessage(accountId, to, message, conversationId, organizationId, tempId, clientMsgId) {
         return this.sendMessage({
             accountId,
             to,
             type: 'text',
-            content: { text: { body: text } },
+            content: { text: { body: message } },
             conversationId,
             organizationId,
+            tempId,
+            clientMsgId
         });
+    }
+    // Helper function to hydrate template text
+    hydrateTemplate(bodyText, params) {
+        let text = bodyText;
+        if (!params || params.length === 0)
+            return text;
+        // Convert components to parameter array
+        // Components array structure: [{ type: 'body', parameters: [{ type: 'text', text: 'Value' }] }]
+        let flatParams = [];
+        if (params.length > 0) {
+            if (params[0]?.type === 'body' || params[0]?.parameters) {
+                const bodyComp = params.find(c => c.type === 'body');
+                if (bodyComp && bodyComp.parameters) {
+                    flatParams = bodyComp.parameters;
+                }
+            }
+            else {
+                flatParams = params;
+            }
+        }
+        flatParams.forEach((param, index) => {
+            // Replace {{1}}, {{2}} etc with params
+            const paramValue = typeof param === 'string' ? param : param?.text || JSON.stringify(param);
+            text = text.replace(new RegExp(`\\{\\{${index + 1}\\}\\}`, 'g'), paramValue);
+        });
+        return text;
     }
     /**
      * Send a template message
      */
     async sendTemplateMessage(options) {
-        const { accountId, to, templateName, templateLanguage, components, conversationId, organizationId, } = options;
+        const { accountId, to, templateName, templateLanguage, components, conversationId, organizationId, tempId, clientMsgId, } = options;
         console.log(`📋 Sending template message: ${templateName}`);
         console.log(`   To: ${to}`);
         console.log(`   Account ID: ${accountId}`);
-        return this.sendMessage({
-            accountId,
-            to,
-            type: 'template',
-            content: {
+        try {
+            const accountData = await this.getAccountWithToken(accountId);
+            if (!accountData)
+                throw new Error('Account not found');
+            const { account, accessToken } = accountData;
+            // ✅ 1. Get Template Details from DB to get Body Text
+            const template = await database_1.default.template.findFirst({
+                where: {
+                    organizationId: account.organizationId,
+                    name: templateName,
+                    status: 'APPROVED' // Optional
+                }
+            });
+            // ✅ 2. Hydrate text (Fill variables)
+            let fullContent = templateName;
+            if (template?.bodyText) {
+                fullContent = this.hydrateTemplate(template.bodyText, components || []);
+            }
+            // Formatted phone
+            const formattedTo = this.formatPhoneNumber(to);
+            const messagePayload = {
+                messaging_product: 'whatsapp',
+                recipient_type: 'individual',
+                to: formattedTo,
+                type: 'template',
                 template: {
                     name: templateName,
                     language: { code: templateLanguage },
                     components: components || [],
                 },
-            },
-            conversationId,
-            organizationId,
-        });
+            };
+            // Send to Meta
+            const response = await meta_api_1.metaApi.sendMessage(account.phoneNumberId, accessToken, formattedTo, messagePayload);
+            const waMessageId = response?.messages?.[0]?.id || response?.messageId;
+            if (!waMessageId)
+                throw new Error('No message ID returned');
+            // ✅ 3. Save FULL CONTENT to Database
+            let savedMessage = null;
+            if (conversationId && organizationId) {
+                const now = new Date();
+                savedMessage = await database_1.default.message.create({
+                    data: {
+                        conversationId,
+                        whatsappAccountId: account.id,
+                        waMessageId,
+                        wamId: waMessageId,
+                        direction: 'OUTBOUND',
+                        type: 'TEMPLATE',
+                        // Store JSON to keep structure, but include body
+                        content: JSON.stringify({
+                            templateName,
+                            body: fullContent, // This is what we show in UI
+                            header: template?.headerContent || null,
+                            footer: template?.footerText || null,
+                            params: components
+                        }),
+                        status: 'SENT',
+                        sentAt: now,
+                        createdAt: now,
+                        metadata: {
+                            ...(tempId ? { tempId } : {}),
+                            ...(clientMsgId ? { clientMsgId } : {}),
+                        },
+                    },
+                });
+                // Update conversation
+                await database_1.default.conversation.update({
+                    where: { id: conversationId },
+                    data: {
+                        lastMessageAt: now,
+                        lastMessagePreview: fullContent.substring(0, 100),
+                        isWindowOpen: true,
+                        windowExpiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+                    },
+                });
+                // Emit Socket Event
+                const { webhookEvents } = await Promise.resolve().then(() => __importStar(require('../webhooks/webhook.service')));
+                webhookEvents.emit('newMessage', {
+                    organizationId,
+                    conversationId,
+                    tempId: tempId || savedMessage.metadata?.tempId,
+                    clientMsgId: clientMsgId || savedMessage.metadata?.clientMsgId,
+                    message: {
+                        ...savedMessage,
+                        tempId: tempId || savedMessage.metadata?.tempId,
+                        clientMsgId: clientMsgId || savedMessage.metadata?.clientMsgId,
+                    }
+                });
+            }
+            return {
+                success: true,
+                waMessageId,
+                wamId: waMessageId,
+                message: savedMessage ? {
+                    ...savedMessage,
+                    tempId: tempId || savedMessage.metadata?.tempId,
+                    clientMsgId: clientMsgId || savedMessage.metadata?.clientMsgId,
+                } : null
+            };
+        }
+        catch (error) {
+            console.error('❌ sendTemplate error:', error);
+            throw error;
+        }
     }
     /**
      * Send a media message
      */
-    async sendMediaMessage(accountId, to, mediaType, mediaUrl, caption, conversationId, organizationId) {
+    async sendMediaMessage(accountId, to, mediaType, mediaUrl, caption, conversationId, organizationId, tempId, clientMsgId) {
         const content = {
             [mediaType]: {
                 link: mediaUrl,
@@ -304,13 +477,15 @@ class WhatsAppService {
             content,
             conversationId,
             organizationId,
+            tempId,
+            clientMsgId
         });
     }
     /**
      * Core send message function - WITH CONTACT CHECK
      */
     async sendMessage(options) {
-        const { accountId, to, type, content, conversationId } = options;
+        const { accountId, to, type, content, conversationId, tempId, clientMsgId } = options;
         console.log(`\n📤 ========== SEND MESSAGE START ==========`);
         console.log(`   Type: ${type}`);
         console.log(`   To: ${to}`);
@@ -392,6 +567,10 @@ class WhatsAppService {
                     content: messageContent,
                     status: client_1.MessageStatus.SENT,
                     sentAt: new Date(),
+                    metadata: {
+                        ...(tempId ? { tempId } : {}),
+                        ...(clientMsgId ? { clientMsgId } : {}),
+                    },
                 },
                 include: {
                     conversation: {
@@ -402,11 +581,49 @@ class WhatsAppService {
                 },
             });
             console.log(`💾 Message saved to DB: ${message.id}`);
+            // ✅ Emit socket event for real-time update
+            const { webhookEvents } = await Promise.resolve().then(() => __importStar(require('../webhooks/webhook.service')));
+            webhookEvents.emit('newMessage', {
+                organizationId,
+                conversationId: conversation.id,
+                tempId: tempId || message.metadata?.tempId,
+                clientMsgId: clientMsgId || message.metadata?.clientMsgId,
+                message: {
+                    id: message.id,
+                    conversationId: conversation.id,
+                    waMessageId: message.waMessageId,
+                    wamId: message.wamId,
+                    direction: message.direction,
+                    type: message.type,
+                    content: message.content,
+                    status: message.status,
+                    createdAt: message.createdAt,
+                    tempId: tempId || message.metadata?.tempId,
+                    clientMsgId: clientMsgId || message.metadata?.clientMsgId,
+                },
+            });
+            webhookEvents.emit('conversationUpdated', {
+                organizationId,
+                conversation: {
+                    id: conversation.id,
+                    lastMessageAt: conversation.lastMessageAt,
+                    lastMessagePreview: conversation.lastMessagePreview,
+                    unreadCount: conversation.unreadCount,
+                    isRead: conversation.isRead,
+                    isWindowOpen: conversation.isWindowOpen,
+                    windowExpiresAt: conversation.windowExpiresAt,
+                    contact: message.conversation?.contact,
+                },
+            });
             console.log(`📤 ========== SEND MESSAGE END ==========\n`);
             return {
                 success: true,
                 messageId: result.messageId,
-                message,
+                message: {
+                    ...message,
+                    tempId: tempId || message.metadata?.tempId,
+                    clientMsgId: clientMsgId || message.metadata?.clientMsgId,
+                },
             };
         }
         catch (error) {

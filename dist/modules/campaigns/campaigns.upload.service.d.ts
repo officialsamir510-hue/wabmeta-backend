@@ -1,7 +1,8 @@
 export declare class CampaignUploadService {
-    /**
-     * ✅ Process CSV with real-time progress
-     */
+    private getValueByPossibleHeaders;
+    private normalizeIndianPhone;
+    private isValidIndian10Digit;
+    private normalizeEmail;
     processCsvFile(fileBuffer: Buffer, userId: string, organizationId: string): Promise<{
         uploadId: string;
         totalRows: number;
@@ -18,13 +19,7 @@ export declare class CampaignUploadService {
      * Validate individual contact
      */
     private validateContact;
-    /**
-     * Get CSV template headers
-     */
     getTemplateHeaders(): string[];
-    /**
-     * Validate CSV file
-     */
     validateCsvFile(fileBuffer: Buffer): Promise<{
         totalRows: number;
         validRows: number;

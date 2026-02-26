@@ -18,6 +18,7 @@ export declare class AdminController {
     suspendUser(req: AdminRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
     activateUser(req: AdminRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
     deleteUser(req: AdminRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    transferOwnership(req: AdminRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
     getOrganizations(req: AdminRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
     getOrganizationById(req: AdminRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
     updateOrganization(req: AdminRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
@@ -34,6 +35,11 @@ export declare class AdminController {
     getActivityLogs(req: AdminRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
     getSystemSettings(req: AdminRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
     updateSystemSettings(req: AdminRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    assignPlan(req: AdminRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+    extendSubscription(req: AdminRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+    revokeSubscription(req: AdminRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+    getSubscriptions(req: AdminRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+    getSubscriptionStats(req: AdminRequest, res: Response): Promise<Response<any, Record<string, any>>>;
 }
 export declare const adminController: AdminController;
 export {};

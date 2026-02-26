@@ -13,7 +13,7 @@ declare class WhatsAppController {
      * ✅ FIXED: Send Template Message
      * Accepts multiple field name formats for flexibility
      */
-    sendTemplate(req: Request, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;
+    sendTemplate(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
     /**
      * ✅ FIXED: Send Media Message
      * Accepts multiple field name formats for flexibility

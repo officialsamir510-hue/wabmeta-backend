@@ -6,10 +6,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.campaignsService = exports.CampaignsService = void 0;
 const errorHandler_1 = require("../../middleware/errorHandler");
-const whatsapp_api_1 = require("../whatsapp/whatsapp.api");
 const meta_service_1 = require("../meta/meta.service");
 const campaigns_socket_1 = require("./campaigns.socket"); // ✅ Added
 const uuid_1 = require("uuid");
+const messageQueue_service_1 = require("../../services/messageQueue.service");
 const database_1 = __importDefault(require("../../config/database"));
 // ============================================
 // HELPER FUNCTIONS
@@ -487,62 +487,212 @@ class CampaignsService {
         return { message: 'Campaign deleted successfully' };
     }
     // ==========================================
-    // START CAMPAIGN - ✅ WITH SOCKET UPDATES
+    // START CAMPAIGN - ✅ WITH ROBUST CHECKS
     // ==========================================
     async start(organizationId, campaignId) {
+        console.log('🚀 Starting campaign:', { id: campaignId, organizationId });
         const campaign = await database_1.default.campaign.findFirst({
             where: { id: campaignId, organizationId },
-            include: { template: true, whatsappAccount: true },
+            include: {
+                template: true,
+                whatsappAccount: true,
+            },
         });
         if (!campaign) {
             throw new errorHandler_1.AppError('Campaign not found', 404);
         }
-        if (!['DRAFT', 'SCHEDULED', 'PAUSED'].includes(campaign.status)) {
-            throw new errorHandler_1.AppError(`Cannot start campaign with status: ${campaign.status}`, 400);
+        if (campaign.status === 'RUNNING') {
+            throw new errorHandler_1.AppError('Campaign is already running', 400);
         }
-        if (!campaign.whatsappAccount) {
-            throw new errorHandler_1.AppError('WhatsApp account not found for this campaign', 400);
+        if (!campaign.whatsappAccountId) {
+            throw new errorHandler_1.AppError('No WhatsApp account connected to this campaign', 400);
         }
-        if (campaign.whatsappAccount.status !== 'CONNECTED') {
-            throw new errorHandler_1.AppError('WhatsApp account is not connected', 400);
+        if (!campaign.templateId) {
+            throw new errorHandler_1.AppError('No template selected for this campaign', 400);
         }
-        const accountData = await meta_service_1.metaService.getAccountWithToken(campaign.whatsappAccountId);
-        if (!accountData) {
-            throw new errorHandler_1.AppError('WhatsApp account token is invalid or unavailable. Please reconnect in Settings → WhatsApp.', 400);
+        // ✅ CRITICAL: Check if campaign has contacts
+        const contactCount = await database_1.default.campaignContact.count({
+            where: { campaignId },
+        });
+        console.log(`📊 Campaign has ${contactCount} contacts`);
+        if (contactCount === 0) {
+            throw new errorHandler_1.AppError('Campaign has no contacts. Please add contacts first.', 400);
         }
-        if (!accountData.accessToken.startsWith('EAA')) {
-            throw new errorHandler_1.AppError('WhatsApp account token is corrupted. Please reconnect in Settings → WhatsApp.', 400);
+        // ✅ Check pending contacts
+        const pendingCount = await database_1.default.campaignContact.count({
+            where: {
+                campaignId,
+                status: 'PENDING',
+            },
+        });
+        console.log(`📋 Pending contacts: ${pendingCount}`);
+        if (pendingCount === 0) {
+            throw new errorHandler_1.AppError('No pending contacts to send. All contacts may have been processed.', 400);
         }
-        console.log(`✅ Token validated for campaign: ${campaignId}`);
-        const updated = await database_1.default.campaign.update({
+        // Update campaign status
+        const updatedCampaign = await database_1.default.campaign.update({
             where: { id: campaignId },
             data: {
                 status: 'RUNNING',
                 startedAt: campaign.startedAt || new Date(),
             },
             include: {
-                template: { select: { name: true, language: true, variables: true } },
-                whatsappAccount: { select: { id: true, phoneNumber: true } },
+                template: { select: { name: true } },
+                whatsappAccount: { select: { phoneNumber: true } },
                 contactGroup: { select: { name: true } },
             },
         });
-        console.log(`🚀 Starting campaign: ${campaignId}`);
+        console.log('✅ Campaign status updated to RUNNING');
         // ✅ Emit campaign started event
         campaigns_socket_1.campaignSocketService.emitCampaignUpdate(organizationId, campaignId, {
             status: 'RUNNING',
             message: 'Campaign started successfully',
-            totalContacts: updated.totalContacts,
+            totalContacts: contactCount,
         });
-        // Fire-and-forget sending
-        void this.processCampaignSending(organizationId, campaignId).catch((e) => {
-            console.error('❌ Campaign send process failed:', e);
-            // ✅ Emit error event
-            campaigns_socket_1.campaignSocketService.emitCampaignUpdate(organizationId, campaignId, {
-                status: 'FAILED',
-                message: `Campaign failed: ${e.message}`,
+        // ✅ CRITICAL: Start processing contacts
+        console.log('🔄 Starting contact processing...');
+        this.processCampaignContacts(campaignId, organizationId).catch((error) => {
+            console.error('❌ Campaign processing error:', error);
+        });
+        return formatCampaign(updatedCampaign);
+    }
+    // ✅ PROCESS CAMPAIGN CONTACTS
+    async processCampaignContacts(campaignId, organizationId) {
+        console.log(`📤 Processing contacts for campaign: ${campaignId}`);
+        const campaign = await database_1.default.campaign.findUnique({
+            where: { id: campaignId },
+            include: {
+                template: true,
+                whatsappAccount: true,
+            },
+        });
+        if (!campaign) {
+            console.error('❌ Campaign not found');
+            return;
+        }
+        // ✅ Get pending contacts in batches
+        const BATCH_SIZE = 100;
+        let processedCount = 0;
+        let hasMore = true;
+        while (hasMore) {
+            // Check if campaign is still running
+            const currentCampaign = await database_1.default.campaign.findUnique({
+                where: { id: campaignId },
+                select: { status: true },
             });
+            if (currentCampaign?.status !== 'RUNNING') {
+                console.log('⏸️ Campaign stopped, halting processing');
+                break;
+            }
+            // Get batch of pending contacts
+            const contacts = await database_1.default.campaignContact.findMany({
+                where: {
+                    campaignId,
+                    status: 'PENDING',
+                },
+                include: {
+                    contact: true,
+                },
+                take: BATCH_SIZE,
+                orderBy: { createdAt: 'asc' },
+            });
+            console.log(`📦 Processing batch of ${contacts.length} contacts`);
+            if (contacts.length === 0) {
+                hasMore = false;
+                break;
+            }
+            // Process each contact
+            for (const campaignContact of contacts) {
+                try {
+                    const contact = campaignContact.contact;
+                    const phone = contact?.phone;
+                    if (!phone) {
+                        console.warn(`⚠️ Skipping contact ${campaignContact.id} - no phone`);
+                        continue;
+                    }
+                    console.log(`📞 Processing contact: ${phone}`);
+                    // ✅ Add to message queue
+                    await (0, messageQueue_service_1.addMessage)({
+                        campaignId,
+                        campaignContactId: campaignContact.id,
+                        contactId: campaignContact.contactId,
+                        phone,
+                        templateId: campaign.templateId,
+                        whatsappAccountId: campaign.whatsappAccountId,
+                        organizationId: campaign.organizationId,
+                        variables: campaignContact.variables || {},
+                    });
+                    processedCount++;
+                    // Emit individual progress if needed (optional, could be noisy)
+                    // campaignSocketService.emitContactStatus(...)
+                }
+                catch (error) {
+                    console.error(`❌ Failed to queue contact ${campaignContact.id}:`, error.message);
+                    // Mark as failed
+                    await database_1.default.campaignContact.update({
+                        where: { id: campaignContact.id },
+                        data: {
+                            status: 'FAILED',
+                            failureReason: error.message,
+                            failedAt: new Date(),
+                        },
+                    });
+                }
+            }
+            // ✅ Emit batch progress
+            const totalProcessed = await database_1.default.campaignContact.count({
+                where: { campaignId, status: { not: 'PENDING' } }
+            });
+            campaigns_socket_1.campaignSocketService.emitCampaignProgress(organizationId, campaignId, {
+                sent: totalProcessed, // This includes Sent + Failed. Adjust if you only want SENT
+                failed: 0, // Will be updated by queue
+                total: campaign.totalContacts,
+                percentage: Math.round((totalProcessed / campaign.totalContacts) * 100),
+                status: 'RUNNING'
+            });
+            // ✅ Delay between batches (avoid rate limits)
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+        console.log(`✅ Campaign processing complete: ${processedCount} contacts queued`);
+        // ✅ Update campaign stats
+        await this.updateCampaignStats(campaignId);
+    }
+    // ✅ UPDATE CAMPAIGN STATS
+    async updateCampaignStats(campaignId) {
+        const stats = await database_1.default.campaignContact.groupBy({
+            by: ['status'],
+            where: { campaignId },
+            _count: true,
         });
-        return formatCampaign(updated);
+        const statusCounts = {};
+        stats.forEach((stat) => {
+            statusCounts[stat.status] = stat._count;
+        });
+        await database_1.default.campaign.update({
+            where: { id: campaignId },
+            data: {
+                totalContacts: Object.values(statusCounts).reduce((a, b) => a + b, 0),
+                sentCount: statusCounts.SENT || 0,
+                deliveredCount: statusCounts.DELIVERED || 0,
+                readCount: statusCounts.READ || 0,
+                failedCount: statusCounts.FAILED || 0,
+            },
+        });
+        console.log('📊 Campaign stats updated:', statusCounts);
+        // Check if finished
+        const pendingCount = await database_1.default.campaignContact.count({
+            where: { campaignId, status: 'PENDING' }
+        });
+        if (pendingCount === 0) {
+            await database_1.default.campaign.update({
+                where: { id: campaignId },
+                data: {
+                    status: 'COMPLETED',
+                    completedAt: new Date()
+                }
+            });
+            console.log(`🏁 Campaign ${campaignId} marked as COMPLETED`);
+        }
     }
     // ==========================================
     // PAUSE/RESUME/CANCEL
@@ -604,13 +754,7 @@ class CampaignsService {
             message: 'Campaign resumed',
         });
         // Resume sending
-        void this.processCampaignSending(organizationId, campaignId).catch((e) => {
-            console.error('❌ Campaign resume send failed:', e);
-            campaigns_socket_1.campaignSocketService.emitCampaignUpdate(organizationId, campaignId, {
-                status: 'FAILED',
-                message: `Campaign failed: ${e.message}`,
-            });
-        });
+        this.processCampaignContacts(campaignId, organizationId);
         return formatCampaign(updated);
     }
     async cancel(organizationId, campaignId) {
@@ -735,13 +879,7 @@ class CampaignsService {
                 message: `Retrying ${result.count} messages`,
             });
             // Resume sending
-            void this.processCampaignSending(organizationId, campaignId).catch((e) => {
-                console.error('❌ Campaign retry send failed:', e);
-                campaigns_socket_1.campaignSocketService.emitCampaignUpdate(organizationId, campaignId, {
-                    status: 'FAILED',
-                    message: `Retry failed: ${e.message}`,
-                });
-            });
+            this.processCampaignContacts(campaignId, organizationId);
         }
         console.log(`🔄 Campaign retry: ${result.count} messages queued`);
         return {
@@ -806,313 +944,77 @@ class CampaignsService {
         });
         return formatCampaign(duplicate);
     }
-    // ==========================================
-    // PROCESS CAMPAIGN SENDING - ✅ WITH SOCKET UPDATES
-    // ==========================================
-    async processCampaignSending(organizationId, campaignId) {
-        console.log(`📤 Starting send process for campaign: ${campaignId}`);
-        const campaign = await database_1.default.campaign.findFirst({
-            where: { id: campaignId, organizationId },
-            include: { template: true, whatsappAccount: true },
+    async shouldStopCampaign(campaignId) {
+        const currentCampaign = await database_1.default.campaign.findUnique({
+            where: { id: campaignId },
+            select: { status: true },
         });
-        if (!campaign) {
-            console.error('❌ Campaign not found');
-            return;
-        }
-        if (campaign.status !== 'RUNNING') {
-            console.log(`⚠️ Campaign status is ${campaign.status}, stopping send process`);
-            return;
-        }
-        const accountData = await meta_service_1.metaService.getAccountWithToken(campaign.whatsappAccountId);
-        if (!accountData) {
-            console.error('❌ WhatsApp account not found or token unavailable');
-            await database_1.default.campaign.update({
-                where: { id: campaignId },
-                data: {
-                    status: 'FAILED',
-                    completedAt: new Date(),
+        return !currentCampaign || currentCampaign.status !== 'RUNNING';
+    }
+    async saveCampaignMessage(organizationId, campaignId, contactId, accountId, waMessageId, templateName, templateLang, params, templateId, campaignName) {
+        try {
+            let conversation = await database_1.default.conversation.findFirst({
+                where: {
+                    organizationId,
+                    contactId,
                 },
             });
-            campaigns_socket_1.campaignSocketService.emitCampaignUpdate(organizationId, campaignId, {
-                status: 'FAILED',
-                message: 'WhatsApp account token unavailable',
-            });
-            return;
-        }
-        const { account, accessToken } = accountData;
-        if (!accessToken.startsWith('EAA')) {
-            console.error('❌ Invalid access token format');
-            await database_1.default.campaign.update({
-                where: { id: campaignId },
-                data: {
-                    status: 'FAILED',
-                    completedAt: new Date(),
-                },
-            });
-            campaigns_socket_1.campaignSocketService.emitCampaignUpdate(organizationId, campaignId, {
-                status: 'FAILED',
-                message: 'Invalid access token format',
-            });
-            return;
-        }
-        console.log('✅ Using decrypted token:', accessToken.substring(0, 10) + '...');
-        const template = campaign.template;
-        const templateName = template?.name;
-        const templateLang = toMetaLang(template?.language);
-        console.log(`📝 Using template: ${templateName} (${templateLang})`);
-        if (!templateName) {
-            console.error('❌ Campaign template missing');
-            await database_1.default.campaign.update({
-                where: { id: campaignId },
-                data: {
-                    status: 'FAILED',
-                    completedAt: new Date(),
-                },
-            });
-            campaigns_socket_1.campaignSocketService.emitCampaignUpdate(organizationId, campaignId, {
-                status: 'FAILED',
-                message: 'Template missing',
-            });
-            return;
-        }
-        const vars = template.variables || [];
-        const varCount = Array.isArray(vars) ? vars.length : 0;
-        // ✅ Get total contacts count for progress tracking
-        const totalContacts = await database_1.default.campaignContact.count({
-            where: { campaignId },
-        });
-        let batchCount = 0;
-        const MAX_BATCHES = 100;
-        let totalSent = 0;
-        let totalFailed = 0;
-        // ✅ Emit initial progress
-        campaigns_socket_1.campaignSocketService.emitCampaignProgress(organizationId, campaignId, {
-            sent: 0,
-            failed: 0,
-            total: totalContacts,
-            percentage: 0,
-            status: 'RUNNING',
-        });
-        while (batchCount < MAX_BATCHES) {
-            batchCount++;
-            const currentCampaign = await database_1.default.campaign.findUnique({
-                where: { id: campaignId },
-                select: { status: true },
-            });
-            if (!currentCampaign || currentCampaign.status !== 'RUNNING') {
-                console.log(`⚠️ Campaign stopped at batch ${batchCount}`);
-                break;
-            }
-            const pending = await database_1.default.campaignContact.findMany({
-                where: { campaignId, status: 'PENDING' },
-                take: 25,
-                orderBy: { createdAt: 'asc' },
-                include: {
-                    contact: {
-                        select: {
-                            id: true,
-                            phone: true,
-                            countryCode: true,
-                            firstName: true,
-                            lastName: true,
-                            email: true,
-                        },
+            const now = new Date();
+            const windowExpiry = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+            if (!conversation) {
+                conversation = await database_1.default.conversation.create({
+                    data: {
+                        organizationId,
+                        contactId,
+                        lastMessageAt: now,
+                        lastMessagePreview: `Template: ${templateName}`,
+                        lastCustomerMessageAt: null,
+                        windowExpiresAt: windowExpiry,
+                        isWindowOpen: true,
+                        unreadCount: 0,
+                        isRead: true,
                     },
-                },
-            });
-            if (!pending.length) {
-                console.log(`✅ No more pending contacts`);
-                break;
+                });
+                console.log(`✅ New conversation created: ${conversation.id}`);
             }
-            console.log(`📤 Processing batch ${batchCount}: ${pending.length} contacts`);
-            for (const cc of pending) {
-                const c = cc.contact || cc.Contact;
-                const to = toRecipient(c);
-                if (!to || to.length < 10) {
-                    await this.updateContactStatus(organizationId, campaignId, cc.contactId, 'FAILED', undefined, 'Contact phone missing, empty, or invalid format');
-                    totalFailed++;
-                    // ✅ Emit contact failed event
-                    campaigns_socket_1.campaignSocketService.emitContactStatus(organizationId, campaignId, {
-                        contactId: cc.contactId,
-                        phone: c?.phone || 'unknown',
-                        status: 'FAILED',
-                        error: 'Invalid phone number',
-                    });
-                    continue;
-                }
-                const toDigits = digitsOnly(to);
-                const fromDigits = digitsOnly(account.phoneNumber);
-                if (toDigits && fromDigits && toDigits === fromDigits) {
-                    console.warn(`⚠️ Skipping self-send to ${to}`);
-                    await this.updateContactStatus(organizationId, campaignId, cc.contactId, 'FAILED', undefined, 'Cannot send to business number (sender = recipient)');
-                    totalFailed++;
-                    campaigns_socket_1.campaignSocketService.emitContactStatus(organizationId, campaignId, {
-                        contactId: cc.contactId,
-                        phone: to,
-                        status: 'FAILED',
-                        error: 'Cannot send to business number',
-                    });
-                    continue;
-                }
-                try {
-                    const params = buildParamsFromContact(c, varCount);
-                    const payload = buildTemplateSendPayload({
-                        to,
+            else {
+                await database_1.default.conversation.update({
+                    where: { id: conversation.id },
+                    data: {
+                        lastMessageAt: now,
+                        lastMessagePreview: `Template: ${templateName}`,
+                        windowExpiresAt: windowExpiry,
+                        isWindowOpen: true,
+                    },
+                });
+            }
+            await database_1.default.message.create({
+                data: {
+                    conversationId: conversation.id,
+                    whatsappAccountId: accountId,
+                    waMessageId: waMessageId,
+                    wamId: waMessageId,
+                    direction: 'OUTBOUND',
+                    type: 'TEMPLATE',
+                    content: JSON.stringify({
                         templateName,
                         language: templateLang,
                         params,
-                    });
-                    console.log(`📤 Sending to ${to} with template ${templateName} (${templateLang})`);
-                    const res = await whatsapp_api_1.whatsappApi.sendMessage(account.phoneNumberId, accessToken, payload);
-                    const waMessageId = res?.messages?.[0]?.id;
-                    if (!waMessageId) {
-                        throw new Error('No message ID returned from WhatsApp API');
-                    }
-                    await this.updateContactStatus(organizationId, campaignId, cc.contactId, 'SENT', waMessageId);
-                    // Save message with conversation
-                    try {
-                        let conversation = await database_1.default.conversation.findFirst({
-                            where: {
-                                organizationId,
-                                contactId: c.id,
-                            },
-                        });
-                        const now = new Date();
-                        const windowExpiry = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-                        if (!conversation) {
-                            conversation = await database_1.default.conversation.create({
-                                data: {
-                                    organizationId,
-                                    contactId: c.id,
-                                    lastMessageAt: now,
-                                    lastMessagePreview: `Template: ${templateName}`,
-                                    lastCustomerMessageAt: null,
-                                    windowExpiresAt: windowExpiry,
-                                    isWindowOpen: true,
-                                    unreadCount: 0,
-                                    isRead: true,
-                                },
-                            });
-                            console.log(`✅ New conversation created: ${conversation.id}`);
-                        }
-                        else {
-                            await database_1.default.conversation.update({
-                                where: { id: conversation.id },
-                                data: {
-                                    lastMessageAt: now,
-                                    lastMessagePreview: `Template: ${templateName}`,
-                                    windowExpiresAt: windowExpiry,
-                                    isWindowOpen: true,
-                                },
-                            });
-                        }
-                        await database_1.default.message.create({
-                            data: {
-                                conversationId: conversation.id,
-                                whatsappAccountId: account.id,
-                                waMessageId: waMessageId,
-                                wamId: waMessageId,
-                                direction: 'OUTBOUND',
-                                type: 'TEMPLATE',
-                                content: JSON.stringify({
-                                    templateName,
-                                    language: templateLang,
-                                    params,
-                                }),
-                                status: 'SENT',
-                                templateId: template.id,
-                                sentAt: now,
-                                metadata: {
-                                    campaignId,
-                                    campaignName: campaign.name,
-                                },
-                            },
-                        });
-                        console.log(`💾 Campaign message saved with conversation: ${waMessageId}`);
-                    }
-                    catch (saveErr) {
-                        console.error('⚠️ Failed to save campaign message:', saveErr.message);
-                    }
-                    totalSent++;
-                    console.log(`✅ Message sent to ${to} (${waMessageId})`);
-                    // ✅ Emit contact success event
-                    campaigns_socket_1.campaignSocketService.emitContactStatus(organizationId, campaignId, {
-                        contactId: cc.contactId,
-                        phone: to,
-                        status: 'SENT',
-                        messageId: waMessageId,
-                    });
-                    // ✅ Emit progress update
-                    const percentage = Math.round(((totalSent + totalFailed) / totalContacts) * 100);
-                    campaigns_socket_1.campaignSocketService.emitCampaignProgress(organizationId, campaignId, {
-                        sent: totalSent,
-                        failed: totalFailed,
-                        total: totalContacts,
-                        percentage,
-                        status: 'RUNNING',
-                    });
-                    await new Promise((r) => setTimeout(r, 80));
-                }
-                catch (e) {
-                    const metaErr = e?.response?.data?.error;
-                    console.error(`❌ Failed to send to ${to}:`, {
-                        code: metaErr?.code,
-                        message: metaErr?.message,
-                        error_subcode: metaErr?.error_subcode,
-                        error_data: metaErr?.error_data,
-                        fbtrace_id: metaErr?.fbtrace_id,
-                    });
-                    if (metaErr?.code === 190) {
-                        console.error('❌ OAuth token invalid - stopping campaign');
-                        await database_1.default.whatsAppAccount.update({
-                            where: { id: account.id },
-                            data: {
-                                status: 'DISCONNECTED',
-                                accessToken: null,
-                                tokenExpiresAt: null,
-                            },
-                        });
-                        await database_1.default.campaign.update({
-                            where: { id: campaignId },
-                            data: {
-                                status: 'FAILED',
-                                completedAt: new Date(),
-                            },
-                        });
-                        campaigns_socket_1.campaignSocketService.emitCampaignUpdate(organizationId, campaignId, {
-                            status: 'FAILED',
-                            message: 'OAuth token invalid - account disconnected',
-                        });
-                        return;
-                    }
-                    if (metaErr?.code === 130429) {
-                        console.warn('⚠️ Rate limit hit, waiting 60 seconds...');
-                        await new Promise((r) => setTimeout(r, 60000));
-                    }
-                    const reason = metaErr?.message || e?.message || 'Send failed';
-                    await this.updateContactStatus(organizationId, campaignId, cc.contactId, 'FAILED', undefined, reason);
-                    totalFailed++;
-                    // ✅ Emit contact failed event
-                    campaigns_socket_1.campaignSocketService.emitContactStatus(organizationId, campaignId, {
-                        contactId: cc.contactId,
-                        phone: to,
-                        status: 'FAILED',
-                        error: reason,
-                    });
-                    // ✅ Emit progress update
-                    const percentage = Math.round(((totalSent + totalFailed) / totalContacts) * 100);
-                    campaigns_socket_1.campaignSocketService.emitCampaignProgress(organizationId, campaignId, {
-                        sent: totalSent,
-                        failed: totalFailed,
-                        total: totalContacts,
-                        percentage,
-                        status: 'RUNNING',
-                    });
-                }
-            }
+                    }),
+                    status: 'SENT',
+                    templateId,
+                    sentAt: now,
+                    metadata: {
+                        campaignId,
+                        campaignName,
+                    },
+                },
+            });
+            console.log(`💾 Campaign message saved with conversation: ${waMessageId}`);
         }
-        console.log(`📊 Campaign ${campaignId} send process completed. Sent: ${totalSent}, Failed: ${totalFailed}`);
-        await this.checkAndComplete(organizationId, campaignId);
+        catch (saveErr) {
+            console.error('⚠️ Failed to save campaign message:', saveErr.message);
+        }
     }
     // ==========================================
     // GET CAMPAIGN STATS

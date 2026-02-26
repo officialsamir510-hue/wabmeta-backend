@@ -93,17 +93,35 @@ class InboxController {
     async sendMessage(req, res, next) {
         try {
             const organizationId = req.user.organizationId;
-            const userId = req.user.id;
             if (!organizationId) {
                 throw new errorHandler_1.AppError('Organization context required', 400);
             }
             const { id } = req.params;
-            const input = {
+            const { content, tempId, clientMsgId } = req.body;
+            if (!content) {
+                throw new errorHandler_1.AppError('Message content is required', 400);
+            }
+            // 1. Get Conversation detail to get contact phone
+            const conversation = await inbox_service_1.inboxService.getConversationById(organizationId, id);
+            // 2. Get Default WA Account
+            const account = await whatsapp_service_1.default.getDefaultAccount(organizationId);
+            if (!account?.id) {
+                throw new errorHandler_1.AppError('No connected WhatsApp account found', 400);
+            }
+            // 3. Send via WhatsApp Service- using generic sendMessage for consistency
+            const result = await whatsapp_service_1.default.sendMessage({
+                accountId: account.id,
+                to: conversation.contact.phone,
+                type: 'text',
+                content: { text: { body: content } },
                 conversationId: id,
-                ...req.body,
-            };
-            const message = await inbox_service_1.inboxService.sendMessage(organizationId, userId, id, input);
-            return (0, response_1.sendSuccess)(res, message, 'Message sent successfully', 201);
+                organizationId: organizationId,
+                tempId: tempId || req.body.localId || req.body.local_id || req.body._id,
+                clientMsgId: clientMsgId || req.body.client_msg_id || req.body.clientMsgId
+            });
+            // 4. Clear Inbox Cache
+            await inbox_service_1.inboxService.clearCache(organizationId);
+            return (0, response_1.sendSuccess)(res, result.message, 'Message sent successfully', 201);
         }
         catch (error) {
             next(error);
@@ -336,7 +354,7 @@ class InboxController {
             await inbox_service_1.inboxService.getConversationById(organizationId, id);
             const updated = await database_1.default.conversation.update({
                 where: { id },
-                data: { isPinned: Boolean(isPinned) },
+                data: { isPinned: Boolean(isPinned) }, // IDE: restart TS server if this shows an error
             });
             return (0, response_1.sendSuccess)(res, updated, Boolean(isPinned) ? 'Conversation pinned' : 'Conversation unpinned');
         }
@@ -396,7 +414,9 @@ class InboxController {
             if (!account?.id) {
                 throw new errorHandler_1.AppError('No WhatsApp account connected. Please connect WhatsApp first.', 400);
             }
-            const result = await whatsapp_service_1.default.sendMediaMessage(account.id, conversation.contact.phone, mediaType, mediaUrl, caption, id, organizationId);
+            const result = await whatsapp_service_1.default.sendMediaMessage(account.id, conversation.contact.phone, mediaType, mediaUrl, caption, id, organizationId, req.body.tempId || req.body.localId || req.body.local_id || req.body._id, req.body.clientMsgId || req.body.client_msg_id || req.body.clientMsgId);
+            // ✅ Clear Inbox Cache
+            await inbox_service_1.inboxService.clearCache(organizationId);
             return (0, response_1.sendSuccess)(res, result, 'Media message sent successfully', 201);
         }
         catch (error) {

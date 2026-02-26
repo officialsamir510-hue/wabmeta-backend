@@ -15,7 +15,7 @@ export declare const config: {
     readonly frontendUrl: string;
     readonly frontend: {
         readonly url: string;
-        readonly corsOrigins: readonly [string, "https://wabmeta.com", "http://localhost:3000"];
+        readonly corsOrigins: readonly [string, "https://wabmeta.com", "https://www.wabmeta.com", "http://localhost:3000", "http://localhost:5173"];
     };
     readonly jwt: {
         readonly secret: string;
@@ -60,6 +60,9 @@ export declare const config: {
     readonly razorpay: {
         readonly keyId: string;
         readonly keySecret: string;
+    };
+    readonly redis: {
+        readonly url: string;
     };
 };
 export default config;

@@ -46,7 +46,7 @@ class OrganizationsService {
                     industry,
                     timezone: timezone || 'UTC',
                     ownerId: userId,
-                    planType: 'FREE',
+                    planType: 'FREE_DEMO',
                 },
             });
             // Add user as owner member
@@ -60,7 +60,7 @@ class OrganizationsService {
             });
             // Get free plan
             const freePlan = await tx.plan.findUnique({
-                where: { type: 'FREE' },
+                where: { type: 'FREE_DEMO' },
             });
             // Create subscription
             if (freePlan) {

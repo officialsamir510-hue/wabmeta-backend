@@ -1,574 +1,354 @@
 "use strict";
-// 📁 src/services/messageQueue.service.ts - COMPLETE MESSAGE QUEUE WORKER
+// src/services/messageQueue.service.ts
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.messageQueueWorker = void 0;
-const client_1 = require("@prisma/client");
-const meta_service_1 = require("../modules/meta/meta.service");
-const meta_api_1 = require("../modules/meta/meta.api");
-// Custom QueueStatus enum (not in Prisma schema yet)
-var QueueStatus;
-(function (QueueStatus) {
-    QueueStatus["PENDING"] = "PENDING";
-    QueueStatus["PROCESSING"] = "PROCESSING";
-    QueueStatus["SENT"] = "SENT";
-    QueueStatus["FAILED"] = "FAILED";
-    QueueStatus["CANCELLED"] = "CANCELLED";
-})(QueueStatus || (QueueStatus = {}));
+exports.addToWhatsAppQueue = exports.messageQueueWorker = exports.getQueueStats = exports.addMessage = exports.messageQueue = void 0;
+const bull_1 = __importDefault(require("bull"));
 const events_1 = require("events");
+const config_1 = require("../config");
+const whatsapp_api_1 = __importDefault(require("../modules/whatsapp/whatsapp.api"));
 const database_1 = __importDefault(require("../config/database"));
-// ============================================
-// MESSAGE QUEUE WORKER CLASS
-// ============================================
-class MessageQueueWorker extends events_1.EventEmitter {
-    config;
-    isRunning = false;
-    workers = new Set();
-    stopRequested = false;
-    constructor(config) {
-        super();
-        this.config = {
-            batchSize: config?.batchSize || 10,
-            pollInterval: config?.pollInterval || 2000, // 2 seconds
-            maxRetries: config?.maxRetries || 3,
-            retryDelays: config?.retryDelays || [
-                5 * 60 * 1000, // 5 minutes
-                15 * 60 * 1000, // 15 minutes
-                60 * 60 * 1000, // 1 hour
-            ],
-            concurrentWorkers: config?.concurrentWorkers || 3,
-        };
-        console.log('📨 Message Queue Worker initialized:', this.config);
-    }
-    // ============================================
-    // START WORKER
-    // ============================================
-    async start() {
-        if (this.isRunning) {
-            console.warn('⚠️ Worker already running');
-            return;
+// ✅ Check if Redis is configured
+const redisUrl = process.env.REDIS_URL || config_1.config.redis?.url;
+if (!redisUrl) {
+    console.warn('⚠️ Redis not configured. Message queue will NOT work!');
+    console.warn('⚠️ Messages will NOT be sent automatically!');
+}
+// ✅ Create queue with optimized Redis config
+const createRedisClient = () => {
+    if (!redisUrl)
+        return undefined;
+    // Bull handles the connection, but we want to ensure TLS and retry settings are correct
+    const isSecure = redisUrl.startsWith('rediss://');
+    return {
+        redis: redisUrl,
+        // Optional: you can pass an object if you need more control
+        // 但 most of the time passing the URL string to Bull is fine 
+        // IF we handle the TLS correctly if it doesn't auto-detect.
+    };
+};
+// Bull actually prefers an options object for the whole thing or a URL
+exports.messageQueue = new bull_1.default('whatsapp-messages', redisUrl || 'redis://localhost:6379', {
+    redis: {
+        // Correct way to handle TLS with some providers
+        tls: redisUrl?.startsWith('rediss://') ? { rejectUnauthorized: false } : undefined,
+        maxRetriesPerRequest: null,
+        enableReadyCheck: false,
+    },
+    limiter: {
+        max: 80, // Meta allows 80 messages/sec
+        duration: 1000,
+    },
+    defaultJobOptions: {
+        attempts: 3,
+        backoff: {
+            type: 'exponential',
+            delay: 2000,
+        },
+        removeOnComplete: 100, // Keep last 100 completed
+        removeOnFail: 500, // Keep last 500 failed
+    },
+});
+// ✅ Process messages
+exports.messageQueue.process(async (job) => {
+    console.log(`📤 Processing message job: ${job.id}`);
+    console.log(`📞 Phone: ${job.data.phone}`);
+    const { campaignId, campaignContactId, contactId, phone, templateId, whatsappAccountId, organizationId, variables = {}, } = job.data;
+    try {
+        // Get template
+        const template = await database_1.default.template.findUnique({
+            where: { id: templateId },
+        });
+        if (!template) {
+            throw new Error(`Template not found: ${templateId}`);
         }
-        this.isRunning = true;
-        this.stopRequested = false;
-        console.log('🚀 Starting Message Queue Worker...');
-        console.log(`   Workers: ${this.config.concurrentWorkers}`);
-        console.log(`   Batch Size: ${this.config.batchSize}`);
-        console.log(`   Poll Interval: ${this.config.pollInterval}ms`);
-        for (let i = 0; i < this.config.concurrentWorkers; i++) {
-            const workerPromise = this.workerLoop(i + 1);
-            this.workers.add(workerPromise);
-            workerPromise.finally(() => {
-                this.workers.delete(workerPromise);
-            });
+        // Get WhatsApp account
+        const account = await database_1.default.whatsAppAccount.findUnique({
+            where: { id: whatsappAccountId },
+        });
+        if (!account || !account.accessToken) {
+            throw new Error(`WhatsApp account not found or no token: ${whatsappAccountId}`);
         }
-        this.emit('started');
-        console.log('✅ Message Queue Worker started');
-    }
-    // ============================================
-    // STOP WORKER
-    // ============================================
-    async stop() {
-        if (!this.isRunning) {
-            console.warn('⚠️ Worker not running');
-            return;
+        console.log(`📧 Sending template: ${template.name} to ${phone}`);
+        // ✅ Build template components
+        const components = {};
+        // Map variables to template parameters
+        const templateVars = template.variables;
+        if (templateVars && Array.isArray(templateVars) && Object.keys(variables).length > 0) {
+            components.body = templateVars.map((varName) => variables[varName] || '');
         }
-        console.log('🛑 Stopping Message Queue Worker...');
-        this.stopRequested = true;
-        this.isRunning = false;
-        await Promise.all(Array.from(this.workers));
-        this.emit('stopped');
-        console.log('✅ Message Queue Worker stopped');
-    }
-    // ============================================
-    // WORKER LOOP
-    // ============================================
-    async workerLoop(workerId) {
-        console.log(`👷 Worker #${workerId} started`);
-        while (this.isRunning && !this.stopRequested) {
-            try {
-                await this.processNextBatch(workerId);
-            }
-            catch (error) {
-                console.error(`❌ Worker #${workerId} error:`, error.message);
-                this.emit('error', { workerId, error });
-            }
-            await this.sleep(this.config.pollInterval);
-        }
-        console.log(`👷 Worker #${workerId} stopped`);
-    }
-    // ============================================
-    // PROCESS NEXT BATCH
-    // ============================================
-    async processNextBatch(workerId) {
-        const startTime = Date.now();
-        const messages = await database_1.default.messageQueue.findMany({
+        // ✅ Decrypt token
+        const { decrypt } = await Promise.resolve().then(() => __importStar(require('../utils/encryption')));
+        const token = decrypt(account.accessToken);
+        // ✅ Send message via WhatsApp API
+        const result = await whatsapp_api_1.default.sendTemplateMessage(account.phoneNumberId, phone, template.name, template.language, components, token || undefined);
+        console.log(`✅ Message sent: ${result.waMessageId}`);
+        // ✅ Update campaign contact
+        await database_1.default.campaignContact.update({
+            where: { id: campaignContactId },
+            data: {
+                status: 'SENT',
+                waMessageId: result.waMessageId,
+                sentAt: new Date(),
+            },
+        });
+        // ✅ Create or Update conversation and message record
+        let conversation = await database_1.default.conversation.findFirst({
             where: {
-                OR: [
-                    { status: QueueStatus.PENDING },
-                    {
-                        status: QueueStatus.FAILED,
-                        retryCount: { lt: this.config.maxRetries },
-                        nextRetryAt: { lte: new Date() },
-                    },
-                ],
-            },
-            orderBy: [
-                { priority: 'desc' },
-                { createdAt: 'asc' },
-            ],
-            take: this.config.batchSize,
-            include: {
-                contact: true,
-                whatsappAccount: true,
-                template: true,
-                campaign: true,
+                organizationId,
+                contactId: contactId,
             },
         });
-        if (messages.length === 0) {
-            return;
-        }
-        console.log(`📨 Worker #${workerId}: Processing ${messages.length} messages`);
-        let processed = 0;
-        let succeeded = 0;
-        let failed = 0;
-        for (const message of messages) {
-            if (this.stopRequested) {
-                console.log(`⚠️ Worker #${workerId}: Stop requested, breaking loop`);
-                break;
-            }
-            try {
-                await database_1.default.messageQueue.update({
-                    where: { id: message.id },
-                    data: { status: QueueStatus.PROCESSING },
-                });
-                const result = await this.processMessage(message);
-                if (result.success) {
-                    succeeded++;
-                    this.emit('message:sent', {
-                        queueId: message.id,
-                        contactId: message.contactId,
-                        waMessageId: result.waMessageId,
-                    });
-                }
-                else {
-                    failed++;
-                    this.emit('message:failed', {
-                        queueId: message.id,
-                        contactId: message.contactId,
-                        error: result.error,
-                    });
-                }
-                processed++;
-            }
-            catch (error) {
-                console.error(`❌ Error processing queue item ${message.id}:`, error);
-                failed++;
-                await this.handleFailure(message.id, error.message, message.retryCount);
-            }
-        }
-        const duration = Date.now() - startTime;
-        console.log(`✅ Worker #${workerId}: Batch complete in ${duration}ms`);
-        console.log(`   Processed: ${processed}, Success: ${succeeded}, Failed: ${failed}`);
-        this.emit('batch:complete', {
-            workerId,
-            processed,
-            succeeded,
-            failed,
-            duration,
-        });
-    }
-    // ============================================
-    // PROCESS SINGLE MESSAGE
-    // ============================================
-    async processMessage(queueItem) {
-        try {
-            const { contact, whatsappAccount, template, templateParams } = queueItem;
-            console.log(`📤 Sending message to ${contact.phone} via account ${whatsappAccount.id}`);
-            const canSend = await this.checkRateLimits(whatsappAccount);
-            if (!canSend) {
-                console.warn(`⚠️ Rate limit reached for account ${whatsappAccount.id}`);
-                await database_1.default.messageQueue.update({
-                    where: { id: queueItem.id },
-                    data: {
-                        status: QueueStatus.PENDING,
-                        nextRetryAt: new Date(Date.now() + 10 * 60 * 1000),
-                    },
-                });
-                return {
-                    success: false,
-                    error: 'Rate limit reached',
-                    errorCode: 'RATE_LIMIT',
-                };
-            }
-            const accountWithToken = await meta_service_1.metaService.getAccountWithToken(whatsappAccount.id);
-            if (!accountWithToken) {
-                throw new Error('Failed to get account access token. Please reconnect WhatsApp.');
-            }
-            const { accessToken } = accountWithToken;
-            // Construct template message
-            const templateMessage = {
-                type: 'template',
-                template: {
-                    name: template.name,
-                    language: {
-                        code: template.language,
-                    },
-                    components: this.parseTemplateParams(templateParams) || [],
-                },
-            };
-            const result = await meta_api_1.metaApi.sendMessage(whatsappAccount.phoneNumberId, accessToken, contact.phone, templateMessage);
-            const waMessageId = result.messageId;
-            console.log(`✅ Message sent: ${waMessageId}`);
-            await database_1.default.messageQueue.update({
-                where: { id: queueItem.id },
-                data: {
-                    status: QueueStatus.SENT,
-                    waMessageId: waMessageId,
-                    sentAt: new Date(),
-                },
-            });
-            await database_1.default.whatsAppAccount.update({
-                where: { id: whatsappAccount.id },
-                data: {
-                    dailyMessagesUsed: { increment: 1 },
-                },
-            });
-            if (queueItem.campaignId) {
-                await database_1.default.campaignContact.updateMany({
-                    where: {
-                        campaignId: queueItem.campaignId,
-                        contactId: contact.id,
-                    },
-                    data: {
-                        status: client_1.MessageStatus.SENT,
-                        waMessageId: waMessageId,
-                        sentAt: new Date(),
-                    },
-                });
-            }
-            await this.createConversationMessage(queueItem, waMessageId);
-            return {
-                success: true,
-                waMessageId: waMessageId,
-            };
-        }
-        catch (error) {
-            console.error(`❌ Failed to send message:`, error);
-            let errorCode = 'UNKNOWN_ERROR';
-            let errorMessage = error.message || 'Unknown error';
-            if (error.response?.data?.error) {
-                const metaError = error.response.data.error;
-                errorCode = metaError.code?.toString() || 'META_ERROR';
-                errorMessage = metaError.message || metaError.error_user_msg || errorMessage;
-                if (errorCode === '131047' || errorCode === '131026') {
-                    errorCode = 'WINDOW_EXPIRED';
-                }
-                else if (errorCode === '133016') {
-                    errorCode = 'RATE_LIMIT';
-                }
-                else if (errorCode === '131031') {
-                    errorCode = 'INVALID_PARAMS';
-                }
-                else if (errorCode === '131021') {
-                    errorCode = 'INVALID_RECIPIENT';
-                }
-            }
-            await this.handleFailure(queueItem.id, errorMessage, queueItem.retryCount, errorCode);
-            if (queueItem.campaignId) {
-                await database_1.default.campaignContact.updateMany({
-                    where: {
-                        campaignId: queueItem.campaignId,
-                        contactId: queueItem.contactId,
-                    },
-                    data: {
-                        status: client_1.MessageStatus.FAILED,
-                        failedAt: new Date(),
-                        failureReason: errorMessage,
-                    },
-                });
-            }
-            return {
-                success: false,
-                error: errorMessage,
-                errorCode,
-            };
-        }
-    }
-    // ============================================
-    // CHECK RATE LIMITS
-    // ============================================
-    async checkRateLimits(account) {
-        if (account.dailyMessagesUsed >= account.dailyMessageLimit) {
-            console.warn(`⚠️ Daily limit reached: ${account.dailyMessagesUsed}/${account.dailyMessageLimit}`);
-            return false;
-        }
         const now = new Date();
-        const lastReset = new Date(account.lastLimitReset);
-        const hoursSinceReset = (now.getTime() - lastReset.getTime()) / (1000 * 60 * 60);
-        if (hoursSinceReset >= 24) {
-            await database_1.default.whatsAppAccount.update({
-                where: { id: account.id },
-                data: {
-                    dailyMessagesUsed: 0,
-                    lastLimitReset: now,
+        const windowExpiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+        if (!conversation) {
+            // Try finding by phone variants if contactId lookup fails or to be extra safe
+            conversation = await database_1.default.conversation.findFirst({
+                where: {
+                    organizationId,
+                    contact: {
+                        phone: {
+                            in: [phone, `+91${phone}`, `91${phone}`],
+                        },
+                    },
                 },
             });
-            return true;
         }
-        const tierLimits = {
-            TIER_50: 50,
-            TIER_250: 250,
-            TIER_1K: 1000,
-            TIER_10K: 10000,
-            TIER_100K: 100000,
-            TIER_UNLIMITED: 1000000,
-        };
-        const tierLimit = tierLimits[account.messagingLimit || 'TIER_1K'];
-        if (account.dailyMessagesUsed >= tierLimit) {
-            console.warn(`⚠️ Meta tier limit reached: ${account.messagingLimit}`);
-            return false;
-        }
-        return true;
-    }
-    // ============================================
-    // HANDLE FAILURE
-    // ============================================
-    async handleFailure(queueId, errorMessage, currentRetryCount, errorCode) {
-        const newRetryCount = currentRetryCount + 1;
-        if (newRetryCount <= this.config.maxRetries) {
-            const retryDelay = this.config.retryDelays[newRetryCount - 1] || 60 * 60 * 1000;
-            const nextRetryAt = new Date(Date.now() + retryDelay);
-            console.log(`🔄 Scheduling retry #${newRetryCount} at ${nextRetryAt.toISOString()}`);
-            await database_1.default.messageQueue.update({
-                where: { id: queueId },
+        if (!conversation) {
+            conversation = await database_1.default.conversation.create({
                 data: {
-                    status: QueueStatus.FAILED,
-                    retryCount: newRetryCount,
-                    nextRetryAt,
-                    errorMessage,
-                    errorCode,
+                    organizationId,
+                    contactId: contactId,
+                    lastMessageAt: now,
+                    lastMessagePreview: `Template: ${template.name}`,
+                    isWindowOpen: true,
+                    windowExpiresAt: windowExpiresAt,
+                    unreadCount: 0,
+                    isRead: true,
                 },
             });
+            console.log(`✅ New conversation created for outbound: ${conversation.id}`);
         }
         else {
-            console.error(`❌ Max retries reached for queue item ${queueId}`);
-            await database_1.default.messageQueue.update({
-                where: { id: queueId },
+            await database_1.default.conversation.update({
+                where: { id: conversation.id },
                 data: {
-                    status: QueueStatus.FAILED,
-                    retryCount: newRetryCount,
-                    failedAt: new Date(),
-                    errorMessage,
-                    errorCode,
+                    lastMessageAt: now,
+                    lastMessagePreview: `Template: ${template.name}`,
+                    isWindowOpen: true,
+                    windowExpiresAt: windowExpiresAt,
                 },
             });
         }
-    }
-    // ============================================
-    // CREATE CONVERSATION MESSAGE
-    // ============================================
-    async createConversationMessage(queueItem, waMessageId) {
-        try {
-            const { contact, whatsappAccount, template, templateParams } = queueItem;
-            let conversation = await database_1.default.conversation.findFirst({
-                where: {
-                    organizationId: whatsappAccount.organizationId,
-                    contactId: contact.id,
-                },
-            });
-            if (!conversation) {
-                conversation = await database_1.default.conversation.create({
-                    data: {
-                        organizationId: whatsappAccount.organizationId,
-                        contactId: contact.id,
-                        lastMessageAt: new Date(),
-                        lastMessagePreview: `Template: ${template.name}`,
-                        isRead: true,
-                        unreadCount: 0,
-                    },
-                });
-            }
-            else {
-                await database_1.default.conversation.update({
-                    where: { id: conversation.id },
-                    data: {
-                        lastMessageAt: new Date(),
-                        lastMessagePreview: `Template: ${template.name}`,
-                    },
-                });
-            }
-            await database_1.default.message.create({
-                data: {
-                    conversationId: conversation.id,
-                    whatsappAccountId: whatsappAccount.id,
-                    waMessageId,
-                    wamId: waMessageId,
-                    direction: 'OUTBOUND',
-                    type: 'TEMPLATE',
-                    content: template.bodyText,
-                    templateId: template.id,
+        const savedMessage = await database_1.default.message.create({
+            data: {
+                conversationId: conversation.id,
+                whatsappAccountId,
+                waMessageId: result.waMessageId,
+                wamId: result.waMessageId,
+                direction: 'OUTBOUND',
+                type: 'TEMPLATE',
+                content: JSON.stringify({
                     templateName: template.name,
-                    templateParams: templateParams,
-                    status: client_1.MessageStatus.SENT,
-                    sentAt: new Date(),
+                    variables,
+                }),
+                status: 'SENT',
+                sentAt: now,
+                templateId: template.id,
+                metadata: {
+                    campaignId,
+                },
+            },
+        });
+        // ✅ Clear inbox cache so the new message shows up
+        const { inboxService } = await Promise.resolve().then(() => __importStar(require('../modules/inbox/inbox.service')));
+        await inboxService.clearCache(organizationId);
+        // ✅ Emit socket events for real-time inbox updates
+        const { webhookEvents } = await Promise.resolve().then(() => __importStar(require('../modules/webhooks/webhook.service')));
+        const updatedConversation = await database_1.default.conversation.findUnique({
+            where: { id: conversation.id },
+            include: {
+                contact: {
+                    select: {
+                        id: true,
+                        phone: true,
+                        firstName: true,
+                        lastName: true,
+                        avatar: true,
+                        whatsappProfileName: true,
+                    },
+                },
+            },
+        });
+        if (updatedConversation) {
+            webhookEvents.emit('newMessage', {
+                organizationId,
+                conversationId: updatedConversation.id,
+                message: {
+                    id: savedMessage.id,
+                    conversationId: updatedConversation.id,
+                    waMessageId: savedMessage.waMessageId,
+                    wamId: savedMessage.wamId,
+                    direction: savedMessage.direction,
+                    type: savedMessage.type,
+                    content: savedMessage.content,
+                    mediaUrl: savedMessage.mediaUrl,
+                    status: savedMessage.status,
+                    createdAt: savedMessage.createdAt,
                 },
             });
-            console.log(`✅ Conversation message created for ${contact.phone}`);
+            webhookEvents.emit('conversationUpdated', {
+                organizationId,
+                conversation: {
+                    id: updatedConversation.id,
+                    lastMessageAt: updatedConversation.lastMessageAt,
+                    lastMessagePreview: updatedConversation.lastMessagePreview,
+                    unreadCount: updatedConversation.unreadCount,
+                    isRead: updatedConversation.isRead,
+                    isArchived: updatedConversation.isArchived,
+                    isWindowOpen: updatedConversation.isWindowOpen,
+                    windowExpiresAt: updatedConversation.windowExpiresAt,
+                    contact: updatedConversation.contact,
+                },
+            });
         }
-        catch (error) {
-            console.error('❌ Error creating conversation message:', error);
-        }
+        console.log(`✅ Job ${job.id} completed successfully`);
+        return { success: true, waMessageId: result.waMessageId };
     }
-    // ============================================
-    // PARSE TEMPLATE PARAMS
-    // ============================================
-    parseTemplateParams(params) {
-        if (!params)
-            return undefined;
-        try {
-            if (typeof params === 'string') {
-                return JSON.parse(params);
+    catch (error) {
+        console.error(`❌ Job ${job.id} failed:`, error.message);
+        // Update campaign contact as failed
+        if (campaignContactId) {
+            await database_1.default.campaignContact.update({
+                where: { id: campaignContactId },
+                data: {
+                    status: 'FAILED',
+                    failureReason: error.message,
+                    failedAt: new Date(),
+                },
+            });
+        }
+        throw error; // Will be retried by Bull
+    }
+});
+// ✅ Event listeners
+exports.messageQueue.on('completed', (job, result) => {
+    console.log(`✅ Job ${job.id} completed:`, result);
+});
+exports.messageQueue.on('failed', (job, err) => {
+    console.error(`❌ Job ${job?.id} failed:`, err.message);
+});
+exports.messageQueue.on('error', (error) => {
+    console.error('❌ Queue error:', error);
+});
+// ✅ Export functions
+const addMessage = async (data) => {
+    console.log(`➕ Adding message to queue: ${data.phone}`);
+    const job = await exports.messageQueue.add(data, {
+        jobId: `${data.campaignId}-${data.phone}-${Date.now()}`,
+    });
+    console.log(`✅ Job created: ${job.id}`);
+    return job;
+};
+exports.addMessage = addMessage;
+const getQueueStats = async () => {
+    const [waiting, active, completed, failed, delayed] = await Promise.all([
+        exports.messageQueue.getWaitingCount(),
+        exports.messageQueue.getActiveCount(),
+        exports.messageQueue.getCompletedCount(),
+        exports.messageQueue.getFailedCount(),
+        exports.messageQueue.getDelayedCount(),
+    ]);
+    const total = waiting + active + completed + failed + delayed;
+    return {
+        waiting,
+        active,
+        completed,
+        failed,
+        delayed,
+        total,
+        // Aligned with campaigns.routes.ts expectations
+        pending: waiting,
+        processing: active,
+        sent: completed
+    };
+};
+exports.getQueueStats = getQueueStats;
+/**
+ * messageQueueWorker object to maintain compatibility with server.ts and routes
+ */
+exports.messageQueueWorker = Object.assign(new events_1.EventEmitter(), {
+    isRunning: true,
+    start: async () => {
+        console.log('🚀 Message Queue Worker started');
+    },
+    stop: async () => {
+        await exports.messageQueue.close();
+    },
+    addToQueue: exports.addMessage,
+    getQueueStats: exports.getQueueStats,
+    retryFailedMessages: async (campaignId) => {
+        const failedJobs = await exports.messageQueue.getFailed();
+        let count = 0;
+        for (const job of failedJobs) {
+            if (!campaignId || job.data.campaignId === campaignId) {
+                await job.retry();
+                count++;
             }
-            return params;
         }
-        catch {
-            return undefined;
-        }
-    }
-    // ============================================
-    // HELPER METHODS
-    // ============================================
-    sleep(ms) {
-        return new Promise((resolve) => setTimeout(resolve, ms));
-    }
-    // ============================================
-    // PUBLIC UTILITY METHODS
-    // ============================================
-    async addToQueue(data) {
-        const queueItem = await database_1.default.messageQueue.create({
-            data: {
-                campaignId: data.campaignId || undefined,
-                contactId: data.contactId,
-                whatsappAccountId: data.whatsappAccountId,
-                templateId: data.templateId,
-                templateParams: data.templateParams || undefined,
-                priority: data.priority || 0,
-                status: QueueStatus.PENDING,
-            },
-        });
-        console.log(`✅ Added to queue: ${queueItem.id}`);
-        this.emit('message:queued', {
-            queueId: queueItem.id,
-            contactId: data.contactId,
-        });
-        return queueItem.id;
-    }
-    async addBatchToQueue(messages) {
-        const queueItems = messages.map((msg) => ({
-            campaignId: msg.campaignId || undefined,
-            contactId: msg.contactId,
-            whatsappAccountId: msg.whatsappAccountId,
-            templateId: msg.templateId,
-            templateParams: msg.templateParams || undefined,
-            priority: msg.priority || 0,
-            status: QueueStatus.PENDING,
-        }));
-        const result = await database_1.default.messageQueue.createMany({
-            data: queueItems,
-        });
-        console.log(`✅ Added ${result.count} messages to queue`);
-        this.emit('batch:queued', {
-            count: result.count,
-        });
-        return result.count;
-    }
-    async getQueueStats() {
-        const [pending, processing, sent, failed, total] = await Promise.all([
-            database_1.default.messageQueue.count({ where: { status: QueueStatus.PENDING } }),
-            database_1.default.messageQueue.count({ where: { status: QueueStatus.PROCESSING } }),
-            database_1.default.messageQueue.count({ where: { status: QueueStatus.SENT } }),
-            database_1.default.messageQueue.count({ where: { status: QueueStatus.FAILED } }),
-            database_1.default.messageQueue.count(),
-        ]);
+        return count;
+    },
+    clearFailedMessages: async () => {
+        const failedJobs = await exports.messageQueue.getFailed();
+        await Promise.all(failedJobs.map(job => job.remove()));
+        return failedJobs.length;
+    },
+    getHealthStatus: async () => {
+        const stats = await (0, exports.getQueueStats)();
         return {
-            pending,
-            processing,
-            sent,
-            failed,
-            total,
-            isRunning: this.isRunning,
-            workers: this.config.concurrentWorkers,
-        };
-    }
-    async cleanupOldMessages(daysOld = 30) {
-        const cutoffDate = new Date();
-        cutoffDate.setDate(cutoffDate.getDate() - daysOld);
-        const result = await database_1.default.messageQueue.deleteMany({
-            where: {
-                OR: [
-                    { status: QueueStatus.SENT },
-                    { status: QueueStatus.FAILED },
-                ],
-                createdAt: { lt: cutoffDate },
-            },
-        });
-        console.log(`🗑️ Cleaned up ${result.count} old queue items`);
-        return result.count;
-    }
-    async cancelPendingMessages(campaignId) {
-        const result = await database_1.default.messageQueue.updateMany({
-            where: {
-                campaignId,
-                status: { in: [QueueStatus.PENDING, QueueStatus.PROCESSING] },
-            },
-            data: {
-                status: QueueStatus.CANCELLED,
-            },
-        });
-        console.log(`❌ Cancelled ${result.count} pending messages for campaign ${campaignId}`);
-        return result.count;
-    }
-    async retryFailedMessages(campaignId) {
-        const where = {
-            status: QueueStatus.FAILED,
-            retryCount: { lt: this.config.maxRetries },
-        };
-        if (campaignId) {
-            where.campaignId = campaignId;
-        }
-        const result = await database_1.default.messageQueue.updateMany({
-            where,
-            data: {
-                status: QueueStatus.PENDING,
-                nextRetryAt: new Date(),
-            },
-        });
-        console.log(`🔄 Retrying ${result.count} failed messages`);
-        return result.count;
-    }
-    async clearFailedMessages() {
-        const result = await database_1.default.messageQueue.deleteMany({
-            where: {
-                status: QueueStatus.FAILED,
-            },
-        });
-        console.log(`🗑️ Cleared ${result.count} failed messages`);
-        return result.count;
-    }
-    async getHealthStatus() {
-        const stats = await this.getQueueStats();
-        return {
-            status: this.isRunning ? 'RUNNING' : 'STOPPED',
+            status: 'RUNNING',
             healthy: true,
-            activeWorkers: this.workers.size,
             stats,
-            uptime: process.uptime(),
             timestamp: new Date(),
         };
-    }
-}
-exports.messageQueueWorker = new MessageQueueWorker();
-exports.default = exports.messageQueueWorker;
+    },
+    whatsappQueue: exports.messageQueue
+});
+exports.addToWhatsAppQueue = exports.addMessage;
+exports.default = exports.messageQueue;
 //# sourceMappingURL=messageQueue.service.js.map

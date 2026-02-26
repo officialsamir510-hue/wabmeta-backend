@@ -44,6 +44,7 @@ const morgan_1 = __importDefault(require("morgan"));
 const path_1 = __importDefault(require("path"));
 const errorHandler_1 = require("./middleware/errorHandler");
 const requestLogger_1 = require("./middleware/requestLogger");
+const logger_1 = require("./utils/logger");
 // ============================================
 // IMPORT ALL ROUTES
 // ============================================
@@ -61,6 +62,7 @@ const chatbot_routes_1 = __importDefault(require("./modules/chatbot/chatbot.rout
 const inbox_routes_1 = __importDefault(require("./modules/inbox/inbox.routes"));
 const billing_routes_1 = __importDefault(require("./modules/billing/billing.routes"));
 const admin_routes_1 = __importDefault(require("./modules/admin/admin.routes"));
+const analytics_routes_1 = __importDefault(require("./modules/analytics/analytics.routes"));
 // ============================================
 // VERIFY IMPORTS
 // ============================================
@@ -280,10 +282,12 @@ try {
     console.log('  ✅ /api/billing');
     app.use('/api/admin', admin_routes_1.default);
     console.log('  ✅ /api/admin');
-    console.log('✅ All API routes registered successfully');
+    app.use('/api/analytics', analytics_routes_1.default);
+    console.log('  ✅ /api/analytics');
+    logger_1.logger.info('✅ All API routes registered successfully');
 }
 catch (error) {
-    console.error('❌ CRITICAL ERROR registering routes:', error);
+    logger_1.logger.error('❌ CRITICAL ERROR registering routes', error);
 }
 // ============================================
 // 404 HANDLER

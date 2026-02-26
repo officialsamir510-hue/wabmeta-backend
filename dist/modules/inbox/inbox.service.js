@@ -6,6 +6,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.inboxService = exports.InboxService = void 0;
 const database_1 = __importDefault(require("../../config/database"));
+const redis_1 = require("../../config/redis");
 class AppError extends Error {
     statusCode;
     constructor(message, statusCode = 400) {
@@ -18,16 +19,59 @@ class InboxService {
      * Get conversations with flexible query support
      */
     async getConversations(organizationId, query = {}) {
+        const redis = (0, redis_1.getRedis)();
+        // ✅ Cache key
+        const cacheKey = `conversations:${organizationId}:${JSON.stringify(query)}`;
+        // ✅ Try cache first
+        if (redis) {
+            const cached = await redis.get(cacheKey);
+            if (cached) {
+                console.log('📦 Cache HIT:', cacheKey);
+                return JSON.parse(cached);
+            }
+        }
+        // ✅ Fetch from database
+        const result = await this.fetchConversationsFromDB(organizationId, query);
+        // ✅ Store in cache (5 minutes TTL)
+        if (redis) {
+            await redis.setex(cacheKey, 300, JSON.stringify(result));
+            console.log('📦 Cache SET:', cacheKey);
+        }
+        return result;
+    }
+    /**
+     * Clear conversation cache for an organization
+     */
+    async clearCache(organizationId) {
+        const redis = (0, redis_1.getRedis)();
+        if (!redis)
+            return;
+        try {
+            // Find all keys starting with conversations:organizationId
+            const pattern = `conversations:${organizationId}:*`;
+            const keys = await redis.keys(pattern);
+            if (keys.length > 0) {
+                await redis.del(...keys);
+                console.log(`🧹 Cache cleared for org ${organizationId}: ${keys.length} keys`);
+            }
+        }
+        catch (err) {
+            console.error('❌ Failed to clear inbox cache:', err);
+        }
+    }
+    /**
+     * Internal method to fetch conversations from DB
+     */
+    async fetchConversationsFromDB(organizationId, query = {}) {
         const { page = 1, limit = 50, search, isArchived, isRead, assignedTo, labels, sortBy = 'lastMessageAt', sortOrder = 'desc', } = query;
         const where = {
             organizationId,
         };
-        // Filters
-        if (isArchived !== undefined) {
-            where.isArchived = isArchived;
+        if (isArchived !== undefined && isArchived !== null && isArchived !== '') {
+            where.isArchived = isArchived === true || isArchived === 'true';
         }
-        if (isRead !== undefined) {
-            where.isRead = isRead;
+        if (isRead !== undefined && isRead !== null && isRead !== '') {
+            where.isRead = isRead === true || isRead === 'true';
         }
         if (assignedTo) {
             where.assignedTo = assignedTo;
@@ -35,8 +79,7 @@ class InboxService {
         if (labels && labels.length > 0) {
             where.labels = { hasSome: Array.isArray(labels) ? labels : [labels] };
         }
-        // Search
-        if (search) {
+        if (search && search.trim()) {
             where.OR = [
                 {
                     contact: {
@@ -45,6 +88,7 @@ class InboxService {
                             { lastName: { contains: search, mode: 'insensitive' } },
                             { phone: { contains: search } },
                             { email: { contains: search, mode: 'insensitive' } },
+                            { whatsappProfileName: { contains: search, mode: 'insensitive' } },
                         ],
                     },
                 },
@@ -68,13 +112,15 @@ class InboxService {
                         },
                     },
                 },
-                orderBy: { [sortBy]: sortOrder },
+                orderBy: [
+                    { isPinned: 'desc' },
+                    { [sortBy]: sortOrder },
+                ],
                 skip: (page - 1) * limit,
                 take: limit,
             }),
             database_1.default.conversation.count({ where }),
         ]);
-        // Transform conversations
         const transformed = conversations.map((conv) => ({
             ...conv,
             contact: {
@@ -132,14 +178,16 @@ class InboxService {
         const [messages, total] = await Promise.all([
             database_1.default.message.findMany({
                 where,
-                orderBy: { createdAt: 'asc' },
+                orderBy: { createdAt: 'desc' }, // Latest first
                 skip: (page - 1) * limit,
                 take: limit,
             }),
             database_1.default.message.count({ where }),
         ]);
+        // ✅ Reverse back to chronological order for the UI (Bottom = Newest)
+        const chronologicalMessages = [...messages].reverse();
         return {
-            messages,
+            messages: chronologicalMessages,
             meta: {
                 page,
                 limit,

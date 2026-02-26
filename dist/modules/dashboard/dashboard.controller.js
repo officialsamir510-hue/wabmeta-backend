@@ -1,111 +1,55 @@
 "use strict";
 // src/modules/dashboard/dashboard.controller.ts
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.dashboardController = exports.DashboardController = void 0;
+exports.dashboardController = void 0;
 const dashboard_service_1 = require("./dashboard.service");
+const response_1 = require("../../utils/response");
 class DashboardController {
-    async getDashboardStats(req, res, next) {
+    async getStats(req, res) {
         try {
-            const userId = req.user.id;
-            const organizationId = req.user.organizationId;
+            const organizationId = req.user?.organizationId;
             if (!organizationId) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Organization context required'
-                });
+                return (0, response_1.errorResponse)(res, 'Organization not found', 400);
             }
-            const stats = await dashboard_service_1.dashboardService.getDashboardStats(userId, organizationId);
-            return res.json({
-                success: true,
-                data: stats
-            });
+            const stats = await dashboard_service_1.dashboardService.getStats(organizationId);
+            return (0, response_1.sendSuccess)(res, stats, 'Dashboard stats retrieved');
         }
         catch (error) {
-            next(error);
+            console.error('Get dashboard stats error:', error);
+            return (0, response_1.errorResponse)(res, error.message || 'Failed to get stats', 500);
         }
     }
-    async getQuickStats(req, res, next) {
+    async getWidgets(req, res) {
         try {
-            const organizationId = req.user.organizationId;
+            const organizationId = req.user?.organizationId;
             if (!organizationId) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Organization context required'
-                });
+                return (0, response_1.errorResponse)(res, 'Organization not found', 400);
             }
-            const stats = await dashboard_service_1.dashboardService.getQuickStats(organizationId);
-            return res.json({
-                success: true,
-                data: stats
-            });
-        }
-        catch (error) {
-            next(error);
-        }
-    }
-    async getChartData(req, res, next) {
-        try {
-            const organizationId = req.user.organizationId;
             const days = parseInt(req.query.days) || 7;
-            if (!organizationId) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Organization context required'
-                });
-            }
-            const chartData = await dashboard_service_1.dashboardService.getChartData(organizationId, days);
-            return res.json({
-                success: true,
-                data: chartData
-            });
+            const widgets = await dashboard_service_1.dashboardService.getWidgets(organizationId, days);
+            return (0, response_1.sendSuccess)(res, widgets, 'Dashboard widgets retrieved');
         }
         catch (error) {
-            next(error);
+            console.error('Get dashboard widgets error:', error);
+            return (0, response_1.errorResponse)(res, error.message || 'Failed to get widgets', 500);
         }
     }
-    // ✅ NEW: Get widgets data
-    async getWidgets(req, res, next) {
+    async getActivity(req, res) {
         try {
-            const organizationId = req.user.organizationId;
-            const days = parseInt(req.query.days) || 7;
+            const organizationId = req.user?.organizationId;
             if (!organizationId) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Organization context required'
-                });
+                return (0, response_1.errorResponse)(res, 'Organization not found', 400);
             }
-            const widgets = await dashboard_service_1.dashboardService.getWidgetsData(organizationId, days);
-            return res.json({
-                success: true,
-                data: widgets
-            });
-        }
-        catch (error) {
-            next(error);
-        }
-    }
-    // ✅ NEW: Get recent activity
-    async getRecentActivity(req, res, next) {
-        try {
-            const organizationId = req.user.organizationId;
             const limit = parseInt(req.query.limit) || 10;
-            if (!organizationId) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Organization context required'
-                });
-            }
-            const activity = await dashboard_service_1.dashboardService.getRecentActivity(organizationId, limit);
-            return res.json({
-                success: true,
-                data: activity
-            });
+            const activity = await dashboard_service_1.dashboardService.getActivity(organizationId, limit);
+            return (0, response_1.sendSuccess)(res, activity, 'Activity retrieved');
         }
         catch (error) {
-            next(error);
+            console.error('Get dashboard activity error:', error);
+            return (0, response_1.errorResponse)(res, error.message || 'Failed to get activity', 500);
         }
     }
 }
-exports.DashboardController = DashboardController;
 exports.dashboardController = new DashboardController();
+exports.default = exports.dashboardController;
 //# sourceMappingURL=dashboard.controller.js.map

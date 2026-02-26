@@ -31,7 +31,9 @@ export declare class ContactsService {
     delete(organizationId: string, contactId: string): Promise<{
         message: string;
     }>;
-    import(organizationId: string, input: ImportContactsInput): Promise<ImportContactsResponse>;
+    import(organizationId: string, input: ImportContactsInput & {
+        groupName?: string;
+    }): Promise<ImportContactsResponse>;
     bulkUpdate(organizationId: string, input: BulkUpdateContactsInput): Promise<{
         message: string;
         updated: number;

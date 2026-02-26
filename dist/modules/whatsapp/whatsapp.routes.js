@@ -18,7 +18,8 @@ const sendRateLimit = (0, rateLimit_1.rateLimit)({
     message: 'Too many messages sent. Please wait a moment.',
 });
 router.post('/send/text', sendRateLimit, whatsapp_controller_1.whatsappController.sendText.bind(whatsapp_controller_1.whatsappController));
-router.post('/send/template', sendRateLimit, whatsapp_controller_1.whatsappController.sendTemplate.bind(whatsapp_controller_1.whatsappController));
+// Send template message
+router.post('/send/template', auth_1.authenticate, whatsapp_controller_1.whatsappController.sendTemplate);
 router.post('/send/media', sendRateLimit, whatsapp_controller_1.whatsappController.sendMedia.bind(whatsapp_controller_1.whatsappController));
 router.post('/read', whatsapp_controller_1.whatsappController.markAsRead.bind(whatsapp_controller_1.whatsappController));
 exports.default = router;

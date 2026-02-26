@@ -1,5 +1,38 @@
 "use strict";
-// src/modules/webhooks/webhook.service.ts - COMPLETE FINAL (NO getIO CIRCULAR) + webhookEvents
+// src/modules/webhooks/webhook.service.ts - COMPLETE FIXED VERSION
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -26,7 +59,6 @@ class WebhookService {
                 return null;
             const contact = value?.contacts?.[0];
             const waId = String(msg.from || '');
-            // waId format: 9198XXXXXXXX
             let phone10 = waId;
             if (phone10.startsWith('91') && phone10.length === 12)
                 phone10 = phone10.substring(2);
@@ -54,7 +86,7 @@ class WebhookService {
             document: 'DOCUMENT',
             sticker: 'STICKER',
             location: 'LOCATION',
-            contacts: 'CONTACT', // WhatsApp "contacts" => Prisma "CONTACT"
+            contacts: 'CONTACT',
             interactive: 'INTERACTIVE',
             button: 'INTERACTIVE',
             list: 'INTERACTIVE',
@@ -83,7 +115,6 @@ class WebhookService {
         return { content: `[${type}]`, mediaUrl: null };
     }
     async findOrCreateContact(organizationId, phone10) {
-        // Robust matching
         const variants = [phone10, `+91${phone10}`, `91${phone10}`];
         let contact = await database_1.default.contact.findFirst({
             where: {
@@ -111,36 +142,35 @@ class WebhookService {
     async handleWebhook(payload) {
         try {
             console.log('📨 Webhook received');
-            const profile = this.extractProfile(payload);
-            if (!profile)
-                return { status: 'ignored', reason: 'No profile data' };
-            if (!this.isIndianNumber(profile.waId)) {
-                return { status: 'rejected', reason: 'Only Indian numbers (+91) are allowed' };
-            }
             const value = this.extractValue(payload);
             const phoneNumberId = value?.metadata?.phone_number_id;
-            if (!phoneNumberId)
+            if (!phoneNumberId) {
                 return { status: 'error', reason: 'No phone_number_id' };
+            }
             const account = await database_1.default.whatsAppAccount.findFirst({
                 where: { phoneNumberId },
             });
-            if (!account)
-                return { status: 'error', reason: 'Account not found' };
-            // Update contact name from webhook
-            if (profile.profileName && profile.profileName !== 'Unknown') {
-                await contacts_service_1.contactsService.updateContactFromWebhook(profile.phone10, profile.profileName, account.organizationId);
+            if (!account) {
+                return { status: 'error', reason: 'Account not found for phoneNumberId: ' + phoneNumberId };
             }
-            // Messages
+            // Process incoming messages
             const messages = value?.messages || [];
             for (const msg of messages) {
-                await this.processIncomingMessage(msg, account.organizationId, account.id, account.phoneNumberId);
+                const profile = this.extractProfile(payload);
+                if (profile) {
+                    // Update contact name from webhook
+                    if (profile.profileName && profile.profileName !== 'Unknown') {
+                        await contacts_service_1.contactsService.updateContactFromWebhook(profile.phone10, profile.profileName, account.organizationId);
+                    }
+                    await this.processIncomingMessage(msg, account.organizationId, account.id, account.phoneNumberId);
+                }
             }
-            // Statuses
+            // ✅ Process status updates (CRITICAL FOR TICK MARKS)
             const statuses = value?.statuses || [];
             for (const st of statuses) {
                 await this.processStatusUpdate(st, account.organizationId, account.id);
             }
-            return { status: 'processed', profileName: profile.profileName };
+            return { status: 'processed' };
         }
         catch (e) {
             console.error('❌ Webhook processing error:', e);
@@ -161,7 +191,6 @@ class WebhookService {
             if (phone10.startsWith('91') && phone10.length === 12)
                 phone10 = phone10.substring(2);
             const contact = await this.findOrCreateContact(organizationId, phone10);
-            // Find or create conversation
             let conversation = await database_1.default.conversation.findFirst({
                 where: { organizationId, contactId: contact.id },
             });
@@ -170,7 +199,6 @@ class WebhookService {
                     data: {
                         organizationId,
                         contactId: contact.id,
-                        phoneNumberId,
                         isWindowOpen: true,
                         windowExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
                         unreadCount: 0,
@@ -181,7 +209,6 @@ class WebhookService {
             }
             const { content, mediaUrl } = this.buildContentAndMedia(message);
             const msgType = this.mapMessageType(typeRaw);
-            // Save message
             const savedMessage = await database_1.default.message.create({
                 data: {
                     conversationId: conversation.id,
@@ -198,7 +225,6 @@ class WebhookService {
                     createdAt: messageTime,
                 },
             });
-            // Update conversation
             const updatedConversation = await database_1.default.conversation.update({
                 where: { id: conversation.id },
                 data: {
@@ -223,7 +249,6 @@ class WebhookService {
                     },
                 },
             });
-            // Update contact stats
             await database_1.default.contact.update({
                 where: { id: contact.id },
                 data: {
@@ -232,7 +257,10 @@ class WebhookService {
                 },
             });
             console.log(`✅ Incoming message saved: ${savedMessage.id} wa:${waMessageId}`);
-            // ✅ Emit events (socket.ts will broadcast)
+            // ✅ Clear inbox cache
+            const { inboxService } = await Promise.resolve().then(() => __importStar(require('../inbox/inbox.service')));
+            await inboxService.clearCache(organizationId);
+            // ✅ Emit events
             exports.webhookEvents.emit('newMessage', {
                 organizationId,
                 conversationId: updatedConversation.id,
@@ -240,6 +268,7 @@ class WebhookService {
                     id: savedMessage.id,
                     conversationId: updatedConversation.id,
                     waMessageId: savedMessage.waMessageId,
+                    wamId: savedMessage.wamId,
                     direction: savedMessage.direction,
                     type: savedMessage.type,
                     content: savedMessage.content,
@@ -257,6 +286,8 @@ class WebhookService {
                     unreadCount: updatedConversation.unreadCount,
                     isRead: updatedConversation.isRead,
                     isArchived: updatedConversation.isArchived,
+                    isWindowOpen: updatedConversation.isWindowOpen,
+                    windowExpiresAt: updatedConversation.windowExpiresAt,
                     contact: updatedConversation.contact,
                 },
             });
@@ -266,7 +297,7 @@ class WebhookService {
         }
     }
     // -----------------------------
-    // Status update processing
+    // ✅ Status update processing - FIXED FOR TICK MARKS
     // -----------------------------
     async processStatusUpdate(statusObj, organizationId, whatsappAccountId) {
         try {
@@ -274,11 +305,58 @@ class WebhookService {
             const st = String(statusObj?.status || '').toLowerCase();
             const ts = Number(statusObj?.timestamp || Date.now() / 1000);
             const statusTime = new Date(ts * 1000);
-            const message = await database_1.default.message.findFirst({
-                where: { waMessageId, whatsappAccountId },
-            });
-            if (!message)
+            if (!waMessageId) {
+                console.warn('⚠️ No waMessageId in status update');
                 return;
+            }
+            console.log(`📬 Processing status update: ${waMessageId} -> ${st}`);
+            // ✅ Find message by waMessageId OR wamId
+            let message = await database_1.default.message.findFirst({
+                where: {
+                    OR: [
+                        { waMessageId },
+                        { wamId: waMessageId },
+                    ],
+                },
+                include: {
+                    conversation: {
+                        select: {
+                            id: true,
+                            contactId: true,
+                            organizationId: true,
+                        },
+                    },
+                },
+            });
+            // ✅ Race Condition Fix: If message not found, wait 1s and retry once
+            // (Meta sometimes sends status updates faster than we can save the message)
+            if (!message) {
+                console.log(`⏳ Message not found yet, retrying in 1s for waMessageId: ${waMessageId}`);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                message = await database_1.default.message.findFirst({
+                    where: {
+                        OR: [
+                            { waMessageId },
+                            { wamId: waMessageId },
+                        ],
+                    },
+                    include: {
+                        conversation: {
+                            select: {
+                                id: true,
+                                contactId: true,
+                                organizationId: true,
+                            },
+                        },
+                    },
+                });
+            }
+            if (!message) {
+                console.log(`⚠️ Message still not found for waMessageId: ${waMessageId}`);
+                // Optionally: We could "stub" the message here if we had recipient_id
+                return;
+            }
+            // Map status
             let newStatus = 'SENT';
             if (st === 'sent')
                 newStatus = 'SENT';
@@ -288,7 +366,8 @@ class WebhookService {
                 newStatus = 'READ';
             if (st === 'failed')
                 newStatus = 'FAILED';
-            await database_1.default.message.update({
+            // ✅ Update message
+            const updatedMessage = await database_1.default.message.update({
                 where: { id: message.id },
                 data: {
                     status: newStatus,
@@ -304,18 +383,103 @@ class WebhookService {
                         : {}),
                 },
             });
+            console.log(`✅ Message status updated: ${message.id} -> ${newStatus}`);
+            // Retrieve metadata for tempId/clientMsgId
+            const metadata = message.metadata || {};
+            // ✅ CRITICAL: Emit socket event for real-time update
             exports.webhookEvents.emit('messageStatus', {
-                organizationId,
+                organizationId: message.conversation?.organizationId || organizationId,
                 conversationId: message.conversationId,
                 messageId: message.id,
-                waMessageId,
+                waMessageId: message.waMessageId,
+                wamId: message.wamId,
                 status: newStatus,
                 timestamp: statusTime.toISOString(),
+                tempId: metadata.tempId,
+                clientMsgId: metadata.clientMsgId
             });
-            console.log(`✅ Status updated wa:${waMessageId} -> ${newStatus}`);
+            // ✅ Update CampaignContact if this is a campaign message
+            await this.updateCampaignContactStatus(waMessageId, newStatus, statusTime);
         }
         catch (e) {
             console.error('processStatusUpdate error:', e);
+        }
+    }
+    // ✅ Campaign contact status sync
+    async updateCampaignContactStatus(waMessageId, newStatus, statusTime) {
+        try {
+            const campaignContact = await database_1.default.campaignContact.findFirst({
+                where: { waMessageId },
+                select: {
+                    id: true,
+                    campaignId: true,
+                    contactId: true,
+                    status: true,
+                },
+            });
+            if (!campaignContact)
+                return;
+            console.log(`📊 Found campaign contact: ${campaignContact.id}`);
+            const currentStatus = campaignContact.status;
+            const statusPriority = {
+                'PENDING': 0,
+                'SENT': 1,
+                'DELIVERED': 2,
+                'READ': 3,
+                'FAILED': -1,
+            };
+            const currentPriority = statusPriority[currentStatus] ?? 0;
+            const newPriority = statusPriority[newStatus] ?? 0;
+            if (newPriority <= currentPriority && newStatus !== 'FAILED') {
+                return;
+            }
+            await database_1.default.campaignContact.update({
+                where: { id: campaignContact.id },
+                data: {
+                    status: newStatus,
+                    ...(newStatus === 'DELIVERED' ? { deliveredAt: statusTime } : {}),
+                    ...(newStatus === 'READ' ? { readAt: statusTime } : {}),
+                    ...(newStatus === 'FAILED' ? { failedAt: statusTime, failureReason: 'Delivery failed' } : {}),
+                },
+            });
+            console.log(`✅ Campaign contact updated: ${campaignContact.id} -> ${newStatus}`);
+            const campaign = await database_1.default.campaign.findUnique({
+                where: { id: campaignContact.campaignId },
+                select: {
+                    id: true,
+                    organizationId: true,
+                    deliveredCount: true,
+                    readCount: true,
+                    failedCount: true,
+                    sentCount: true,
+                    totalContacts: true,
+                },
+            });
+            if (!campaign)
+                return;
+            const updateData = {};
+            if (newStatus === 'DELIVERED' && currentStatus !== 'DELIVERED' && currentStatus !== 'READ') {
+                updateData.deliveredCount = { increment: 1 };
+            }
+            if (newStatus === 'READ' && currentStatus !== 'READ') {
+                updateData.readCount = { increment: 1 };
+                if (currentStatus === 'SENT') {
+                    updateData.deliveredCount = { increment: 1 };
+                }
+            }
+            if (newStatus === 'FAILED' && currentStatus !== 'FAILED') {
+                updateData.failedCount = { increment: 1 };
+            }
+            if (Object.keys(updateData).length > 0) {
+                await database_1.default.campaign.update({
+                    where: { id: campaign.id },
+                    data: updateData,
+                });
+                console.log(`✅ Campaign ${campaign.id} stats updated:`, updateData);
+            }
+        }
+        catch (e) {
+            console.error('updateCampaignContactStatus error:', e);
         }
     }
     // -----------------------------
@@ -342,7 +506,6 @@ class WebhookService {
                 });
                 organizationId = account?.organizationId || null;
             }
-            // webhookLog enum: PENDING/PROCESSING/SUCCESS/FAILED
             const mapped = status === 'processed' ? 'SUCCESS' :
                 status === 'error' ? 'FAILED' :
                     status === 'rejected' ? 'FAILED' :
@@ -362,6 +525,42 @@ class WebhookService {
         }
         catch (e) {
             console.error('logWebhook error:', e);
+        }
+    }
+    // Optional methods
+    async expireConversationWindows() {
+        try {
+            const now = new Date();
+            await database_1.default.conversation.updateMany({
+                where: {
+                    isWindowOpen: true,
+                    windowExpiresAt: { lt: now },
+                },
+                data: {
+                    isWindowOpen: false,
+                },
+            });
+        }
+        catch (e) {
+            console.error('expireConversationWindows error:', e);
+        }
+    }
+    async resetDailyMessageLimits() {
+        try {
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            await database_1.default.whatsAppAccount.updateMany({
+                where: {
+                    lastLimitReset: { lt: yesterday },
+                },
+                data: {
+                    dailyMessagesUsed: 0,
+                    lastLimitReset: new Date(),
+                },
+            });
+        }
+        catch (e) {
+            console.error('resetDailyMessageLimits error:', e);
         }
     }
 }

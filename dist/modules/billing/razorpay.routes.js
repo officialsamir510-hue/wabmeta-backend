@@ -105,7 +105,7 @@ router.post("/verify", async (req, res, next) => {
         if (expected !== razorpay_signature) {
             throw new errorHandler_1.AppError("Payment verification failed", 400);
         }
-        const planType = client_1.PlanType.PRO;
+        const planType = client_1.PlanType.BIANNUAL;
         const plan = await database_1.default.plan.findUnique({ where: { type: planType } });
         if (!plan)
             throw new errorHandler_1.AppError("PRO plan missing in DB", 404);

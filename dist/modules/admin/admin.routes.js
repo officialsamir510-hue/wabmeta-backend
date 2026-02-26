@@ -76,7 +76,13 @@ router.post('/users/:id/activate', (0, validate_1.validate)(admin_schema_1.getUs
  * @desc    Delete user
  * @access  Super Admin
  */
-router.delete('/users/:id', admin_middleware_1.requireSuperAdmin, (0, validate_1.validate)(admin_schema_1.deleteUserSchema), admin_controller_1.adminController.deleteUser.bind(admin_controller_1.adminController));
+router.delete('/users/:id', admin_middleware_1.requireSuperAdmin, (0, validate_1.validate)(admin_schema_1.deleteUserSchema), (req, res, next) => admin_controller_1.adminController.deleteUser(req, res, next));
+/**
+ * @route   POST /api/v1/admin/transfer-ownership
+ * @desc    Transfer organization ownership
+ * @access  Super Admin
+ */
+router.post('/transfer-ownership', admin_middleware_1.requireSuperAdmin, (req, res, next) => admin_controller_1.adminController.transferOwnership(req, res, next));
 // ============================================
 // ORGANIZATION MANAGEMENT
 // ============================================
@@ -110,6 +116,19 @@ router.delete('/organizations/:id', admin_middleware_1.requireSuperAdmin, (0, va
  * @access  Admin
  */
 router.put('/organizations/:id/subscription', (0, validate_1.validate)(admin_schema_1.updateSubscriptionSchema), admin_controller_1.adminController.updateSubscription.bind(admin_controller_1.adminController));
+// ============================================
+// SUBSCRIPTION MANAGEMENT ROUTES
+// ============================================
+// Get all subscriptions
+router.get('/subscriptions', admin_controller_1.adminController.getSubscriptions.bind(admin_controller_1.adminController));
+// Get subscription stats
+router.get('/subscriptions/stats', admin_controller_1.adminController.getSubscriptionStats.bind(admin_controller_1.adminController));
+// Assign plan to organization
+router.post('/subscriptions/assign', admin_controller_1.adminController.assignPlan.bind(admin_controller_1.adminController));
+// Extend subscription
+router.post('/subscriptions/:organizationId/extend', admin_controller_1.adminController.extendSubscription.bind(admin_controller_1.adminController));
+// Revoke subscription
+router.post('/subscriptions/:organizationId/revoke', admin_controller_1.adminController.revokeSubscription.bind(admin_controller_1.adminController));
 // ============================================
 // PLAN MANAGEMENT
 // ============================================

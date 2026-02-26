@@ -5,7 +5,7 @@ interface AuthRequest extends Request {
         email: string;
         organizationId?: string;
     };
-    file?: Express.Multer.File;
+    file?: any;
 }
 export declare class InboxController {
     getConversations(req: AuthRequest, res: Response, next: NextFunction): Promise<Response<any, Record<string, any>> | undefined>;

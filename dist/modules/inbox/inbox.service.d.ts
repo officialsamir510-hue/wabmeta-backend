@@ -3,44 +3,15 @@ export declare class InboxService {
     /**
      * Get conversations with flexible query support
      */
-    getConversations(organizationId: string, query?: any): Promise<{
-        conversations: {
-            contact: {
-                name: string;
-                email: string | null;
-                tags: string[];
-                id: string;
-                firstName: string | null;
-                lastName: string | null;
-                phone: string;
-                avatar: string | null;
-                whatsappProfileName: string | null;
-            };
-            organizationId: string;
-            id: string;
-            createdAt: Date;
-            updatedAt: Date;
-            lastMessageAt: Date | null;
-            contactId: string;
-            phoneNumberId: string | null;
-            lastMessagePreview: string | null;
-            lastCustomerMessageAt: Date | null;
-            windowExpiresAt: Date | null;
-            isWindowOpen: boolean;
-            lastBotMessageAt: Date | null;
-            isArchived: boolean;
-            isRead: boolean;
-            unreadCount: number;
-            assignedTo: string | null;
-            labels: string[];
-        }[];
-        meta: {
-            page: any;
-            limit: any;
-            total: number;
-            totalPages: number;
-        };
-    }>;
+    getConversations(organizationId: string, query?: any): Promise<any>;
+    /**
+     * Clear conversation cache for an organization
+     */
+    clearCache(organizationId: string): Promise<void>;
+    /**
+     * Internal method to fetch conversations from DB
+     */
+    private fetchConversationsFromDB;
     /**
      * Get single conversation
      */
@@ -83,6 +54,7 @@ export declare class InboxService {
         isArchived: boolean;
         isRead: boolean;
         unreadCount: number;
+        isPinned: boolean;
         assignedTo: string | null;
         labels: string[];
     }>;
@@ -96,27 +68,27 @@ export declare class InboxService {
             status: import(".prisma/client").$Enums.MessageStatus;
             createdAt: Date;
             updatedAt: Date;
+            direction: import(".prisma/client").$Enums.MessageDirection;
             waMessageId: string | null;
             whatsappAccountId: string | null;
+            conversationId: string;
+            wamId: string | null;
+            content: string | null;
+            mediaUrl: string | null;
+            mediaType: string | null;
+            mediaMimeType: string | null;
             templateId: string | null;
+            templateName: string | null;
+            templateParams: Prisma.JsonValue | null;
             sentAt: Date | null;
             deliveredAt: Date | null;
             readAt: Date | null;
             failedAt: Date | null;
             failureReason: string | null;
-            retryCount: number;
-            templateParams: Prisma.JsonValue | null;
-            templateName: string | null;
-            wamId: string | null;
-            direction: import(".prisma/client").$Enums.MessageDirection;
-            content: string | null;
-            mediaUrl: string | null;
-            mediaType: string | null;
-            mediaMimeType: string | null;
             replyToMessageId: string | null;
             metadata: Prisma.JsonValue | null;
+            retryCount: number;
             statusUpdatedAt: Date | null;
-            conversationId: string;
         }[];
         meta: {
             page: any;
@@ -144,6 +116,7 @@ export declare class InboxService {
         isArchived: boolean;
         isRead: boolean;
         unreadCount: number;
+        isPinned: boolean;
         assignedTo: string | null;
         labels: string[];
     }>;
@@ -166,6 +139,7 @@ export declare class InboxService {
         isArchived: boolean;
         isRead: boolean;
         unreadCount: number;
+        isPinned: boolean;
         assignedTo: string | null;
         labels: string[];
     }>;
@@ -188,6 +162,7 @@ export declare class InboxService {
         isArchived: boolean;
         isRead: boolean;
         unreadCount: number;
+        isPinned: boolean;
         assignedTo: string | null;
         labels: string[];
     }>;
@@ -210,6 +185,7 @@ export declare class InboxService {
         isArchived: boolean;
         isRead: boolean;
         unreadCount: number;
+        isPinned: boolean;
         assignedTo: string | null;
         labels: string[];
     }>;
@@ -232,6 +208,7 @@ export declare class InboxService {
         isArchived: boolean;
         isRead: boolean;
         unreadCount: number;
+        isPinned: boolean;
         assignedTo: string | null;
         labels: string[];
     }>;
@@ -254,6 +231,7 @@ export declare class InboxService {
         isArchived: boolean;
         isRead: boolean;
         unreadCount: number;
+        isPinned: boolean;
         assignedTo: string | null;
         labels: string[];
     }>;
@@ -317,6 +295,7 @@ export declare class InboxService {
                 isArchived: boolean;
                 isRead: boolean;
                 unreadCount: number;
+                isPinned: boolean;
                 assignedTo: string | null;
                 labels: string[];
             };
@@ -326,27 +305,27 @@ export declare class InboxService {
             status: import(".prisma/client").$Enums.MessageStatus;
             createdAt: Date;
             updatedAt: Date;
+            direction: import(".prisma/client").$Enums.MessageDirection;
             waMessageId: string | null;
             whatsappAccountId: string | null;
+            conversationId: string;
+            wamId: string | null;
+            content: string | null;
+            mediaUrl: string | null;
+            mediaType: string | null;
+            mediaMimeType: string | null;
             templateId: string | null;
+            templateName: string | null;
+            templateParams: Prisma.JsonValue | null;
             sentAt: Date | null;
             deliveredAt: Date | null;
             readAt: Date | null;
             failedAt: Date | null;
             failureReason: string | null;
-            retryCount: number;
-            templateParams: Prisma.JsonValue | null;
-            templateName: string | null;
-            wamId: string | null;
-            direction: import(".prisma/client").$Enums.MessageDirection;
-            content: string | null;
-            mediaUrl: string | null;
-            mediaType: string | null;
-            mediaMimeType: string | null;
             replyToMessageId: string | null;
             metadata: Prisma.JsonValue | null;
+            retryCount: number;
             statusUpdatedAt: Date | null;
-            conversationId: string;
         })[];
         meta: {
             page: number;
@@ -387,6 +366,7 @@ export declare class InboxService {
         isArchived: boolean;
         isRead: boolean;
         unreadCount: number;
+        isPinned: boolean;
         assignedTo: string | null;
         labels: string[];
     }>;
@@ -432,6 +412,7 @@ export declare class InboxService {
         isArchived: boolean;
         isRead: boolean;
         unreadCount: number;
+        isPinned: boolean;
         assignedTo: string | null;
         labels: string[];
     }>;

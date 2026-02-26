@@ -33,7 +33,9 @@ exports.config = {
         corsOrigins: [
             getEnv('FRONTEND_URL', 'http://localhost:5173'),
             'https://wabmeta.com',
+            'https://www.wabmeta.com',
             'http://localhost:3000',
+            'http://localhost:5173',
         ],
     },
     // JWT
@@ -70,7 +72,7 @@ exports.config = {
     email: {
         enabled: getEnv('EMAIL_ENABLED') === 'true',
         resendApiKey: getEnv('RESEND_API_KEY'),
-        from: getEnv('EMAIL_FROM', 'onboarding@resend.dev'),
+        from: getEnv('EMAIL_FROM', 'noreply@wabmeta.com'),
         fromName: getEnv('EMAIL_FROM_NAME', 'WabMeta'),
         smtp: {
             host: getEnv('SMTP_HOST'),
@@ -85,6 +87,10 @@ exports.config = {
     razorpay: {
         keyId: getEnv('RAZORPAY_KEY_ID'),
         keySecret: getEnv('RAZORPAY_KEY_SECRET'),
+    },
+    // Redis
+    redis: {
+        url: getEnv('REDIS_URL'),
     },
 };
 exports.default = exports.config;

@@ -1,41 +1,22 @@
 export declare class DashboardService {
-    getDashboardStats(userId: string, organizationId: string): Promise<{
-        messagesSent: number;
-        messagesDelivered: number;
-        messagesRead: number;
-        messagesFailed: number;
-        deliveryRate: number;
-        readRate: number;
-        totalContacts: number;
-        totalCampaigns: number;
-        totalTemplates: number;
-        totalConversations: number;
-    }>;
-    getQuickStats(organizationId: string): Promise<{
-        contactsToday: number;
-        messagesToday: number;
-        campaignsActive: number;
-        unreadConversations: number;
-    }>;
-    getChartData(organizationId: string, days?: number): Promise<{
-        messages: {
-            date: string;
-            count: any;
-        }[];
-        contacts: {
-            date: string;
-            count: any;
-        }[];
-    }>;
-    getWidgetsData(organizationId: string, days?: number): Promise<{
+    getStats(organizationId: string): Promise<{
         contacts: {
             total: number;
-            new: number;
-            growthRate: number;
+            today: number;
+            thisWeek: number;
+            thisMonth: number;
+            growth: number;
         };
         messages: {
-            total: number;
             sent: number;
+            received: number;
+            total: number;
+            today: number;
+            thisWeek: number;
+            thisMonth: number;
+            growth: number;
+        };
+        delivery: {
             delivered: number;
             read: number;
             failed: number;
@@ -43,52 +24,86 @@ export declare class DashboardService {
             readRate: number;
             failureRate: number;
         };
+        conversations: {
+            total: number;
+            active: number;
+            unread: number;
+        };
         campaigns: {
+            total: number;
             active: number;
             completed: number;
-            total: number;
+            thisMonth: number;
         };
         templates: {
             total: number;
             approved: number;
-            pending: number;
-        };
-        conversations: {
-            unread: number;
         };
         whatsapp: {
-            connectedAccounts: number;
-        };
-        period: {
-            days: number;
-            startDate: string;
-            endDate: string;
+            connected: number;
         };
     }>;
-    getRecentActivity(organizationId: string, limit?: number): Promise<({
-        type: "message";
+    getWidgets(organizationId: string, days?: number): Promise<{
+        messagesOverview: {
+            date: string;
+            sent: number;
+            delivered: number;
+            read: number;
+            failed: number;
+            received: number;
+        }[];
+        contactsGrowth: {
+            date: string;
+            count: number;
+        }[];
+        deliveryPerformance: {
+            name: string;
+            value: number;
+            color: string;
+        }[];
+        recentCampaigns: {
+            deliveryRate: number;
+            name: string;
+            id: string;
+            status: import(".prisma/client").$Enums.CampaignStatus;
+            createdAt: Date;
+            totalContacts: number;
+            sentCount: number;
+            deliveredCount: number;
+            readCount: number;
+            failedCount: number;
+        }[];
+        recentConversations: {
+            id: string;
+            contactName: string;
+            phone: string;
+            avatar: string | null;
+            lastMessage: string | null;
+            lastMessageAt: Date | null;
+            unreadCount: number;
+        }[];
+        summary: {
+            totalSent: number;
+            totalDelivered: number;
+            totalRead: number;
+            totalFailed: number;
+            deliveryRate: number;
+            readRate: number;
+        };
+    }>;
+    getActivity(organizationId: string, limit?: number): Promise<{
         id: string;
-        title: string;
-        description: string;
-        contact: string;
-        timestamp: Date;
-        status: import(".prisma/client").$Enums.MessageStatus;
-    } | {
-        type: "campaign";
-        id: string;
-        title: string;
-        description: string;
-        timestamp: Date;
-        status: import(".prisma/client").$Enums.CampaignStatus;
-    } | {
-        type: "contact";
-        id: string;
-        title: string;
-        description: string;
-        timestamp: Date;
-    })[]>;
-    private getMessageStats;
-    private formatChartData;
+        action: import(".prisma/client").$Enums.ActivityAction | null;
+        entity: string | null;
+        entityId: string | null;
+        user: {
+            name: string;
+            avatar: string | null;
+        } | null;
+        metadata: import("@prisma/client/runtime/library").JsonValue;
+        createdAt: Date;
+    }[]>;
 }
 export declare const dashboardService: DashboardService;
+export default dashboardService;
 //# sourceMappingURL=dashboard.service.d.ts.map

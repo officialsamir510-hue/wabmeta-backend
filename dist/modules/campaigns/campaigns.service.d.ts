@@ -10,6 +10,8 @@ export declare class CampaignsService {
         message: string;
     }>;
     start(organizationId: string, campaignId: string): Promise<CampaignResponse>;
+    private processCampaignContacts;
+    private updateCampaignStats;
     pause(organizationId: string, campaignId: string): Promise<CampaignResponse>;
     resume(organizationId: string, campaignId: string): Promise<CampaignResponse>;
     cancel(organizationId: string, campaignId: string): Promise<CampaignResponse>;
@@ -22,7 +24,8 @@ export declare class CampaignsService {
         retryCount: number;
     }>;
     duplicate(organizationId: string, campaignId: string, newName: string): Promise<CampaignResponse>;
-    private processCampaignSending;
+    private shouldStopCampaign;
+    private saveCampaignMessage;
     getStats(organizationId: string): Promise<CampaignStats>;
     getAnalytics(organizationId: string, campaignId: string): Promise<CampaignAnalytics>;
     updateContactStatus(organizationId: string, campaignId: string, contactId: string, status: MessageStatus, waMessageId?: string, failureReason?: string): Promise<void>;

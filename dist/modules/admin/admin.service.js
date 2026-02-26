@@ -336,14 +336,79 @@ class AdminService {
     async suspendUser(id) {
         return this.updateUserStatus(id, 'SUSPENDED');
     }
-    async activateUser(id) {
+    activateUser(id) {
         return this.updateUserStatus(id, 'ACTIVE');
     }
-    async deleteUser(id) {
+    // ==========================================
+    // OWNERSHIP TRANSFER
+    // ==========================================
+    /**
+     * Transfer organization ownership to another user
+     */
+    async transferOrganizationOwnership(organizationId, newOwnerId) {
+        try {
+            // Get current owner first
+            const org = await database_1.default.organization.findUnique({
+                where: { id: organizationId },
+                select: { ownerId: true },
+            });
+            if (!org) {
+                throw new errorHandler_1.AppError('Organization not found', 404);
+            }
+            const oldOwnerId = org.ownerId;
+            // Check if new owner is already a member
+            const membership = await database_1.default.organizationMember.findFirst({
+                where: {
+                    organizationId,
+                    userId: newOwnerId,
+                },
+            });
+            if (!membership) {
+                throw new errorHandler_1.AppError('New owner must be a member of the organization first', 400);
+            }
+            // Perform transfer in transaction
+            await database_1.default.$transaction(async (tx) => {
+                // Update organization owner
+                await tx.organization.update({
+                    where: { id: organizationId },
+                    data: { ownerId: newOwnerId },
+                });
+                // Update old owner's membership role to ADMIN (if not the same person)
+                if (oldOwnerId !== newOwnerId) {
+                    await tx.organizationMember.updateMany({
+                        where: {
+                            organizationId,
+                            userId: oldOwnerId,
+                        },
+                        data: { role: 'ADMIN' },
+                    });
+                }
+                // Update new owner's membership role to OWNER
+                await tx.organizationMember.updateMany({
+                    where: {
+                        organizationId,
+                        userId: newOwnerId,
+                    },
+                    data: { role: 'OWNER' },
+                });
+            });
+            return {
+                success: true,
+                message: 'Ownership transferred successfully',
+            };
+        }
+        catch (error) {
+            if (error instanceof errorHandler_1.AppError)
+                throw error;
+            throw new errorHandler_1.AppError(error.message || 'Failed to transfer ownership', 500);
+        }
+    }
+    async deleteUser(userId, options) {
         const user = await database_1.default.user.findUnique({
-            where: { id },
+            where: { id: userId },
             include: {
                 ownedOrganizations: true,
+                memberships: true,
                 createdCampaigns: true,
                 createdChatbots: true,
             },
@@ -351,37 +416,76 @@ class AdminService {
         if (!user) {
             throw new errorHandler_1.AppError('User not found', 404);
         }
-        // Check if user owns any organizations
+        // ✅ Check if user owns any organizations
         if (user.ownedOrganizations && user.ownedOrganizations.length > 0) {
-            throw new errorHandler_1.AppError(`Cannot delete user who owns ${user.ownedOrganizations.length} organization(s). Transfer ownership first.`, 400);
+            // ✅ OPTION A: Force delete (delete organizations too)
+            if (options?.force) {
+                console.log(`⚠️ Force deleting user ${userId} and ${user.ownedOrganizations.length} owned organizations`);
+                // Delete all owned organizations (cascade will handle members, subscriptions, etc.)
+                await database_1.default.organization.deleteMany({
+                    where: { ownerId: userId },
+                });
+            }
+            // ✅ OPTION B: Auto-transfer to first admin member
+            else if (options?.transferOwnership) {
+                console.log(`🔄 Auto-transferring ownership for ${user.ownedOrganizations.length} organizations`);
+                for (const org of user.ownedOrganizations) {
+                    // Find first admin member to transfer ownership
+                    const newOwner = await database_1.default.organizationMember.findFirst({
+                        where: {
+                            organizationId: org.id,
+                            userId: { not: userId },
+                            role: { in: ['ADMIN', 'OWNER'] },
+                        },
+                    });
+                    if (newOwner) {
+                        await this.transferOrganizationOwnership(org.id, newOwner.userId);
+                    }
+                    else {
+                        // No suitable member found, delete the organization
+                        console.log(`⚠️ No suitable member to transfer ownership for org ${org.id}, deleting it`);
+                        await database_1.default.organization.delete({ where: { id: org.id } });
+                    }
+                }
+            }
+            // ✅ OPTION C: Block deletion (current behavior)
+            else {
+                throw new errorHandler_1.AppError(`Cannot delete user who owns ${user.ownedOrganizations.length} organization(s). Use ?force=true or ?transferOwnership=true`, 400);
+            }
         }
-        // Check if user created campaigns
-        if (user.createdCampaigns && user.createdCampaigns.length > 0) {
-            throw new errorHandler_1.AppError(`Cannot delete user who created ${user.createdCampaigns.length} campaign(s). Reassign or delete campaigns first.`, 400);
+        // ✅ Additional safety: Handle campaigns and chatbots
+        if (!options?.force) {
+            if (user.createdCampaigns && user.createdCampaigns.length > 0) {
+                throw new errorHandler_1.AppError(`Cannot delete user who created ${user.createdCampaigns.length} campaign(s). Use ?force=true to delete everything.`, 400);
+            }
+            if (user.createdChatbots && user.createdChatbots.length > 0) {
+                throw new errorHandler_1.AppError(`Cannot delete user who created ${user.createdChatbots.length} chatbot(s). Use ?force=true to delete everything.`, 400);
+            }
         }
-        // Check if user created chatbots
-        if (user.createdChatbots && user.createdChatbots.length > 0) {
-            throw new errorHandler_1.AppError(`Cannot delete user who created ${user.createdChatbots.length} chatbot(s). Reassign or delete chatbots first.`, 400);
-        }
-        // Delete in transaction
+        // Delete user (cascade will handle refresh tokens, members, etc.)
+        // Note: We still use transaction for extra cleanup if needed
         try {
             await database_1.default.$transaction(async (tx) => {
-                // Delete refresh tokens
-                await tx.refreshToken.deleteMany({ where: { userId: id } });
-                // Delete notifications
-                await tx.notification.deleteMany({ where: { userId: id } });
-                // Delete activity logs
-                await tx.activityLog.deleteMany({ where: { userId: id } });
-                // Delete organization memberships (not ownership)
-                await tx.organizationMember.deleteMany({ where: { userId: id } });
+                // If force is on, delete user-created content that isn't cascaded
+                if (options?.force) {
+                    await tx.campaign.deleteMany({ where: { createdById: userId } });
+                    await tx.chatbot.deleteMany({ where: { createdById: userId } });
+                }
+                // Delete other associated data
+                await tx.refreshToken.deleteMany({ where: { userId } });
+                await tx.notification.deleteMany({ where: { userId } });
+                await tx.activityLog.deleteMany({ where: { userId } });
                 // Finally, delete the user
-                await tx.user.delete({ where: { id } });
+                await tx.user.delete({
+                    where: { id: userId },
+                });
             });
-            return { message: 'User deleted successfully' };
+            console.log(`✅ User deleted: ${userId}`);
+            return { success: true, message: 'User deleted successfully' };
         }
         catch (error) {
             console.error('Error deleting user:', error);
-            throw new errorHandler_1.AppError(`Failed to delete user: ${error.message || 'Unknown error'}`, 500);
+            throw new errorHandler_1.AppError(error.message || 'Failed to delete user', 500);
         }
     }
     // ==========================================

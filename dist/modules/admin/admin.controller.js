@@ -3,6 +3,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.adminController = exports.AdminController = void 0;
 const admin_service_1 = require("./admin.service");
+const admin_billing_service_1 = require("./admin.billing.service");
 const errorHandler_1 = require("../../middleware/errorHandler");
 // ============================================
 // RESPONSE HELPERS
@@ -207,8 +208,30 @@ class AdminController {
             if (!id) {
                 throw new errorHandler_1.AppError('User ID is required', 400);
             }
-            const result = await admin_service_1.adminService.deleteUser(id);
-            return sendSuccess(res, null, result.message);
+            // ✅ Get query params for delete options
+            const force = req.query.force === 'true';
+            const transferOwnership = req.query.transferOwnership === 'true';
+            const result = await admin_service_1.adminService.deleteUser(id, {
+                force,
+                transferOwnership,
+            });
+            return sendSuccess(res, result, result.message);
+        }
+        catch (error) {
+            next(error);
+        }
+    }
+    // ============================================
+    // TRANSFER OWNERSHIP
+    // ============================================
+    async transferOwnership(req, res, next) {
+        try {
+            const { organizationId, newOwnerId } = req.body;
+            if (!organizationId || !newOwnerId) {
+                throw new errorHandler_1.AppError('organizationId and newOwnerId are required', 400);
+            }
+            const result = await admin_service_1.adminService.transferOrganizationOwnership(organizationId, newOwnerId);
+            return sendSuccess(res, result, result.message);
         }
         catch (error) {
             next(error);
@@ -448,6 +471,115 @@ class AdminController {
         }
         catch (error) {
             next(error);
+        }
+    }
+    // ============================================
+    // ASSIGN PLAN TO ORGANIZATION
+    // ============================================
+    async assignPlan(req, res) {
+        try {
+            const { organizationId, planSlug, validityDays, customEndDate, reason } = req.body;
+            const adminId = req.admin?.id;
+            const adminName = `${req.admin?.name || ''}`.trim() || 'Admin';
+            if (!organizationId || !planSlug) {
+                return sendError(res, 'Organization ID and plan slug are required', 400);
+            }
+            const result = await admin_billing_service_1.adminBillingService.assignPlanToOrganization({
+                organizationId,
+                planSlug,
+                validityDays: validityDays ? parseInt(validityDays) : undefined,
+                customEndDate: customEndDate ? new Date(customEndDate) : undefined,
+                adminId: adminId || 'system',
+                adminName,
+                reason,
+            });
+            return sendSuccess(res, result, result.message);
+        }
+        catch (error) {
+            console.error('Assign plan error:', error);
+            return sendError(res, error.message || 'Failed to assign plan', 500);
+        }
+    }
+    // ============================================
+    // EXTEND SUBSCRIPTION
+    // ============================================
+    async extendSubscription(req, res) {
+        try {
+            const organizationId = getParamId(req.params.organizationId);
+            const { additionalDays, reason } = req.body;
+            const adminId = req.admin?.id;
+            const adminName = `${req.admin?.name || ''}`.trim() || 'Admin';
+            if (!additionalDays || additionalDays <= 0) {
+                return sendError(res, 'Additional days must be a positive number', 400);
+            }
+            const result = await admin_billing_service_1.adminBillingService.extendSubscription({
+                organizationId,
+                additionalDays: parseInt(additionalDays),
+                adminId: adminId || 'system',
+                adminName,
+                reason,
+            });
+            return sendSuccess(res, result, result.message);
+        }
+        catch (error) {
+            console.error('Extend subscription error:', error);
+            return sendError(res, error.message || 'Failed to extend subscription', 500);
+        }
+    }
+    // ============================================
+    // REVOKE SUBSCRIPTION
+    // ============================================
+    async revokeSubscription(req, res) {
+        try {
+            const organizationId = getParamId(req.params.organizationId);
+            const { reason, immediate } = req.body;
+            const adminId = req.admin?.id;
+            const adminName = `${req.admin?.name || ''}`.trim() || 'Admin';
+            const result = await admin_billing_service_1.adminBillingService.revokeSubscription({
+                organizationId,
+                adminId: adminId || 'system',
+                adminName,
+                reason,
+                immediate: immediate === true,
+            });
+            return sendSuccess(res, result, result.message);
+        }
+        catch (error) {
+            console.error('Revoke subscription error:', error);
+            return sendError(res, error.message || 'Failed to revoke subscription', 500);
+        }
+    }
+    // ============================================
+    // GET ALL SUBSCRIPTIONS
+    // ============================================
+    async getSubscriptions(req, res) {
+        try {
+            const { page, limit, status, planType, search } = req.query;
+            const result = await admin_billing_service_1.adminBillingService.getAllSubscriptions({
+                page: page ? parseInt(page) : undefined,
+                limit: limit ? parseInt(limit) : undefined,
+                status: status,
+                planType: planType,
+                search: search,
+            });
+            return sendSuccess(res, result, 'Subscriptions retrieved successfully');
+        }
+        catch (error) {
+            console.error('Get subscriptions error:', error);
+            return sendError(res, error.message || 'Failed to get subscriptions', 500);
+        }
+    }
+    // ============================================
+    // GET SUBSCRIPTION STATS
+    // ============================================
+    async getSubscriptionStats(req, res) {
+        try {
+            const stats = await admin_billing_service_1.adminBillingService.getSubscriptionStats();
+            return sendSuccess(res, stats, 'Stats retrieved successfully');
+        }
+        catch (error) {
+            console.error('Get subscription stats error:', error);
+            return sendError(res, error.message || 'Failed to get stats', 500);
         }
     }
 }

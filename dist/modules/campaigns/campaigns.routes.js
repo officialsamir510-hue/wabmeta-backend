@@ -39,6 +39,7 @@ const campaigns_controller_1 = require("./campaigns.controller");
 const validate_1 = require("../../middleware/validate");
 const auth_1 = require("../../middleware/auth");
 const response_1 = require("../../utils/response");
+const planLimits_1 = require("../../middleware/planLimits");
 const campaigns_schema_1 = require("./campaigns.schema");
 const router = (0, express_1.Router)();
 // ============================================
@@ -86,7 +87,7 @@ router.post('/upload-validate', campaigns_controller_1.csvUpload, campaigns_cont
  * @desc    Create new campaign
  * @access  Private
  */
-router.post('/', (0, validate_1.validate)(campaigns_schema_1.createCampaignSchema), campaigns_controller_1.campaignsController.create.bind(campaigns_controller_1.campaignsController));
+router.post('/', planLimits_1.checkCampaignLimit, (0, validate_1.validate)(campaigns_schema_1.createCampaignSchema), campaigns_controller_1.campaignsController.create.bind(campaigns_controller_1.campaignsController));
 /**
  * @route   GET /api/v1/campaigns
  * @desc    Get campaigns list with pagination

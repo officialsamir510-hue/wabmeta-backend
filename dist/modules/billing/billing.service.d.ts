@@ -1,43 +1,38 @@
 declare class BillingService {
+    private getPlanBySlug;
+    checkPlanLimit(organizationId: string, limitType: 'contacts' | 'campaigns' | 'messages' | 'teamMembers' | 'templates' | 'chatbots' | 'automations'): Promise<{
+        allowed: boolean;
+        used: number;
+        limit: number;
+        remaining: number;
+        message?: string;
+    }>;
+    checkSubscriptionValidity(organizationId: string): Promise<{
+        isValid: boolean;
+        isExpired: boolean;
+        daysRemaining: number;
+        expiresAt?: Date;
+        planName?: string;
+        message?: string;
+    }>;
     getSubscription(organizationId: string): Promise<{
         plan: {
-            name: string;
-            type: import(".prisma/client").$Enums.PlanType;
-            id: string;
-            createdAt: Date;
-            updatedAt: Date;
-            slug: string;
-            description: string | null;
-            monthlyPrice: import("@prisma/client/runtime/library").Decimal;
-            yearlyPrice: import("@prisma/client/runtime/library").Decimal;
             maxContacts: number;
             maxMessages: number;
-            maxTeamMembers: number;
             maxCampaigns: number;
-            maxChatbots: number;
-            maxTemplates: number;
-            maxWhatsAppAccounts: number;
-            maxMessagesPerMonth: number;
             maxCampaignsPerMonth: number;
+            maxTeamMembers: number;
+            maxWhatsAppAccounts: number;
+            maxTemplates: number;
+            maxChatbots: number;
             maxAutomations: number;
-            maxApiCalls: number;
-            features: import("@prisma/client/runtime/library").JsonValue;
-            isActive: boolean;
-        } | {
+            validityDays: number;
             id: string;
             name: string;
-            type: "FREE";
+            type: string;
             slug: string;
             monthlyPrice: number;
             yearlyPrice: number;
-            maxContacts: number;
-            maxMessagesPerMonth: number;
-            maxCampaignsPerMonth: number;
-            maxTeamMembers: number;
-            maxWhatsAppAccounts: number;
-            maxTemplates: number;
-            maxChatbots: number;
-            maxAutomations: number;
         };
         status: string;
         billingCycle: string;
@@ -67,6 +62,8 @@ declare class BillingService {
             maxCampaignsPerMonth: number;
             maxAutomations: number;
             maxApiCalls: number;
+            validityDays: number;
+            isRecommended: boolean;
             features: import("@prisma/client/runtime/library").JsonValue;
             isActive: boolean;
         };
@@ -86,79 +83,28 @@ declare class BillingService {
         cancelledAt: Date | null;
         planId: string;
     }>;
-    getPlans(): Promise<({
-        id: string;
-        name: string;
-        type: "FREE";
-        slug: string;
-        monthlyPrice: number;
-        yearlyPrice: number;
+    getPlans(): Promise<{
+        features: string[];
+        isActive: boolean;
+        isRecommended: boolean;
+        popular: boolean;
         maxContacts: number;
-        maxMessagesPerMonth: number;
+        maxMessages: number;
+        maxCampaigns: number;
         maxCampaignsPerMonth: number;
         maxTeamMembers: number;
         maxWhatsAppAccounts: number;
         maxTemplates: number;
         maxChatbots: number;
         maxAutomations: number;
-        features: string[];
-        isActive: boolean;
-        popular: boolean;
-    } | {
+        validityDays: number;
         id: string;
         name: string;
-        type: "STARTER";
+        type: string;
         slug: string;
         monthlyPrice: number;
         yearlyPrice: number;
-        maxContacts: number;
-        maxMessagesPerMonth: number;
-        maxCampaignsPerMonth: number;
-        maxTeamMembers: number;
-        maxWhatsAppAccounts: number;
-        maxTemplates: number;
-        maxChatbots: number;
-        maxAutomations: number;
-        features: string[];
-        isActive: boolean;
-        popular: boolean;
-    } | {
-        id: string;
-        name: string;
-        type: "PRO";
-        slug: string;
-        monthlyPrice: number;
-        yearlyPrice: number;
-        maxContacts: number;
-        maxMessagesPerMonth: number;
-        maxCampaignsPerMonth: number;
-        maxTeamMembers: number;
-        maxWhatsAppAccounts: number;
-        maxTemplates: number;
-        maxChatbots: number;
-        maxAutomations: number;
-        features: string[];
-        isActive: boolean;
-        popular: boolean;
-    } | {
-        id: string;
-        name: string;
-        type: "ENTERPRISE";
-        slug: string;
-        monthlyPrice: number;
-        yearlyPrice: number;
-        maxContacts: number;
-        maxMessagesPerMonth: number;
-        maxCampaignsPerMonth: number;
-        maxTeamMembers: number;
-        maxWhatsAppAccounts: number;
-        maxTemplates: number;
-        maxChatbots: number;
-        maxAutomations: number;
-        features: string[];
-        isActive: boolean;
-        popular: boolean;
-    })[] | {
+    }[] | {
         popular: boolean;
         monthlyPrice: number;
         yearlyPrice: number;
@@ -181,6 +127,8 @@ declare class BillingService {
         maxCampaignsPerMonth: number;
         maxAutomations: number;
         maxApiCalls: number;
+        validityDays: number;
+        isRecommended: boolean;
         isActive: boolean;
     }[]>;
     private getDefaultPlans;
@@ -217,6 +165,7 @@ declare class BillingService {
         currency: any;
         planId: string;
         planName: string;
+        validityDays: number;
         receipt: any;
     }>;
     verifyRazorpayPayment(params: {
@@ -264,9 +213,12 @@ declare class BillingService {
             maxCampaignsPerMonth: number;
             maxAutomations: number;
             maxApiCalls: number;
+            validityDays: number;
+            isRecommended: boolean;
             features: import("@prisma/client/runtime/library").JsonValue;
             isActive: boolean;
         };
+        validUntil: Date;
         message: string;
     }>;
     upgradePlan(params: {
@@ -328,6 +280,8 @@ declare class BillingService {
         planId: string;
     }>;
     getInvoices(organizationId: string, limit?: number, offset?: number): Promise<any[]>;
+    getInvoice(invoiceId: string, organizationId: string): Promise<any>;
+    generateInvoicePDF(invoiceId: string, organizationId: string): Promise<Buffer>;
     checkSubscriptionStatus(organizationId: string): Promise<{
         isActive: boolean;
         message: string;
@@ -357,6 +311,8 @@ declare class BillingService {
                 maxCampaignsPerMonth: number;
                 maxAutomations: number;
                 maxApiCalls: number;
+                validityDays: number;
+                isRecommended: boolean;
                 features: import("@prisma/client/runtime/library").JsonValue;
                 isActive: boolean;
             };
@@ -380,8 +336,6 @@ declare class BillingService {
         daysRemaining: number;
         message?: undefined;
     }>;
-    getInvoice(invoiceId: string, organizationId: string): Promise<any>;
-    generateInvoicePDF(invoiceId: string, organizationId: string): Promise<Buffer>;
 }
 export declare const billingService: BillingService;
 export default billingService;

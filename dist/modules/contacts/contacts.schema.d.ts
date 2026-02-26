@@ -1,11 +1,11 @@
 import { z } from 'zod';
 export declare const createContactSchema: z.ZodObject<{
     body: z.ZodObject<{
-        phone: z.ZodEffects<z.ZodString, string, string>;
+        phone: z.ZodEffects<z.ZodString, string, unknown>;
         countryCode: z.ZodDefault<z.ZodOptional<z.ZodString>>;
         firstName: z.ZodOptional<z.ZodString>;
         lastName: z.ZodOptional<z.ZodString>;
-        email: z.ZodUnion<[z.ZodOptional<z.ZodString>, z.ZodLiteral<"">]>;
+        email: z.ZodEffects<z.ZodOptional<z.ZodString>, string | undefined, unknown>;
         tags: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodString, "many">>>;
         customFields: z.ZodDefault<z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>>;
         groupIds: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
@@ -19,11 +19,11 @@ export declare const createContactSchema: z.ZodObject<{
         lastName?: string | undefined;
         groupIds?: string[] | undefined;
     }, {
-        phone: string;
-        email?: string | undefined;
+        email?: unknown;
         tags?: string[] | undefined;
         firstName?: string | undefined;
         lastName?: string | undefined;
+        phone?: unknown;
         countryCode?: string | undefined;
         customFields?: Record<string, any> | undefined;
         groupIds?: string[] | undefined;
@@ -41,11 +41,11 @@ export declare const createContactSchema: z.ZodObject<{
     };
 }, {
     body: {
-        phone: string;
-        email?: string | undefined;
+        email?: unknown;
         tags?: string[] | undefined;
         firstName?: string | undefined;
         lastName?: string | undefined;
+        phone?: unknown;
         countryCode?: string | undefined;
         customFields?: Record<string, any> | undefined;
         groupIds?: string[] | undefined;
@@ -53,11 +53,11 @@ export declare const createContactSchema: z.ZodObject<{
 }>;
 export declare const updateContactSchema: z.ZodObject<{
     body: z.ZodObject<{
-        phone: z.ZodOptional<z.ZodEffects<z.ZodString, string, string>>;
+        phone: z.ZodOptional<z.ZodEffects<z.ZodString, string, unknown>>;
         countryCode: z.ZodOptional<z.ZodString>;
         firstName: z.ZodOptional<z.ZodString>;
         lastName: z.ZodOptional<z.ZodString>;
-        email: z.ZodUnion<[z.ZodOptional<z.ZodString>, z.ZodLiteral<"">]>;
+        email: z.ZodEffects<z.ZodOptional<z.ZodString>, string | undefined, unknown>;
         tags: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         customFields: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
         status: z.ZodOptional<z.ZodNativeEnum<{
@@ -75,11 +75,11 @@ export declare const updateContactSchema: z.ZodObject<{
         countryCode?: string | undefined;
         customFields?: Record<string, any> | undefined;
     }, {
-        email?: string | undefined;
+        email?: unknown;
         tags?: string[] | undefined;
         firstName?: string | undefined;
         lastName?: string | undefined;
-        phone?: string | undefined;
+        phone?: unknown;
         status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         countryCode?: string | undefined;
         customFields?: Record<string, any> | undefined;
@@ -97,11 +97,11 @@ export declare const updateContactSchema: z.ZodObject<{
     };
 }, {
     body: {
-        email?: string | undefined;
+        email?: unknown;
         tags?: string[] | undefined;
         firstName?: string | undefined;
         lastName?: string | undefined;
-        phone?: string | undefined;
+        phone?: unknown;
         status?: "ACTIVE" | "BLOCKED" | "UNSUBSCRIBED" | undefined;
         countryCode?: string | undefined;
         customFields?: Record<string, any> | undefined;
@@ -110,10 +110,10 @@ export declare const updateContactSchema: z.ZodObject<{
 export declare const importContactsSchema: z.ZodObject<{
     body: z.ZodObject<{
         contacts: z.ZodArray<z.ZodObject<{
-            phone: z.ZodString;
+            phone: z.ZodEffects<z.ZodString, string, unknown>;
             firstName: z.ZodOptional<z.ZodString>;
             lastName: z.ZodOptional<z.ZodString>;
-            email: z.ZodUnion<[z.ZodOptional<z.ZodString>, z.ZodLiteral<"">]>;
+            email: z.ZodEffects<z.ZodOptional<z.ZodString>, string | undefined, unknown>;
             tags: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
             customFields: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
         }, "strip", z.ZodTypeAny, {
@@ -124,14 +124,15 @@ export declare const importContactsSchema: z.ZodObject<{
             lastName?: string | undefined;
             customFields?: Record<string, any> | undefined;
         }, {
-            phone: string;
-            email?: string | undefined;
+            email?: unknown;
             tags?: string[] | undefined;
             firstName?: string | undefined;
             lastName?: string | undefined;
+            phone?: unknown;
             customFields?: Record<string, any> | undefined;
         }>, "many">;
         groupId: z.ZodOptional<z.ZodString>;
+        groupName: z.ZodOptional<z.ZodString>;
         tags: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
         skipDuplicates: z.ZodDefault<z.ZodOptional<z.ZodBoolean>>;
     }, "strip", z.ZodTypeAny, {
@@ -146,18 +147,20 @@ export declare const importContactsSchema: z.ZodObject<{
         skipDuplicates: boolean;
         tags?: string[] | undefined;
         groupId?: string | undefined;
+        groupName?: string | undefined;
     }, {
         contacts: {
-            phone: string;
-            email?: string | undefined;
+            email?: unknown;
             tags?: string[] | undefined;
             firstName?: string | undefined;
             lastName?: string | undefined;
+            phone?: unknown;
             customFields?: Record<string, any> | undefined;
         }[];
         tags?: string[] | undefined;
         skipDuplicates?: boolean | undefined;
         groupId?: string | undefined;
+        groupName?: string | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     body: {
@@ -172,20 +175,22 @@ export declare const importContactsSchema: z.ZodObject<{
         skipDuplicates: boolean;
         tags?: string[] | undefined;
         groupId?: string | undefined;
+        groupName?: string | undefined;
     };
 }, {
     body: {
         contacts: {
-            phone: string;
-            email?: string | undefined;
+            email?: unknown;
             tags?: string[] | undefined;
             firstName?: string | undefined;
             lastName?: string | undefined;
+            phone?: unknown;
             customFields?: Record<string, any> | undefined;
         }[];
         tags?: string[] | undefined;
         skipDuplicates?: boolean | undefined;
         groupId?: string | undefined;
+        groupName?: string | undefined;
     };
 }>;
 export declare const bulkUpdateSchema: z.ZodObject<{

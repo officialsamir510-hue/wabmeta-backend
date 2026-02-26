@@ -152,7 +152,7 @@ function wireWebhookEvents() {
       webhookEvents.removeAllListeners('conversationUpdated');
       webhookEvents.removeAllListeners('messageStatus');
 
-      // ✅ NEW: Throttled event emission (max 10 events/sec per org)
+      // ✅ CRITICAL FIX: Prevent duplicate emissions
       const emissionQueue = new Map<string, NodeJS.Timeout>();
 
       webhookEvents.on('newMessage', (data: any) => {
@@ -160,25 +160,28 @@ function wireWebhookEvents() {
 
         const orgId = data.organizationId;
         const conversationId = data.conversationId;
-        const messageId = data.message?.id || Math.random().toString();
-        // ✅ Fix: Key should be message-specific to avoid collisions between different messages
+        const messageId = data.message?.id || data.message?.waMessageId || Math.random().toString();
+
+        // ✅ FIXED: Use message-specific key
         const key = `newMessage:${messageId}`;
 
-        // ✅ Throttle: Clear existing timeout
+        // ✅ Clear existing timeout for THIS specific message
         if (emissionQueue.has(key)) {
           clearTimeout(emissionQueue.get(key));
         }
 
-        // ✅ Batch emit after 30ms 
+        // ✅ Debounce: Wait 30ms before emitting
         const timeout = setTimeout(() => {
-          // ✅ FIX: Use array room targeting for robust single emission
           const rooms = [`org:${orgId}`];
           if (conversationId) {
             rooms.push(`conversation:${conversationId}`);
           }
 
+          // ✅ Single emission to multiple rooms
           io.to(rooms).emit('message:new', data);
+
           emissionQueue.delete(key);
+          console.log(`✅ Emitted message:new for ${messageId}`);
         }, 30);
 
         emissionQueue.set(key, timeout);

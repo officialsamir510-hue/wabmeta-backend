@@ -230,7 +230,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     tagNames: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
                 }, z.ZodTypeAny, "passthrough">>;
             }, "strip", z.ZodTypeAny, {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -239,8 +239,8 @@ export declare const createChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
@@ -281,7 +281,7 @@ export declare const createChatbotSchema: z.ZodObject<{
                     x: number;
                 };
             }, {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -290,8 +290,8 @@ export declare const createChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
@@ -392,7 +392,7 @@ export declare const createChatbotSchema: z.ZodObject<{
             }>>;
         }, "strip", z.ZodTypeAny, {
             nodes: {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -401,8 +401,8 @@ export declare const createChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
@@ -463,7 +463,7 @@ export declare const createChatbotSchema: z.ZodObject<{
             } | undefined;
         }, {
             nodes: {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -472,8 +472,8 @@ export declare const createChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
@@ -540,7 +540,7 @@ export declare const createChatbotSchema: z.ZodObject<{
         description?: string | undefined;
         flowData?: {
             nodes: {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -549,8 +549,8 @@ export declare const createChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
@@ -618,7 +618,7 @@ export declare const createChatbotSchema: z.ZodObject<{
         isDefault?: boolean | undefined;
         flowData?: {
             nodes: {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -627,8 +627,8 @@ export declare const createChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
@@ -700,7 +700,7 @@ export declare const createChatbotSchema: z.ZodObject<{
         description?: string | undefined;
         flowData?: {
             nodes: {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -709,8 +709,8 @@ export declare const createChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
@@ -780,7 +780,7 @@ export declare const createChatbotSchema: z.ZodObject<{
         isDefault?: boolean | undefined;
         flowData?: {
             nodes: {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -789,8 +789,8 @@ export declare const createChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
@@ -1093,7 +1093,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     tagNames: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
                 }, z.ZodTypeAny, "passthrough">>;
             }, "strip", z.ZodTypeAny, {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -1102,8 +1102,8 @@ export declare const updateChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
@@ -1144,7 +1144,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
                     x: number;
                 };
             }, {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -1153,8 +1153,8 @@ export declare const updateChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
@@ -1255,7 +1255,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
             }>>;
         }, "strip", z.ZodTypeAny, {
             nodes: {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -1264,8 +1264,8 @@ export declare const updateChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
@@ -1326,7 +1326,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
             } | undefined;
         }, {
             nodes: {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -1335,8 +1335,8 @@ export declare const updateChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
@@ -1408,7 +1408,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
         isDefault?: boolean | undefined;
         flowData?: {
             nodes: {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -1417,8 +1417,8 @@ export declare const updateChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
@@ -1488,7 +1488,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
         isDefault?: boolean | undefined;
         flowData?: {
             nodes: {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -1497,8 +1497,8 @@ export declare const updateChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
@@ -1570,7 +1570,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
         isDefault?: boolean | undefined;
         flowData?: {
             nodes: {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -1579,8 +1579,8 @@ export declare const updateChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
@@ -1655,7 +1655,7 @@ export declare const updateChatbotSchema: z.ZodObject<{
         isDefault?: boolean | undefined;
         flowData?: {
             nodes: {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -1664,8 +1664,8 @@ export declare const updateChatbotSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
@@ -2132,7 +2132,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     tagNames: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
                 }, z.ZodTypeAny, "passthrough">>;
             }, "strip", z.ZodTypeAny, {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -2141,8 +2141,8 @@ export declare const saveFlowSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
@@ -2183,7 +2183,7 @@ export declare const saveFlowSchema: z.ZodObject<{
                     x: number;
                 };
             }, {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -2192,8 +2192,8 @@ export declare const saveFlowSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
@@ -2294,7 +2294,7 @@ export declare const saveFlowSchema: z.ZodObject<{
             }>>;
         }, "strip", z.ZodTypeAny, {
             nodes: {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -2303,8 +2303,8 @@ export declare const saveFlowSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
@@ -2365,7 +2365,7 @@ export declare const saveFlowSchema: z.ZodObject<{
             } | undefined;
         }, {
             nodes: {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -2374,8 +2374,8 @@ export declare const saveFlowSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
@@ -2438,7 +2438,7 @@ export declare const saveFlowSchema: z.ZodObject<{
     }, "strip", z.ZodTypeAny, {
         flowData: {
             nodes: {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -2447,8 +2447,8 @@ export declare const saveFlowSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
@@ -2511,7 +2511,7 @@ export declare const saveFlowSchema: z.ZodObject<{
     }, {
         flowData: {
             nodes: {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -2520,8 +2520,8 @@ export declare const saveFlowSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
@@ -2586,7 +2586,7 @@ export declare const saveFlowSchema: z.ZodObject<{
     body: {
         flowData: {
             nodes: {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -2595,8 +2595,8 @@ export declare const saveFlowSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;
@@ -2664,7 +2664,7 @@ export declare const saveFlowSchema: z.ZodObject<{
     body: {
         flowData: {
             nodes: {
-                type: "message" | "end" | "tag" | "action" | "condition" | "delay" | "assign" | "trigger" | "question" | "api";
+                type: "message" | "end" | "tag" | "delay" | "action" | "condition" | "assign" | "trigger" | "question" | "api";
                 data: {
                     label: string;
                     text?: string | undefined;
@@ -2673,8 +2673,8 @@ export declare const saveFlowSchema: z.ZodObject<{
                         id: string;
                         title: string;
                     }[] | undefined;
-                    errorMessage?: string | undefined;
                     mediaUrl?: string | undefined;
+                    errorMessage?: string | undefined;
                     triggerType?: "keyword" | "first_message" | "all_messages" | "button_click" | undefined;
                     keywords?: string[] | undefined;
                     messageType?: "text" | "image" | "video" | "document" | "buttons" | "list" | undefined;

@@ -155,12 +155,22 @@ async function bootstrap() {
         console.log('🔌 Initializing Socket.io...');
         (0, socket_1.initializeSocket)(server);
         console.log('✅ Socket.io initialized');
-        // ============================================
+        // ================= ==========================
         // Step 7: Start Cron Jobs
         // ============================================
         console.log('⏰ Starting cron jobs...');
         startCronJobs();
         console.log('✅ Cron jobs started');
+        // ============================================
+        // Step 8: Initialize Redis (NEW)
+        // ============================================
+        try {
+            const { initRedis } = await Promise.resolve().then(() => __importStar(require('./config/redis')));
+            initRedis();
+        }
+        catch (error) {
+            console.warn('⚠️  Redis initialization failed:', error);
+        }
         // ============================================
         // Step 8: Start Server
         // ============================================
@@ -246,7 +256,7 @@ async function bootstrap() {
 // CRON JOBS
 // ============================================
 function startCronJobs() {
-    // Health check every 3 minutes
+    // ✅ 1. Health check every 3 minutes
     setInterval(async () => {
         try {
             await database_1.default.$queryRaw `SELECT 1`;
@@ -255,7 +265,7 @@ function startCronJobs() {
             console.error('❌ DB Health check failed:', error);
         }
     }, 3 * 60 * 1000);
-    // Expire conversation windows every 5 minutes
+    // ✅ 2. Expire conversation windows every 5 minutes
     if (webhookService?.expireConversationWindows) {
         setInterval(async () => {
             try {
@@ -266,7 +276,7 @@ function startCronJobs() {
             }
         }, 5 * 60 * 1000);
     }
-    // Reset daily message limits every hour
+    // ✅ 3. Reset daily message limits every hour
     if (webhookService?.resetDailyMessageLimits) {
         setInterval(async () => {
             try {
@@ -277,7 +287,7 @@ function startCronJobs() {
             }
         }, 60 * 60 * 1000);
     }
-    // Clean up old queue messages daily
+    // ✅ 4. Clean up old queue messages daily
     if (messageQueueWorker?.cleanupOldMessages) {
         setInterval(async () => {
             try {
@@ -287,6 +297,65 @@ function startCronJobs() {
                 console.error('❌ Error in queue cleanup cron:', error);
             }
         }, 24 * 60 * 60 * 1000);
+    }
+    // ✅ 5. **NEW: Process Scheduled Campaigns** (Every minute)
+    setInterval(async () => {
+        try {
+            await processScheduledCampaigns();
+        }
+        catch (error) {
+            console.error('❌ Error in scheduled campaigns cron:', error);
+        }
+    }, 60 * 1000 // Every 1 minute
+    );
+    console.log('✅ All cron jobs started (including scheduled campaigns)');
+}
+// ✅ NEW: Scheduled Campaign Processor
+async function processScheduledCampaigns() {
+    try {
+        const now = new Date();
+        // Find campaigns scheduled to start now or in the past
+        const scheduledCampaigns = await database_1.default.campaign.findMany({
+            where: {
+                status: 'SCHEDULED',
+                scheduledAt: {
+                    lte: now,
+                },
+            },
+            select: {
+                id: true,
+                organizationId: true,
+                name: true,
+                scheduledAt: true,
+            },
+        });
+        if (scheduledCampaigns.length === 0) {
+            return; // No campaigns to process
+        }
+        console.log(`📅 Found ${scheduledCampaigns.length} scheduled campaigns to start`);
+        // Import campaigns service dynamically
+        const { campaignsService } = await Promise.resolve().then(() => __importStar(require('./modules/campaigns/campaigns.service')));
+        for (const campaign of scheduledCampaigns) {
+            try {
+                console.log(`🚀 Auto-starting scheduled campaign: ${campaign.name} (${campaign.id})`);
+                await campaignsService.start(campaign.organizationId, campaign.id);
+                console.log(`✅ Successfully started campaign: ${campaign.name}`);
+            }
+            catch (error) {
+                console.error(`❌ Failed to start campaign ${campaign.id}:`, error.message);
+                // Mark campaign as failed if can't start
+                await database_1.default.campaign.update({
+                    where: { id: campaign.id },
+                    data: {
+                        status: 'FAILED',
+                        completedAt: new Date(),
+                    },
+                });
+            }
+        }
+    }
+    catch (error) {
+        console.error('❌ Error processing scheduled campaigns:', error);
     }
 }
 // ============================================

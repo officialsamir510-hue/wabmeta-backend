@@ -8,6 +8,10 @@ exports.optionalAuth = exports.requireOrganization = exports.requireEmailVerifie
 const jwt_1 = require("../utils/jwt");
 const errorHandler_1 = require("./errorHandler");
 const database_1 = __importDefault(require("../config/database"));
+const redis_1 = require("../config/redis");
+const redis = (0, redis_1.getRedis)();
+const USER_CACHE_PREFIX = 'user:auth:';
+const CACHE_TTL = 120; // 120 seconds
 const authenticate = async (req, res, next) => {
     try {
         // Get token from header
@@ -18,16 +22,30 @@ const authenticate = async (req, res, next) => {
         const token = authHeader.split(' ')[1];
         // Verify token
         const decoded = (0, jwt_1.verifyAccessToken)(token);
-        // Check if user exists
-        const user = await database_1.default.user.findUnique({
-            where: { id: decoded.userId },
-            select: {
-                id: true,
-                email: true,
-                status: true,
-                emailVerified: true,
-            },
-        });
+        // ✅ Distributed Caching for Production
+        let user = null;
+        if (redis) {
+            const cachedUser = await redis.get(`${USER_CACHE_PREFIX}${decoded.userId}`);
+            if (cachedUser) {
+                user = JSON.parse(cachedUser);
+            }
+        }
+        if (!user) {
+            // Check if user exists
+            user = await database_1.default.user.findUnique({
+                where: { id: decoded.userId },
+                select: {
+                    id: true,
+                    email: true,
+                    status: true,
+                    emailVerified: true,
+                },
+            });
+            if (user && redis) {
+                // Cache user status for 2 minutes to reduce DB hits
+                await redis.set(`${USER_CACHE_PREFIX}${decoded.userId}`, JSON.stringify(user), 'EX', CACHE_TTL);
+            }
+        }
         if (!user) {
             throw new errorHandler_1.AppError('User not found', 401);
         }

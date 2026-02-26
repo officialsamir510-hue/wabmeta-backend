@@ -15,8 +15,11 @@ export declare class WebhookService {
     }>;
     private processIncomingMessage;
     private processStatusUpdate;
+    private updateCampaignContactStatus;
     verifyWebhook(mode: string, token: string, challenge: string): string | null;
     logWebhook(payload: any, status: string, error?: string): Promise<void>;
+    expireConversationWindows(): Promise<void>;
+    resetDailyMessageLimits(): Promise<void>;
 }
 export declare const webhookService: WebhookService;
 export default webhookService;

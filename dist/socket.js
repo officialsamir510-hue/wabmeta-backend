@@ -1,5 +1,5 @@
 "use strict";
-// src/socket.ts - COMPLETE FINAL (org:join + webhookEvents broadcast)
+// src/socket.ts - OPTIMIZED VERSION
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
@@ -37,117 +37,158 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getIO = exports.initializeSocket = void 0;
+exports.closeSocketIO = exports.getIO = exports.initializeSocket = void 0;
 const socket_io_1 = require("socket.io");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const config_1 = require("./config");
+const campaigns_socket_1 = require("./modules/campaigns/campaigns.socket");
 let io;
+let webhookListenersAttached = false; // ✅ Flag to prevent duplicate listeners
 const initializeSocket = (server) => {
+    console.log('🔌 Starting Socket.IO...');
     io = new socket_io_1.Server(server, {
         cors: {
-            origin: config_1.config.frontend.corsOrigins,
+            origin: [...config_1.config.frontend.corsOrigins],
             methods: ['GET', 'POST'],
             credentials: true,
+            allowedHeaders: [
+                'Content-Type',
+                'Authorization',
+                'X-Requested-With',
+                'X-Organization-Id',
+                'x-organization-id',
+                'Accept',
+                'Origin',
+            ],
         },
+        transports: ['websocket', 'polling'],
+        path: '/socket.io/',
+        // ✅ CRITICAL: Connection limits
         pingTimeout: 60000,
         pingInterval: 25000,
-        transports: ['websocket', 'polling'],
-        path: '/socket.io',
+        maxHttpBufferSize: 1e6, // 1MB max message size
+        // ✅ NEW: Performance optimizations
+        perMessageDeflate: {
+            threshold: 1024, // Compress messages > 1KB
+        },
+        httpCompression: {
+            threshold: 1024,
+        },
     });
-    // ✅ Auth middleware
+    // ✅ Connection tracking
+    let connectionCount = 0;
+    const MAX_CONNECTIONS = 10000; // Safety limit
+    // Auth middleware
     io.use((socket, next) => {
         const token = socket.handshake.auth?.token ||
-            socket.handshake.headers.authorization?.split(' ')[1];
-        if (!token)
-            return next(new Error('Authentication required'));
-        try {
-            const decoded = jsonwebtoken_1.default.verify(token, config_1.config.jwt.secret);
-            socket.userId = decoded.userId || decoded.id;
-            socket.organizationId = decoded.organizationId;
-            socket.email = decoded.email;
-            // ✅ fallback org from handshake
-            const orgFromAuth = socket.handshake.auth?.organizationId;
-            if (!socket.organizationId && orgFromAuth) {
-                socket.organizationId = String(orgFromAuth);
+            socket.handshake.headers?.authorization?.split(' ')[1];
+        if (token) {
+            try {
+                const decoded = jsonwebtoken_1.default.verify(token, config_1.config.jwt.secret);
+                socket.userId = decoded.userId || decoded.id;
+                socket.organizationId = decoded.organizationId || socket.handshake.auth?.organizationId;
+                socket.email = decoded.email;
             }
-            next();
+            catch (e) {
+                console.warn('⚠️ Invalid token');
+            }
         }
-        catch (e) {
-            next(new Error('Invalid token'));
-        }
+        next();
     });
     io.on('connection', (socket) => {
-        console.log(`🔌 Socket connected: ${socket.email || socket.userId} (${socket.id})`);
+        connectionCount++;
+        // ✅ CRITICAL: Limit connections
+        if (connectionCount > MAX_CONNECTIONS) {
+            console.error('🚨 Max connections reached!');
+            socket.emit('error', 'Server capacity reached');
+            socket.disconnect(true);
+            return;
+        }
+        console.log(`🔌 Connected: ${socket.id} (total: ${connectionCount})`);
+        // Auto-join org room
         if (socket.organizationId) {
             socket.join(`org:${socket.organizationId}`);
-            console.log(`📂 Joined org room: org:${socket.organizationId}`);
         }
-        else {
-            console.warn('⚠️ Socket has no organizationId (org room not joined)');
-        }
-        if (socket.userId) {
-            socket.join(`user:${socket.userId}`);
-        }
-        // ✅ allow client to join org explicitly
+        // Manual org join
         socket.on('org:join', (orgId) => {
-            if (!orgId)
-                return;
-            socket.organizationId = socket.organizationId || orgId;
-            socket.join(`org:${orgId}`);
-            console.log(`📂 org:join => org:${orgId}`);
+            if (orgId) {
+                socket.organizationId = orgId;
+                socket.join(`org:${orgId}`);
+            }
+        });
+        // Campaign rooms
+        socket.on('campaign:join', (id) => {
+            if (id)
+                socket.join(`campaign:${id}`);
+        });
+        socket.on('campaign:leave', (id) => {
+            if (id)
+                socket.leave(`campaign:${id}`);
         });
         // Conversation rooms
-        socket.on('join:conversation', (conversationId) => {
-            if (!conversationId)
-                return;
-            socket.join(`conversation:${conversationId}`);
+        socket.on('join:conversation', (id) => {
+            if (id)
+                socket.join(`conversation:${id}`);
         });
-        socket.on('leave:conversation', (conversationId) => {
-            if (!conversationId)
-                return;
-            socket.leave(`conversation:${conversationId}`);
+        socket.on('leave:conversation', (id) => {
+            if (id)
+                socket.leave(`conversation:${id}`);
         });
-        socket.on('typing:start', ({ conversationId }) => {
-            if (!conversationId)
-                return;
-            socket.to(`conversation:${conversationId}`).emit('typing:start', {
-                conversationId,
-                userId: socket.userId,
-                email: socket.email,
-            });
+        // Ping/pong
+        socket.on('ping', () => {
+            socket.emit('pong', { time: Date.now() });
         });
-        socket.on('typing:stop', ({ conversationId }) => {
-            if (!conversationId)
-                return;
-            socket.to(`conversation:${conversationId}`).emit('typing:stop', {
-                conversationId,
-                userId: socket.userId,
-                email: socket.email,
-            });
+        socket.on('disconnect', (reason) => {
+            connectionCount--;
+            console.log(`🔌 Disconnected: ${socket.id} (${reason}), total: ${connectionCount}`);
         });
-        socket.on('ping', () => socket.emit('pong', { timestamp: Date.now() }));
     });
-    // ✅ Hook webhookEvents -> socket broadcast
-    initializeWebhookEvents().catch((e) => console.error('initializeWebhookEvents error', e));
-    console.log('✅ Socket.IO server initialized');
+    // Init campaign socket
+    (0, campaigns_socket_1.initializeCampaignSocket)(io);
+    // ✅ CRITICAL FIX: Attach webhook listeners ONLY ONCE
+    if (!webhookListenersAttached) {
+        wireWebhookEvents();
+        webhookListenersAttached = true;
+    }
+    console.log('✅ Socket.IO ready');
     return io;
 };
 exports.initializeSocket = initializeSocket;
-async function initializeWebhookEvents() {
-    try {
-        const webhookModule = (await Promise.resolve().then(() => __importStar(require('./modules/webhooks/webhook.service'))));
-        const webhookEvents = webhookModule.webhookEvents;
-        if (!webhookEvents) {
-            console.log('ℹ️ webhookEvents not found, realtime inbound disabled');
+function wireWebhookEvents() {
+    Promise.resolve().then(() => __importStar(require('./modules/webhooks/webhook.service'))).then((module) => {
+        const { webhookEvents } = module;
+        if (!webhookEvents)
             return;
-        }
+        // ✅ CRITICAL: Remove all previous listeners first
+        webhookEvents.removeAllListeners('newMessage');
+        webhookEvents.removeAllListeners('conversationUpdated');
+        webhookEvents.removeAllListeners('messageStatus');
+        // ✅ CRITICAL FIX: Prevent duplicate emissions
+        const emissionQueue = new Map();
         webhookEvents.on('newMessage', (data) => {
             if (!data?.organizationId)
                 return;
-            io.to(`org:${data.organizationId}`).emit('message:new', data);
-            if (data.conversationId) {
-                io.to(`conversation:${data.conversationId}`).emit('message:new', data);
+            const orgId = data.organizationId;
+            const conversationId = data.conversationId;
+            const messageId = data.message?.id || data.message?.waMessageId || Math.random().toString();
+            // ✅ FIXED: Use message-specific key
+            const key = `newMessage:${messageId}`;
+            // ✅ Clear existing timeout for THIS specific message
+            if (emissionQueue.has(key)) {
+                clearTimeout(emissionQueue.get(key));
             }
+            // ✅ Debounce: Wait 30ms before emitting
+            const timeout = setTimeout(() => {
+                const rooms = [`org:${orgId}`];
+                if (conversationId) {
+                    rooms.push(`conversation:${conversationId}`);
+                }
+                // ✅ Single emission to multiple rooms
+                io.to(rooms).emit('message:new', data);
+                emissionQueue.delete(key);
+                console.log(`✅ Emitted message:new for ${messageId}`);
+            }, 30);
+            emissionQueue.set(key, timeout);
         });
         webhookEvents.on('conversationUpdated', (data) => {
             if (!data?.organizationId)
@@ -157,23 +198,35 @@ async function initializeWebhookEvents() {
         webhookEvents.on('messageStatus', (data) => {
             if (!data?.organizationId)
                 return;
-            io.to(`org:${data.organizationId}`).emit('message:status', data);
+            // ✅ FIX: Use room chaining here as well
+            let target = io.to(`org:${data.organizationId}`);
             if (data.conversationId) {
-                io.to(`conversation:${data.conversationId}`).emit('message:status', data);
+                target = target.to(`conversation:${data.conversationId}`);
             }
+            target.emit('message:status', data);
         });
-        console.log('✅ Webhook events wired to Socket.IO');
-    }
-    catch (e) {
-        console.log('ℹ️ Webhook events not available');
-    }
+        console.log('✅ Webhook events wired with throttling');
+    })
+        .catch((e) => console.log('ℹ️ Webhook events not available'));
 }
-// Utility
 const getIO = () => {
     if (!io)
-        throw new Error('Socket.IO not initialized');
+        throw new Error('Socket not initialized');
     return io;
 };
 exports.getIO = getIO;
-exports.default = { initializeSocket: exports.initializeSocket, getIO: exports.getIO };
+// ✅ NEW: Graceful shutdown
+const closeSocketIO = async () => {
+    if (io) {
+        console.log('🔌 Closing Socket.IO...');
+        await new Promise((resolve) => {
+            io.close(() => {
+                console.log('✅ Socket.IO closed');
+                resolve();
+            });
+        });
+    }
+};
+exports.closeSocketIO = closeSocketIO;
+exports.default = { initializeSocket: exports.initializeSocket, getIO: exports.getIO, closeSocketIO: exports.closeSocketIO };
 //# sourceMappingURL=socket.js.map
