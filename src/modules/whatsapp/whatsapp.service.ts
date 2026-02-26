@@ -629,8 +629,6 @@ class WhatsAppService {
           formattedTo
         );
 
-        console.log('📞 CONTACT CHECK:', JSON.stringify(contactCheck, null, 2));
-
         const status = contactCheck?.contacts?.[0]?.status;
 
         if (status && status !== 'valid') {

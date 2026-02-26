@@ -47,15 +47,23 @@ class MetaApiClient {
         return response;
       },
       (error: AxiosError<MetaApiError>) => {
-        if (error.response?.data?.error) {
-          const metaError = error.response.data.error;
-          console.error('[Meta API] ❌ Error:', {
-            message: metaError.message,
-            code: metaError.code,
-            subcode: metaError.error_subcode,
-            type: metaError.type,
-            fbtrace_id: metaError.fbtrace_id,
-          });
+        const metaError = error.response?.data?.error;
+
+        // Don't log as ERROR if it's a known/handled restriction (Contact check)
+        const isHandledError = metaError?.code === 100 && metaError?.error_subcode === 33;
+
+        if (metaError) {
+          if (isHandledError) {
+            console.warn(`[Meta API] ℹ️ Feature Restricted: ${metaError.message}`);
+          } else {
+            console.error('[Meta API] ❌ Error:', {
+              message: metaError.message,
+              code: metaError.code,
+              subcode: metaError.error_subcode,
+              type: metaError.type,
+              fbtrace_id: metaError.fbtrace_id,
+            });
+          }
         } else {
           console.error('[Meta API] ❌ Error:', error.message);
         }
