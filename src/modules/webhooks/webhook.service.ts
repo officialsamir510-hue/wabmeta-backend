@@ -434,6 +434,7 @@ export class WebhookService {
 
       const statusPriority: Record<string, number> = {
         'PENDING': 0,
+        'QUEUED': 0.5,
         'SENT': 1,
         'DELIVERED': 2,
         'READ': 3,
@@ -447,7 +448,7 @@ export class WebhookService {
         return;
       }
 
-      await prisma.campaignContact.update({
+      await prisma.campaignContact.updateMany({
         where: { id: campaignContact.id },
         data: {
           status: newStatus,

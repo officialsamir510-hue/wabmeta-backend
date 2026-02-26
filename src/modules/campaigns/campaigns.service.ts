@@ -668,7 +668,7 @@ export class CampaignsService {
     const pendingCount = await prisma.campaignContact.count({
       where: {
         campaignId,
-        status: 'PENDING',
+        status: { in: ['PENDING', 'QUEUED'] } as any,
       },
     });
 
@@ -727,8 +727,8 @@ export class CampaignsService {
       return;
     }
 
-    // ✅ Get pending contacts in batches
-    const BATCH_SIZE = 100;
+    // ✅ Get pending contacts in batches - Increased batch size
+    const BATCH_SIZE = 250;
     let processedCount = 0;
     let hasMore = true;
 
@@ -764,18 +764,32 @@ export class CampaignsService {
         break;
       }
 
-      // Process each contact
-      for (const campaignContact of contacts) {
+      // ✅ CRITICAL: Mark contacts as QUEUED immediately to avoid duplicate processing in the next batch
+      const contactIds = contacts.map(c => c.id);
+      await prisma.campaignContact.updateMany({
+        where: { id: { in: contactIds } },
+        data: { status: 'QUEUED' as any }, // Using 'any' as type might still be being updated in TS
+      });
+
+      // ✅ Process each contact in parallel within the batch for maximum speed
+      await Promise.all(contacts.map(async (campaignContact) => {
         try {
           const contact = (campaignContact as any).contact;
           const phone = contact?.phone;
 
           if (!phone) {
             console.warn(`⚠️ Skipping contact ${campaignContact.id} - no phone`);
-            continue;
+            // Mark as failed if no phone
+            await prisma.campaignContact.update({
+              where: { id: campaignContact.id },
+              data: {
+                status: 'FAILED',
+                failureReason: 'No phone number found',
+                failedAt: new Date()
+              }
+            });
+            return;
           }
-
-          console.log(`📞 Processing contact: ${phone}`);
 
           // ✅ Add to message queue
           await addMessage({
@@ -790,10 +804,6 @@ export class CampaignsService {
           });
 
           processedCount++;
-
-          // Emit individual progress if needed (optional, could be noisy)
-          // campaignSocketService.emitContactStatus(...)
-
         } catch (error: any) {
           console.error(`❌ Failed to queue contact ${campaignContact.id}:`, error.message);
 
@@ -807,7 +817,7 @@ export class CampaignsService {
             },
           });
         }
-      }
+      }));
 
       // ✅ Emit batch progress
       const totalProcessed = await prisma.campaignContact.count({
@@ -1469,7 +1479,7 @@ export class CampaignsService {
     const pendingCount = await prisma.campaignContact.count({
       where: {
         campaignId,
-        status: 'PENDING',
+        status: { in: ['PENDING', 'QUEUED'] } as any,
       },
     });
 

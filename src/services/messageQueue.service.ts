@@ -52,8 +52,8 @@ export const messageQueue = new Bull('whatsapp-messages', redisUrl || 'redis://l
     },
 });
 
-// ✅ Process messages
-messageQueue.process(async (job: Job) => {
+// ✅ Process messages - Increased concurrency for faster sending
+messageQueue.process(20, async (job: Job) => {
     console.log(`📤 Processing message job: ${job.id}`);
     console.log(`📞 Phone: ${job.data.phone}`);
 
@@ -116,8 +116,8 @@ messageQueue.process(async (job: Job) => {
 
         console.log(`✅ Message sent: ${result.waMessageId}`);
 
-        // ✅ Update campaign contact
-        await prisma.campaignContact.update({
+        // ✅ Update campaign contact (using updateMany to avoid error if record was deleted)
+        await prisma.campaignContact.updateMany({
             where: { id: campaignContactId },
             data: {
                 status: 'SENT',
@@ -259,16 +259,20 @@ messageQueue.process(async (job: Job) => {
     } catch (error: any) {
         console.error(`❌ Job ${job.id} failed:`, error.message);
 
-        // Update campaign contact as failed
+        // Update campaign contact as failed (using updateMany to avoid error if record was deleted)
         if (campaignContactId) {
-            await prisma.campaignContact.update({
-                where: { id: campaignContactId },
-                data: {
-                    status: 'FAILED',
-                    failureReason: error.message,
-                    failedAt: new Date(),
-                },
-            });
+            try {
+                await prisma.campaignContact.updateMany({
+                    where: { id: campaignContactId },
+                    data: {
+                        status: 'FAILED',
+                        failureReason: error.message,
+                        failedAt: new Date(),
+                    },
+                });
+            } catch (updateError) {
+                console.error('⚠️ Failed to update campaign contact status:', updateError);
+            }
         }
 
         throw error; // Will be retried by Bull
