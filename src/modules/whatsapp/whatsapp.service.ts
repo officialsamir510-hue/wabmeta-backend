@@ -296,7 +296,8 @@ class WhatsAppService {
           lastMessageAt: new Date(),
           lastMessagePreview: messagePreview,
           isWindowOpen: true,
-          isRead: true
+          isRead: true,
+          unreadCount: 0 // ✅ Reset unread count when sending a message
         },
       });
     }

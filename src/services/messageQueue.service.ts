@@ -173,6 +173,8 @@ messageQueue.process(20, async (job: Job) => {
                     lastMessagePreview: `Template: ${template.name}`,
                     isWindowOpen: true,
                     windowExpiresAt: windowExpiresAt,
+                    isRead: true,
+                    unreadCount: 0
                 },
             });
         }

@@ -4,6 +4,7 @@ import prisma from '../../config/database';
 import { contactsService } from '../contacts/contacts.service';
 import { EventEmitter } from 'events';
 import { MessageType, MessageStatus } from '@prisma/client';
+import { chatbotEngine } from '../chatbot/chatbot.engine';
 
 // ✅ Socket.ts will subscribe to this
 export const webhookEvents = new EventEmitter();
@@ -17,14 +18,15 @@ export class WebhookService {
     return payload?.entry?.[0]?.changes?.[0]?.value;
   }
 
-  private extractProfile(payload: any): { waId: string; profileName: string; phone10: string } | null {
+  private extractProfile(payload: any, specificMsg: any): { waId: string; profileName: string; phone10: string } | null {
     try {
       const value = this.extractValue(payload);
-      const msg = value?.messages?.[0];
+      const msg = specificMsg || value?.messages?.[0];
       if (!msg) return null;
 
-      const contact = value?.contacts?.[0];
       const waId = String(msg.from || '');
+      // Find matching contact profile in the payload's contacts array
+      const contact = value?.contacts?.find((c: any) => c.wa_id === waId);
 
       let phone10 = waId;
       if (phone10.startsWith('91') && phone10.length === 12) phone10 = phone10.substring(2);
@@ -74,6 +76,12 @@ export class WebhookService {
     if (type === 'sticker') return { content: '[Sticker]', mediaUrl: message?.sticker?.id || null };
     if (type === 'location') return { content: '[Location]', mediaUrl: null };
     if (type === 'contacts') return { content: '[Contact]', mediaUrl: null };
+    if (type === 'interactive') {
+      const iType = message?.interactive?.type;
+      if (iType === 'button_reply') return { content: message.interactive.button_reply.title || '[Button Reply]', mediaUrl: null };
+      if (iType === 'list_reply') return { content: message.interactive.list_reply.title || '[List Reply]', mediaUrl: null };
+      return { content: '[Interactive]', mediaUrl: null };
+    }
 
     return { content: `[${type}]`, mediaUrl: null };
   }
@@ -99,6 +107,7 @@ export class WebhookService {
           source: 'WHATSAPP_INBOUND',
         },
       });
+      console.log(`👤 Created new contact from inbound: ${phone10}`);
     }
 
     return contact;
@@ -123,13 +132,14 @@ export class WebhookService {
       });
 
       if (!account) {
+        console.warn(`⚠️ Account not found for phoneNumberId: ${phoneNumberId}`);
         return { status: 'error', reason: 'Account not found for phoneNumberId: ' + phoneNumberId };
       }
 
       // Process incoming messages
       const messages = value?.messages || [];
       for (const msg of messages) {
-        const profile = this.extractProfile(payload);
+        const profile = this.extractProfile(payload, msg);
         if (profile) {
           // Update contact name from webhook
           if (profile.profileName && profile.profileName !== 'Unknown') {
@@ -139,10 +149,13 @@ export class WebhookService {
         }
       }
 
-      // ✅ Process status updates (CRITICAL FOR TICK MARKS)
+      // ✅ Process status updates
       const statuses = value?.statuses || [];
+      // Use Promise.all with small groups to avoid blocking everything
       for (const st of statuses) {
-        await this.processStatusUpdate(st, account.organizationId, account.id);
+        this.processStatusUpdate(st, account.organizationId, account.id).catch(e =>
+          console.error('Status update background error:', e)
+        );
       }
 
       return { status: 'processed' };
@@ -168,6 +181,8 @@ export class WebhookService {
       const ts = Number(message?.timestamp || Date.now() / 1000);
       const messageTime = new Date(ts * 1000);
 
+      console.log(`📥 Processing inbound message: ${waMessageId} from ${waFrom}`);
+
       let phone10 = waFrom;
       if (phone10.startsWith('91') && phone10.length === 12) phone10 = phone10.substring(2);
 
@@ -185,10 +200,11 @@ export class WebhookService {
             isWindowOpen: true,
             windowExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
             unreadCount: 0,
-            isRead: true,
+            isRead: false, // Changed from true to false for new conversations
             lastMessageAt: messageTime,
           },
         });
+        console.log(`💬 Created new conversation: ${conversation.id}`);
       }
 
       const { content, mediaUrl } = this.buildContentAndMedia(message);
@@ -244,7 +260,7 @@ export class WebhookService {
         },
       });
 
-      console.log(`✅ Incoming message saved: ${savedMessage.id} wa:${waMessageId}`);
+      console.log(`✅ Inbound message saved and conversation updated: ${updatedConversation.id}`);
 
       // ✅ Clear inbox cache
       const { inboxService } = await import('../inbox/inbox.service');
@@ -268,20 +284,34 @@ export class WebhookService {
         },
       });
 
+      // Transform contact to include name for frontend compatibility
+      const contactWithBotName = {
+        ...updatedConversation.contact,
+        name: (updatedConversation.contact as any).whatsappProfileName ||
+          ((updatedConversation.contact as any).firstName
+            ? `${(updatedConversation.contact as any).firstName} ${(updatedConversation.contact as any).lastName || ''}`.trim()
+            : (updatedConversation.contact as any).phone)
+      };
+
       webhookEvents.emit('conversationUpdated', {
         organizationId,
         conversation: {
-          id: updatedConversation.id,
-          lastMessageAt: updatedConversation.lastMessageAt,
-          lastMessagePreview: updatedConversation.lastMessagePreview,
-          unreadCount: updatedConversation.unreadCount,
-          isRead: updatedConversation.isRead,
-          isArchived: updatedConversation.isArchived,
-          isWindowOpen: updatedConversation.isWindowOpen,
-          windowExpiresAt: updatedConversation.windowExpiresAt,
-          contact: updatedConversation.contact,
+          ...updatedConversation,
+          contact: contactWithBotName
         },
       });
+
+      // ✅ Trigger Chatbot Engine
+      if (msgType === 'TEXT' || msgType === 'INTERACTIVE') {
+        const isNew = !conversation; // Use the check from earlier
+        chatbotEngine.processMessage(
+          updatedConversation.id,
+          organizationId,
+          content || '',
+          waFrom,
+          isNew
+        ).catch(e => console.error('🤖 Chatbot engine trigger error:', e));
+      }
     } catch (e) {
       console.error('processIncomingMessage error:', e);
     }
