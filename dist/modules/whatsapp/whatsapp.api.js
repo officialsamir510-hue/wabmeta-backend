@@ -147,7 +147,7 @@ class WhatsAppAPI {
      */
     async getOwnedWabas(businessId, accessToken) {
         try {
-            const response = await this.client.get(`/${businessId}/owned_whatsapp_business_accounts`, {
+            const response = await this.client.get(`${businessId}/owned_whatsapp_business_accounts`, {
                 params: {
                     access_token: accessToken,
                     limit: 50,
@@ -166,7 +166,7 @@ class WhatsAppAPI {
      */
     async getWabaPhoneNumbers(wabaId, accessToken) {
         try {
-            const response = await this.client.get(`/${wabaId}/phone_numbers`, {
+            const response = await this.client.get(`${wabaId}/phone_numbers`, {
                 params: {
                     access_token: accessToken,
                     limit: 50,
@@ -186,7 +186,7 @@ class WhatsAppAPI {
      */
     async getPhoneNumberInfo(phoneNumberId, accessToken) {
         try {
-            const response = await this.client.get(`/${phoneNumberId}`, {
+            const response = await this.client.get(`${phoneNumberId}`, {
                 params: {
                     access_token: accessToken,
                     fields: 'verified_name,code_verification_status,display_phone_number,quality_rating,platform_type,throughput,id',
@@ -205,7 +205,7 @@ class WhatsAppAPI {
      */
     async registerPhoneNumber(phoneNumberId, accessToken, pin) {
         try {
-            const response = await this.client.post(`/${phoneNumberId}/register`, {
+            const response = await this.client.post(`${phoneNumberId}/register`, {
                 messaging_product: 'whatsapp',
                 pin,
             }, {
@@ -226,7 +226,7 @@ class WhatsAppAPI {
      */
     async subscribeAppToWaba(wabaId, accessToken) {
         try {
-            const response = await this.client.post(`/${wabaId}/subscribed_apps`, {}, {
+            const response = await this.client.post(`${wabaId}/subscribed_apps`, {}, {
                 params: {
                     access_token: accessToken,
                     appsecret_proof: this.generateAppSecretProof(accessToken),
@@ -267,7 +267,7 @@ class WhatsAppAPI {
             if (components && Object.keys(components).length > 0) {
                 payload.template.components = this.buildTemplateComponents(components);
             }
-            const response = await this.client.post(`/${phoneNumberId}/messages`, payload, {
+            const response = await this.client.post(`${phoneNumberId}/messages`, payload, {
                 headers: {
                     Authorization: `Bearer ${accessToken}`,
                 },
@@ -300,7 +300,7 @@ class WhatsAppAPI {
                     body: message,
                 },
             };
-            const response = await this.client.post(`/${phoneNumberId}/messages`, payload, {
+            const response = await this.client.post(`${phoneNumberId}/messages`, payload, {
                 headers: {
                     Authorization: `Bearer ${accessToken}`,
                 },
@@ -346,7 +346,7 @@ class WhatsAppAPI {
                 type: media.type,
                 [media.type]: mediaPayload,
             };
-            const response = await this.client.post(`/${phoneNumberId}/messages`, payload, {
+            const response = await this.client.post(`${phoneNumberId}/messages`, payload, {
                 headers: {
                     Authorization: `Bearer ${accessToken}`,
                 },
@@ -368,7 +368,7 @@ class WhatsAppAPI {
      */
     async sendMessage(phoneNumberId, accessToken, payload) {
         try {
-            const response = await this.client.post(`/${phoneNumberId}/messages`, payload, {
+            const response = await this.client.post(`${phoneNumberId}/messages`, payload, {
                 params: {
                     access_token: accessToken,
                     appsecret_proof: this.generateAppSecretProof(accessToken),
@@ -386,7 +386,7 @@ class WhatsAppAPI {
      */
     async markAsRead(phoneNumberId, messageId, accessToken) {
         try {
-            await this.client.post(`/${phoneNumberId}/messages`, {
+            await this.client.post(`${phoneNumberId}/messages`, {
                 messaging_product: 'whatsapp',
                 status: 'read',
                 message_id: messageId,
@@ -412,7 +412,7 @@ class WhatsAppAPI {
      */
     async createMessageTemplate(wabaId, accessToken, payload) {
         try {
-            const response = await this.client.post(`/${wabaId}/message_templates`, payload, {
+            const response = await this.client.post(`${wabaId}/message_templates`, payload, {
                 params: {
                     access_token: accessToken,
                     appsecret_proof: this.generateAppSecretProof(accessToken),
@@ -430,7 +430,7 @@ class WhatsAppAPI {
      */
     async listMessageTemplates(wabaId, accessToken) {
         try {
-            const response = await this.client.get(`/${wabaId}/message_templates`, {
+            const response = await this.client.get(`${wabaId}/message_templates`, {
                 params: {
                     access_token: accessToken,
                     limit: 200,
@@ -449,7 +449,7 @@ class WhatsAppAPI {
      */
     async getMessageTemplate(templateId, accessToken) {
         try {
-            const response = await this.client.get(`/${templateId}`, {
+            const response = await this.client.get(`${templateId}`, {
                 params: {
                     access_token: accessToken,
                     appsecret_proof: this.generateAppSecretProof(accessToken),
@@ -467,7 +467,7 @@ class WhatsAppAPI {
      */
     async deleteMessageTemplate(wabaId, accessToken, templateName) {
         try {
-            const response = await this.client.delete(`/${wabaId}/message_templates`, {
+            const response = await this.client.delete(`${wabaId}/message_templates`, {
                 params: {
                     access_token: accessToken,
                     name: templateName,
@@ -489,7 +489,7 @@ class WhatsAppAPI {
      */
     async uploadMedia(phoneNumberId, accessToken, formData) {
         try {
-            const response = await this.client.post(`/${phoneNumberId}/media`, formData, {
+            const response = await this.client.post(`${phoneNumberId}/media`, formData, {
                 params: {
                     access_token: accessToken,
                     appsecret_proof: this.generateAppSecretProof(accessToken),
@@ -510,7 +510,7 @@ class WhatsAppAPI {
      */
     async getMediaUrl(mediaId, accessToken) {
         try {
-            const response = await this.client.get(`/${mediaId}`, {
+            const response = await this.client.get(`${mediaId}`, {
                 params: {
                     access_token: accessToken,
                     appsecret_proof: this.generateAppSecretProof(accessToken),

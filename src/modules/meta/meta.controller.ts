@@ -7,6 +7,7 @@ import prisma from '../../config/database';
 import { MessageStatus } from '@prisma/client';
 import crypto from 'crypto';
 import axios from 'axios';
+import { config } from '../../config';
 
 // Helper to safely get organization ID from headers
 const getOrgId = (req: Request): string => {
@@ -100,8 +101,8 @@ export class MetaController {
 
       console.log('✅ OAuth state created');
 
-      // Build Meta Embedded Signup URL (v25.0)
-      const metaAuthUrl = new URL('https://www.facebook.com/v25.0/dialog/oauth');
+      // Build Meta Embedded Signup URL
+      const metaAuthUrl = new URL(`https://www.facebook.com/${config.meta.graphApiVersion}/dialog/oauth`);
 
       metaAuthUrl.searchParams.set('client_id', process.env.META_APP_ID!);
       metaAuthUrl.searchParams.set('config_id', process.env.META_CONFIG_ID!);
@@ -217,7 +218,7 @@ export class MetaController {
 
       // Exchange code for access token
       const tokenResponse = await axios.get(
-        `https://graph.facebook.com/v25.0/oauth/access_token`,
+        `https://graph.facebook.com/${config.meta.graphApiVersion}/oauth/access_token`,
         {
           params: {
             client_id: process.env.META_APP_ID,
@@ -235,7 +236,7 @@ export class MetaController {
 
       // Get WABA ID from token debug
       const debugTokenResponse = await axios.get(
-        `https://graph.facebook.com/v25.0/debug_token`,
+        `https://graph.facebook.com/${config.meta.graphApiVersion}/debug_token`,
         {
           params: {
             input_token: access_token,
@@ -262,7 +263,7 @@ export class MetaController {
 
       // Get WABA details
       const wabaDetails = await axios.get(
-        `https://graph.facebook.com/v25.0/${wabaId}`,
+        `https://graph.facebook.com/${config.meta.graphApiVersion}/${wabaId}`,
         {
           params: {
             fields: 'id,name,currency,timezone_id,message_template_namespace',
@@ -277,7 +278,7 @@ export class MetaController {
 
       // Get phone numbers
       const phoneNumbersResponse = await axios.get(
-        `https://graph.facebook.com/v25.0/${wabaId}/phone_numbers`,
+        `https://graph.facebook.com/${config.meta.graphApiVersion}/${wabaId}/phone_numbers`,
         {
           params: {
             access_token,

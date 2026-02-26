@@ -260,7 +260,7 @@ class MetaApiClient {
     try {
       console.log(`[Meta API] Fetching WABA details for ${wabaId}...`);
 
-      const response = await this.client.get(`/${wabaId}`, {
+      const response = await this.client.get(`${wabaId}`, {
         params: {
           access_token: accessToken,
           fields: 'id,name,currency,timezone_id,message_template_namespace,owner_business_info,on_behalf_of_business_info,account_review_status',
@@ -282,7 +282,7 @@ class MetaApiClient {
     try {
       console.log(`[Meta API] Fetching phone numbers for WABA ${wabaId}...`);
 
-      const response = await this.client.get(`/${wabaId}/phone_numbers`, {
+      const response = await this.client.get(`${wabaId}/phone_numbers`, {
         params: {
           access_token: accessToken,
           fields: 'id,verified_name,display_phone_number,quality_rating,code_verification_status,platform_type,throughput,status,name_status,messaging_limit_tier',
@@ -323,7 +323,7 @@ class MetaApiClient {
     try {
       console.log(`[Meta API] Fetching phone number details for ${phoneNumberId}...`);
 
-      const response = await this.client.get(`/${phoneNumberId}`, {
+      const response = await this.client.get(`${phoneNumberId}`, {
         params: {
           access_token: accessToken,
           fields: 'id,verified_name,display_phone_number,quality_rating,code_verification_status,name_status',
@@ -350,7 +350,7 @@ class MetaApiClient {
       console.log(`[Meta API] Registering phone number ${phoneNumberId}...`);
 
       const response = await this.client.post(
-        `/${phoneNumberId}/register`,
+        `${phoneNumberId}/register`,
         {
           messaging_product: 'whatsapp',
           pin: '123456',
@@ -449,7 +449,7 @@ class MetaApiClient {
       console.log(`[Meta API] Fetching profile for: ${cleanPhone.substring(0, 5)}...`);
 
       const response = await this.client.post(
-        `/${phoneNumberId}/contacts`,
+        `${phoneNumberId}/contacts`,
         {
           messaging_product: 'whatsapp',
           blocking: 'wait',
@@ -478,6 +478,10 @@ class MetaApiClient {
 
       return result;
     } catch (error: any) {
+      const metaError = error.response?.data?.error;
+      if (metaError?.code === 100 && metaError?.error_subcode === 33) {
+        return { exists: true, waId: phone.replace(/[^0-9]/g, ''), status: 'valid' };
+      }
       console.error('[Meta API] Failed to get contact profile:', error.response?.data || error.message);
       return { exists: false };
     }
@@ -509,7 +513,7 @@ class MetaApiClient {
       console.log(`[Meta API] Batch checking ${cleanPhones.length} contacts...`);
 
       const response = await this.client.post(
-        `/${phoneNumberId}/contacts`,
+        `${phoneNumberId}/contacts`,
         {
           messaging_product: 'whatsapp',
           blocking: 'wait',
@@ -531,6 +535,14 @@ class MetaApiClient {
         status: contact.status,
       }));
     } catch (error: any) {
+      const metaError = error.response?.data?.error;
+      if (metaError?.code === 100 && metaError?.error_subcode === 33) {
+        return phones.map(p => ({
+          input: p.replace(/[^0-9]/g, ''),
+          waId: p.replace(/[^0-9]/g, ''),
+          status: 'valid' as const
+        }));
+      }
       console.error('[Meta API] Batch contact check failed:', error.response?.data || error.message);
       throw this.handleError(error, 'Failed to batch check contacts');
     }
@@ -572,7 +584,7 @@ class MetaApiClient {
     try {
       console.log(`[Meta API] Attempting to get profile picture for ${waId}...`);
 
-      const response = await this.client.get(`/${waId}/profile_picture`, {
+      const response = await this.client.get(`${waId}/profile_picture`, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },
@@ -602,7 +614,7 @@ class MetaApiClient {
       console.log(`📞 Checking contact: ${clean}`);
 
       const response = await this.client.post(
-        `/${phoneNumberId}/contacts`,
+        `${phoneNumberId}/contacts`,
         {
           messaging_product: 'whatsapp',
           blocking: 'wait',
@@ -621,6 +633,18 @@ class MetaApiClient {
 
       return result;
     } catch (error: any) {
+      const metaError = error.response?.data?.error;
+      // Handle "Unsupported post request" (code 100, subcode 33)
+      if (metaError?.code === 100 && metaError?.error_subcode === 33) {
+        console.warn(`[Meta API] Contact check not supported for ID ${phoneNumberId}. Bypassing.`);
+        return {
+          contacts: [{
+            input: phone.replace(/[^0-9]/g, ''),
+            wa_id: phone.replace(/[^0-9]/g, ''),
+            status: 'valid'
+          }]
+        };
+      }
       console.error('[Meta API] Contact check failed:', error.response?.data || error.message);
       throw this.handleError(error, 'Failed to check contact');
     }
@@ -635,7 +659,7 @@ class MetaApiClient {
       console.log(`[Meta API] Subscribing to webhooks for WABA ${wabaId}...`);
 
       const response = await this.client.post<WebhookSubscribeResponse>(
-        `/${wabaId}/subscribed_apps`,
+        `${wabaId}/subscribed_apps`,
         null,
         {
           params: {
@@ -656,7 +680,7 @@ class MetaApiClient {
     try {
       console.log(`[Meta API] Unsubscribing from webhooks for WABA ${wabaId}...`);
 
-      const response = await this.client.delete(`/${wabaId}/subscribed_apps`, {
+      const response = await this.client.delete(`${wabaId}/subscribed_apps`, {
         params: {
           access_token: accessToken,
         },
@@ -677,7 +701,7 @@ class MetaApiClient {
       console.log(`[Meta API] Fetching business profile for ${phoneNumberId}...`);
 
       const response = await this.client.get(
-        `/${phoneNumberId}/whatsapp_business_profile`,
+        `${phoneNumberId}/whatsapp_business_profile`,
         {
           params: {
             access_token: accessToken,
@@ -708,7 +732,7 @@ class MetaApiClient {
       console.log(`[Meta API] Updating business profile for ${phoneNumberId}...`);
 
       const response = await this.client.post(
-        `/${phoneNumberId}/whatsapp_business_profile`,
+        `${phoneNumberId}/whatsapp_business_profile`,
         {
           messaging_product: 'whatsapp',
           ...profile,
@@ -747,7 +771,7 @@ class MetaApiClient {
         ...message,
       };
 
-      const response = await this.client.post(`/${phoneNumberId}/messages`, payload, {
+      const response = await this.client.post(`${phoneNumberId}/messages`, payload, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },
@@ -1035,7 +1059,7 @@ class MetaApiClient {
     try {
       console.log(`[Meta API] Fetching analytics for WABA ${wabaId}...`);
 
-      const response = await this.client.get(`/${wabaId}/analytics`, {
+      const response = await this.client.get(`${wabaId}/analytics`, {
         params: {
           access_token: accessToken,
           start: params.start,

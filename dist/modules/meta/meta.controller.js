@@ -11,6 +11,7 @@ const database_1 = __importDefault(require("../../config/database"));
 const client_1 = require("@prisma/client");
 const crypto_1 = __importDefault(require("crypto"));
 const axios_1 = __importDefault(require("axios"));
+const config_1 = require("../../config");
 // Helper to safely get organization ID from headers
 const getOrgId = (req) => {
     const header = req.headers['x-organization-id'];
@@ -81,8 +82,8 @@ class MetaController {
                 },
             });
             console.log('✅ OAuth state created');
-            // Build Meta Embedded Signup URL (v25.0)
-            const metaAuthUrl = new URL('https://www.facebook.com/v25.0/dialog/oauth');
+            // Build Meta Embedded Signup URL
+            const metaAuthUrl = new URL(`https://www.facebook.com/${config_1.config.meta.graphApiVersion}/dialog/oauth`);
             metaAuthUrl.searchParams.set('client_id', process.env.META_APP_ID);
             metaAuthUrl.searchParams.set('config_id', process.env.META_CONFIG_ID);
             metaAuthUrl.searchParams.set('state', state);
@@ -172,7 +173,7 @@ class MetaController {
             }
             console.log('📊 Step 1: Exchanging code for access token...');
             // Exchange code for access token
-            const tokenResponse = await axios_1.default.get(`https://graph.facebook.com/v25.0/oauth/access_token`, {
+            const tokenResponse = await axios_1.default.get(`https://graph.facebook.com/${config_1.config.meta.graphApiVersion}/oauth/access_token`, {
                 params: {
                     client_id: process.env.META_APP_ID,
                     client_secret: process.env.META_APP_SECRET,
@@ -184,7 +185,7 @@ class MetaController {
             console.log('   ✅ Access token obtained');
             console.log('📊 Step 2: Getting WABA ID from token...');
             // Get WABA ID from token debug
-            const debugTokenResponse = await axios_1.default.get(`https://graph.facebook.com/v25.0/debug_token`, {
+            const debugTokenResponse = await axios_1.default.get(`https://graph.facebook.com/${config_1.config.meta.graphApiVersion}/debug_token`, {
                 params: {
                     input_token: access_token,
                     access_token: `${process.env.META_APP_ID}|${process.env.META_APP_SECRET}`,
@@ -198,7 +199,7 @@ class MetaController {
             console.log('   ✅ WABA ID:', wabaId);
             console.log('📊 Step 3: Fetching WABA details...');
             // Get WABA details
-            const wabaDetails = await axios_1.default.get(`https://graph.facebook.com/v25.0/${wabaId}`, {
+            const wabaDetails = await axios_1.default.get(`https://graph.facebook.com/${config_1.config.meta.graphApiVersion}/${wabaId}`, {
                 params: {
                     fields: 'id,name,currency,timezone_id,message_template_namespace',
                     access_token,
@@ -207,7 +208,7 @@ class MetaController {
             console.log('   ✅ WABA Name:', wabaDetails.data.name);
             console.log('📊 Step 4: Fetching phone numbers...');
             // Get phone numbers
-            const phoneNumbersResponse = await axios_1.default.get(`https://graph.facebook.com/v25.0/${wabaId}/phone_numbers`, {
+            const phoneNumbersResponse = await axios_1.default.get(`https://graph.facebook.com/${config_1.config.meta.graphApiVersion}/${wabaId}/phone_numbers`, {
                 params: {
                     access_token,
                 },
