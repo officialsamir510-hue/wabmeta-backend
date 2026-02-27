@@ -489,9 +489,23 @@ export class MetaService {
     console.log(`   Organization: ${account.organizationId}`);
     console.log(`   Phone: ${account.phoneNumber}`);
 
-    const decryptedToken = safeDecryptStrict(account.accessToken);
+    let decryptedToken = safeDecryptStrict(account.accessToken);
 
-    if (!decryptedToken || !isMetaToken(decryptedToken)) {
+    // ✅ AUTO-FIX: If token is plain text (not encrypted), encrypt it now
+    if (!decryptedToken && account.accessToken && isMetaToken(account.accessToken)) {
+      console.log('🔄 Auto-fixing plain text token for account:', accountId);
+      const encryptedToken = encrypt(account.accessToken);
+
+      await prisma.whatsAppAccount.update({
+        where: { id: accountId },
+        data: { accessToken: encryptedToken }
+      });
+
+      decryptedToken = account.accessToken;
+      console.log('✅ Token encrypted and saved successfully');
+    }
+
+    if (!decryptedToken) {
       console.error(`❌ Failed to decrypt token for account: ${accountId}`);
       console.error(`   Possible causes:`);
       console.error(`   1. Token was not encrypted properly`);

@@ -10,6 +10,7 @@ import axios from 'axios';
 import { config } from '../../config';
 import { templatesService } from '../templates/templates.service';
 import { metaApi } from '../meta/meta.api';
+import { encrypt } from '../../utils/encryption';
 
 // Helper to safely get organization ID from headers
 const getOrgId = (req: Request): string => {
@@ -302,6 +303,9 @@ export class MetaController {
       if (phoneNumbers.length > 0) {
         const primaryPhone = phoneNumbers[0];
 
+        // Encrypt token before saving
+        const encryptedToken = encrypt(access_token);
+
         savedAccount = await prisma.whatsAppAccount.upsert({
           where: {
             phoneNumberId: primaryPhone.id,
@@ -311,13 +315,13 @@ export class MetaController {
             phoneNumber: primaryPhone.display_phone_number,
             displayName: primaryPhone.verified_name,
             qualityRating: primaryPhone.quality_rating,
-            accessToken: access_token,
+            accessToken: encryptedToken,
           },
           create: {
             organizationId,
             phoneNumberId: primaryPhone.id,
             wabaId,
-            accessToken: access_token,
+            accessToken: encryptedToken,
             phoneNumber: primaryPhone.display_phone_number,
             displayName: primaryPhone.verified_name,
             qualityRating: primaryPhone.quality_rating,
@@ -332,10 +336,11 @@ export class MetaController {
       // Save MetaConnection (if model exists)
       let savedMetaConnection = null;
       try {
+        const encryptedToken = encrypt(access_token);
         savedMetaConnection = await (prisma as any).metaConnection.upsert({
           where: { organizationId },
           update: {
-            accessToken: access_token,
+            accessToken: encryptedToken,
             wabaId,
             wabaName: wabaDetails.data.name,
             status: 'CONNECTED',
@@ -343,7 +348,7 @@ export class MetaController {
           },
           create: {
             organizationId,
-            accessToken: access_token,
+            accessToken: encryptedToken,
             wabaId,
             wabaName: wabaDetails.data.name,
             status: 'CONNECTED',
@@ -397,9 +402,14 @@ export class MetaController {
         // 2. Register Phone Numbers (Mandatory for API messaging)
         for (const phone of phoneNumbers) {
           console.log(`   Registering phone: ${phone.display_phone_number}`);
-          await metaApi.registerPhoneNumber(phone.id, access_token).catch(err =>
-            console.error(`   ⚠️ Registration failed for ${phone.id}:`, err.message)
-          );
+          await metaApi.registerPhoneNumber(phone.id, access_token).catch(err => {
+            const metaErr = err.response?.data?.error;
+            if (metaErr?.code === 100 && metaErr?.message?.includes('SMB')) {
+              console.warn(`   ℹ️ Phone ${phone.id} is an SMB account. Registration skipped (not required).`);
+            } else {
+              console.error(`   ⚠️ Registration failed for ${phone.id}:`, err.message);
+            }
+          });
         }
       } catch (onboardingErr: any) {
         console.error('   ⚠️ Post-connection steps partially failed:', onboardingErr.message);
