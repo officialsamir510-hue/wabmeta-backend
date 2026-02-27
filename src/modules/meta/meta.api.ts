@@ -49,12 +49,14 @@ class MetaApiClient {
       (error: AxiosError<MetaApiError>) => {
         const metaError = error.response?.data?.error;
 
-        // Don't log as ERROR if it's a known/handled restriction (Contact check)
-        const isHandledError = metaError?.code === 100 && metaError?.error_subcode === 33;
+        // Don't log as ERROR if it's a known/handled restriction
+        const isRestricted = metaError?.code === 100 && metaError?.error_subcode === 33;
+        const isSmbRestriction = metaError?.code === 100 && metaError?.message?.includes('SMB');
+        const isHandledError = isRestricted || isSmbRestriction;
 
         if (metaError) {
           if (isHandledError) {
-            console.warn(`[Meta API] ℹ️ Feature Restricted: ${metaError.message}`);
+            console.warn(`[Meta API] ℹ️  Note: ${metaError.message}`);
           } else {
             console.error('[Meta API] ❌ Error:', {
               message: metaError.message,
