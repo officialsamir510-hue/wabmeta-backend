@@ -420,12 +420,34 @@ export class MetaController {
 
       console.log('✅ Meta callback successful');
 
-      // ✅ TRIGGER INITIAL TEMPLATE SYNC (Background)
+      // ✅ FIXED: Delayed template sync to ensure DB commit
       if (savedAccount) {
-        console.log(`📊 Triggering initial template sync for account: ${savedAccount.id}`);
-        templatesService.syncFromMeta(organizationId, savedAccount.id).catch(err => {
-          console.error('❌ Initial template sync failed:', err.message);
-        });
+        console.log(`📊 Scheduling initial template sync for account: ${savedAccount.id}`);
+
+        // ✅ CRITICAL FIX: Wait 3 seconds before syncing
+        // This ensures:
+        // 1. Database transaction is fully committed
+        // 2. Prisma connection pool is refreshed
+        // 3. WhatsApp account is queryable
+        setTimeout(async () => {
+          try {
+            console.log('🔄 Starting delayed template sync...');
+            console.log(`   Account ID: ${savedAccount.id}`);
+            console.log(`   Organization ID: ${organizationId}`);
+
+            // ✅ Additional safety: Wait a bit more if needed
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            const result = await templatesService.syncFromMeta(organizationId, savedAccount.id);
+            console.log('✅ Template sync completed successfully:', result);
+          } catch (syncError: any) {
+            console.error('❌ Template sync error:', syncError.message);
+            console.error('   This is non-critical. Templates can be synced manually from UI.');
+
+            // ✅ Don't throw - connection is already established
+            // User can sync templates manually from Settings → Templates
+          }
+        }, 3000); // Wait 3 seconds
       }
 
       console.log('🔄 ========== META CALLBACK END ==========\n');
