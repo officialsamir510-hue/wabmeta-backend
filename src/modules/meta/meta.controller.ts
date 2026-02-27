@@ -298,45 +298,138 @@ export class MetaController {
 
       console.log('📊 Step 5: Saving to database...');
 
-      // Save WhatsAppAccount (primary model)
+      // ============================================
+      // STEP 5: SAVE TO DATABASE - ✅ FIXED VERSION
+      // ============================================
+      console.log('📊 Step 5: Saving to database...');
+
       let savedAccount = null;
+
       if (phoneNumbers.length > 0) {
         const primaryPhone = phoneNumbers[0];
 
-        // Encrypt token before saving
+        // Encrypt token
         const encryptedToken = encrypt(access_token);
+        console.log('   Token encrypted successfully');
 
-        savedAccount = await prisma.whatsAppAccount.upsert({
-          where: {
-            phoneNumberId: primaryPhone.id,
-          },
-          update: {
-            status: 'CONNECTED',
-            phoneNumber: primaryPhone.display_phone_number,
-            displayName: primaryPhone.verified_name,
-            qualityRating: primaryPhone.quality_rating,
-            accessToken: encryptedToken,
-          },
-          create: {
-            organizationId,
-            phoneNumberId: primaryPhone.id,
-            wabaId,
-            accessToken: encryptedToken,
-            phoneNumber: primaryPhone.display_phone_number,
-            displayName: primaryPhone.verified_name,
-            qualityRating: primaryPhone.quality_rating,
-            status: 'CONNECTED',
-            isDefault: true,
-          },
-        });
+        try {
+          // ✅ CRITICAL FIX: Check if account already exists
+          const existingAccount = await prisma.whatsAppAccount.findFirst({
+            where: {
+              OR: [
+                { phoneNumberId: primaryPhone.id },
+                {
+                  organizationId,
+                  wabaId
+                }
+              ]
+            }
+          });
 
-        console.log('   ✅ WhatsAppAccount saved');
+          if (existingAccount) {
+            // ✅ UPDATE existing account
+            console.log(`   Updating existing account: ${existingAccount.id}`);
+
+            savedAccount = await prisma.whatsAppAccount.update({
+              where: { id: existingAccount.id },
+              data: {
+                status: 'CONNECTED',
+                phoneNumber: primaryPhone.display_phone_number,
+                displayName: primaryPhone.verified_name || primaryPhone.display_phone_number,
+                verifiedName: primaryPhone.verified_name,
+                qualityRating: primaryPhone.quality_rating,
+                accessToken: encryptedToken,
+                wabaId: wabaId,
+                isDefault: true,
+              },
+            });
+
+            console.log('   ✅ WhatsAppAccount UPDATED:', savedAccount.id);
+          } else {
+            // ✅ CREATE new account
+            console.log('   Creating new WhatsApp account...');
+
+            // First, unset any existing default
+            await prisma.whatsAppAccount.updateMany({
+              where: { organizationId, isDefault: true },
+              data: { isDefault: false }
+            });
+
+            savedAccount = await prisma.whatsAppAccount.create({
+              data: {
+                organizationId,
+                phoneNumberId: primaryPhone.id,
+                wabaId,
+                accessToken: encryptedToken,
+                phoneNumber: primaryPhone.display_phone_number,
+                displayName: primaryPhone.verified_name || primaryPhone.display_phone_number,
+                verifiedName: primaryPhone.verified_name,
+                qualityRating: primaryPhone.quality_rating,
+                status: 'CONNECTED',
+                isDefault: true,
+              },
+            });
+
+            console.log('   ✅ WhatsAppAccount CREATED:', savedAccount.id);
+          }
+
+          // ✅ VERIFY save was successful
+          const verifyAccount = await prisma.whatsAppAccount.findUnique({
+            where: { id: savedAccount.id }
+          });
+
+          if (!verifyAccount) {
+            throw new Error('Account verification failed - not found after save!');
+          }
+
+          console.log('   ✅ Account verified in database:', {
+            id: verifyAccount.id,
+            phone: verifyAccount.phoneNumber,
+            status: verifyAccount.status,
+          });
+
+        } catch (dbError: any) {
+          console.error('   ❌ Database save error:', dbError);
+          console.error('   Error details:', {
+            code: dbError.code,
+            message: dbError.message,
+            meta: dbError.meta,
+          });
+
+          // ✅ If unique constraint violation, try to find and update
+          if (dbError.code === 'P2002') {
+            console.log('   🔄 Handling unique constraint - finding existing...');
+
+            const existing = await prisma.whatsAppAccount.findFirst({
+              where: { phoneNumberId: primaryPhone.id }
+            });
+
+            if (existing) {
+              savedAccount = await prisma.whatsAppAccount.update({
+                where: { id: existing.id },
+                data: {
+                  organizationId, // ✅ Update org ownership
+                  status: 'CONNECTED',
+                  accessToken: encryptedToken,
+                  wabaId,
+                  isDefault: true,
+                },
+              });
+              console.log('   ✅ Updated existing account:', savedAccount.id);
+            } else {
+              throw dbError;
+            }
+          } else {
+            throw dbError;
+          }
+        }
       }
 
-      // Save MetaConnection (if model exists)
+      // ✅ Also save/update MetaConnection
       let savedMetaConnection = null;
       try {
         const encryptedToken = encrypt(access_token);
+
         savedMetaConnection = await (prisma as any).metaConnection.upsert({
           where: { organizationId },
           update: {
@@ -354,40 +447,40 @@ export class MetaController {
             status: 'CONNECTED',
           },
         });
-        console.log('   ✅ MetaConnection saved');
-      } catch (e) {
-        console.log('   ⚠️ MetaConnection model not available (optional)');
+        console.log('   ✅ MetaConnection saved:', savedMetaConnection.id);
+      } catch (e: any) {
+        console.log('   ⚠️ MetaConnection save failed:', e.message);
       }
 
-      // Save PhoneNumbers (if model exists)
-      const savedPhoneNumbers = [];
+      // ✅ Save PhoneNumbers
       try {
-        for (const phone of phoneNumbers) {
-          const savedPhone = await (prisma as any).phoneNumber.upsert({
-            where: { phoneNumberId: phone.id },
-            update: {
-              phoneNumber: phone.display_phone_number,
-              displayName: phone.verified_name,
-              qualityRating: phone.quality_rating,
-              verifiedName: phone.verified_name,
-              isActive: true,
-            },
-            create: {
-              metaConnectionId: savedMetaConnection?.id,
-              phoneNumberId: phone.id,
-              phoneNumber: phone.display_phone_number,
-              displayName: phone.verified_name,
-              qualityRating: phone.quality_rating,
-              verifiedName: phone.verified_name,
-              isActive: true,
-              isPrimary: phoneNumbers[0].id === phone.id, // First is primary
-            },
-          });
-          savedPhoneNumbers.push(savedPhone);
+        if (savedMetaConnection) {
+          for (const phone of phoneNumbers) {
+            await (prisma as any).phoneNumber.upsert({
+              where: { phoneNumberId: phone.id },
+              update: {
+                phoneNumber: phone.display_phone_number,
+                displayName: phone.verified_name || phone.display_phone_number,
+                qualityRating: phone.quality_rating,
+                verifiedName: phone.verified_name,
+                isActive: true,
+              },
+              create: {
+                metaConnectionId: savedMetaConnection.id,
+                phoneNumberId: phone.id,
+                phoneNumber: phone.display_phone_number,
+                displayName: phone.verified_name || phone.display_phone_number,
+                qualityRating: phone.quality_rating,
+                verifiedName: phone.verified_name,
+                isActive: true,
+                isPrimary: phone.id === phoneNumbers[0].id,
+              },
+            });
+          }
+          console.log('   ✅ PhoneNumbers saved');
         }
-        console.log('   ✅ PhoneNumbers saved');
       } catch (e: any) {
-        console.log('   ⚠️ PhoneNumber model not available:', e.message);
+        console.log('   ⚠️ PhoneNumber save failed:', e.message);
       }
 
       // ✅ STEP 6: MANDATORY META ONBOARDING STEPS
