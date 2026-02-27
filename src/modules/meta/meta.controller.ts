@@ -9,6 +9,7 @@ import crypto from 'crypto';
 import axios from 'axios';
 import { config } from '../../config';
 import { templatesService } from '../templates/templates.service';
+import { metaApi } from '../meta/meta.api';
 
 // Helper to safely get organization ID from headers
 const getOrgId = (req: Request): string => {
@@ -382,6 +383,26 @@ export class MetaController {
         console.log('   ✅ PhoneNumbers saved');
       } catch (e: any) {
         console.log('   ⚠️ PhoneNumber model not available:', e.message);
+      }
+
+      // ✅ STEP 6: MANDATORY META ONBOARDING STEPS
+      try {
+        console.log('📊 Step 6: Completing Meta onboarding...');
+
+        // 1. Subscribe App to WABA Webhooks
+        await metaApi.subscribeToWebhooks(wabaId, access_token).catch(err =>
+          console.error('   ⚠️ Webhook subscription failed:', err.message)
+        );
+
+        // 2. Register Phone Numbers (Mandatory for API messaging)
+        for (const phone of phoneNumbers) {
+          console.log(`   Registering phone: ${phone.display_phone_number}`);
+          await metaApi.registerPhoneNumber(phone.id, access_token).catch(err =>
+            console.error(`   ⚠️ Registration failed for ${phone.id}:`, err.message)
+          );
+        }
+      } catch (onboardingErr: any) {
+        console.error('   ⚠️ Post-connection steps partially failed:', onboardingErr.message);
       }
 
       // Delete used state
