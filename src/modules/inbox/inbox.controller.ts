@@ -148,7 +148,17 @@ export class InboxController {
       // 4. Clear Inbox Cache
       await inboxService.clearCache(organizationId);
 
-      return sendSuccess(res, result.message, 'Message sent successfully', 201);
+      // ✅ CRITICAL: Serialize dates to ISO strings for JSON response
+      const message = result.message;
+      const serializedMessage = {
+        ...message,
+        createdAt: message.createdAt instanceof Date ? message.createdAt.toISOString() : message.createdAt,
+        sentAt: message.sentAt instanceof Date ? message.sentAt.toISOString() : (message.sentAt || null),
+        deliveredAt: message.deliveredAt instanceof Date ? message.deliveredAt.toISOString() : (message.deliveredAt || null),
+        readAt: message.readAt instanceof Date ? message.readAt.toISOString() : (message.readAt || null),
+      };
+
+      return sendSuccess(res, serializedMessage, 'Message sent successfully', 201);
     } catch (error) {
       next(error);
     }
