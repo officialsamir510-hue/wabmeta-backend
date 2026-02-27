@@ -177,10 +177,7 @@ const buildMetaTemplatePayload = (t: {
 };
 
 /**
- * ✅ IMPROVED: Get WhatsApp Account from BOTH table structures
- * Supports:
- * 1. Old structure: WhatsAppAccount table
- * 2. New structure: MetaConnection + PhoneNumber tables
+ * ✅ FIXED: Get WhatsApp Account with robust retry logic
  */
 const getWhatsAppAccountWithToken = async (
   organizationId: string,
@@ -191,170 +188,200 @@ const getWhatsAppAccountWithToken = async (
   wabaId: string;
   phoneNumberId: string;
 }> => {
-  try {
-    console.log('🔍 Getting WhatsApp account:', { organizationId, whatsappAccountId });
+  const MAX_RETRIES = 5;
+  const RETRY_DELAYS = [500, 1000, 2000, 3000, 5000]; // Progressive delays
 
-    // ============================================
-    // METHOD 1: Try WhatsAppAccount table (old structure)
-    // ============================================
-    const where: Prisma.WhatsAppAccountWhereInput = {
-      organizationId,
-      status: 'CONNECTED',
-    };
-
-    if (whatsappAccountId) {
-      where.id = whatsappAccountId;
-    } else {
-      where.isDefault = true;
-    }
-
-    let waAccount = await prisma.whatsAppAccount.findFirst({
-      where,
-      orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
-    });
-
-    // If no default, get any connected account
-    if (!waAccount && !whatsappAccountId) {
-      waAccount = await prisma.whatsAppAccount.findFirst({
-        where: {
-          organizationId,
-          status: 'CONNECTED',
-        },
-        orderBy: { createdAt: 'desc' },
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      console.log(`🔍 [Attempt ${attempt + 1}/${MAX_RETRIES}] Getting WhatsApp account:`, {
+        organizationId,
+        whatsappAccountId: whatsappAccountId || 'auto-detect',
       });
-    }
 
-    // ============================================
-    // METHOD 2: Try MetaConnection table (new structure)
-    // ============================================
-    if (!waAccount) {
-      console.log('📋 WhatsAppAccount not found, trying MetaConnection...');
+      // ============================================
+      // METHOD 1: Try WhatsAppAccount table
+      // ============================================
+      let waAccount = null;
 
-      try {
-        const metaConnection = await (prisma as any).metaConnection.findUnique({
-          where: { organizationId },
-          include: {
-            phoneNumbers: {
-              where: { isActive: true },
-              orderBy: [{ isPrimary: 'desc' }, { createdAt: 'desc' }],
-            },
+      if (whatsappAccountId) {
+        // ✅ Direct ID lookup (most reliable)
+        waAccount = await prisma.whatsAppAccount.findFirst({
+          where: {
+            id: whatsappAccountId,
+            organizationId,
           },
         });
 
-        if (metaConnection && metaConnection.phoneNumbers?.length > 0) {
-          const primaryPhone = metaConnection.phoneNumbers[0];
+        console.log(`   Direct lookup by ID:`, waAccount ? '✅ Found' : '❌ Not found');
+      }
 
-          console.log('✅ Found MetaConnection:', {
-            wabaId: metaConnection.wabaId,
-            phoneNumber: primaryPhone.phoneNumber,
+      // ✅ Fallback: Find ANY connected account for this org
+      if (!waAccount) {
+        waAccount = await prisma.whatsAppAccount.findFirst({
+          where: {
+            organizationId,
+            status: 'CONNECTED',
+          },
+          orderBy: [
+            { isDefault: 'desc' },
+            { createdAt: 'desc' },
+          ],
+        });
+
+        console.log(`   Fallback connected lookup:`, waAccount ? '✅ Found' : '❌ Not found');
+      }
+
+      // ✅ Last resort: Find ANY account for this org (even pending)
+      if (!waAccount) {
+        waAccount = await prisma.whatsAppAccount.findFirst({
+          where: {
+            organizationId,
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        console.log(`   Last resort lookup:`, waAccount ? `✅ Found (status: ${waAccount.status})` : '❌ Not found');
+      }
+
+      // ============================================
+      // METHOD 2: Try MetaConnection table (new structure)
+      // ============================================
+      if (!waAccount) {
+        console.log('📋 Trying MetaConnection table...');
+
+        try {
+          const metaConnection = await (prisma as any).metaConnection.findUnique({
+            where: { organizationId },
+            include: {
+              phoneNumbers: {
+                where: { isActive: true },
+                orderBy: [{ isPrimary: 'desc' }, { createdAt: 'desc' }],
+              },
+            },
           });
 
-          // Get decrypted token
-          const decryptedToken = safeDecryptStrict(metaConnection.accessToken) || metaConnection.accessToken;
+          if (metaConnection && metaConnection.phoneNumbers?.length > 0) {
+            const primaryPhone = metaConnection.phoneNumbers[0];
 
-          return {
-            account: {
-              id: primaryPhone.id,
-              phoneNumberId: primaryPhone.phoneNumberId,
+            console.log('✅ Found via MetaConnection:', {
               wabaId: metaConnection.wabaId,
-              phoneNumber: primaryPhone.phoneNumber,
+              phone: primaryPhone.phoneNumber,
+            });
+
+            // Decrypt token
+            const decryptedToken = safeDecryptStrict(metaConnection.accessToken);
+
+            if (!decryptedToken) {
+              throw new AppError('Failed to decrypt MetaConnection token', 500);
+            }
+
+            return {
+              account: {
+                id: primaryPhone.id,
+                phoneNumberId: primaryPhone.phoneNumberId,
+                wabaId: metaConnection.wabaId,
+                phoneNumber: primaryPhone.phoneNumber,
+                accessToken: decryptedToken,
+                status: metaConnection.status,
+              },
               accessToken: decryptedToken,
-              status: metaConnection.status,
-            },
-            accessToken: decryptedToken,
-            wabaId: metaConnection.wabaId,
-            phoneNumberId: primaryPhone.phoneNumberId,
-          };
+              wabaId: metaConnection.wabaId,
+              phoneNumberId: primaryPhone.phoneNumberId,
+            };
+          }
+        } catch (metaError: any) {
+          console.log('⚠️ MetaConnection not available:', metaError.message);
         }
-      } catch (metaError) {
-        console.log('⚠️ MetaConnection table not available or query failed');
       }
-    }
 
-    // ============================================
-    // No account found - throw helpful error
-    // ============================================
-    if (!waAccount) {
-      const anyAccount = await prisma.whatsAppAccount.findFirst({
-        where: { organizationId },
-        select: { id: true, status: true, phoneNumber: true },
-      });
+      // ============================================
+      // Account Found - Validate & Return
+      // ============================================
+      if (waAccount) {
+        console.log('✅ WhatsApp account found:', {
+          id: waAccount.id,
+          phone: waAccount.phoneNumber,
+          status: waAccount.status,
+          wabaId: waAccount.wabaId,
+        });
 
-      if (!anyAccount) {
-        throw new AppError(
-          'No WhatsApp account found. Please connect your WhatsApp Business account in Settings → WhatsApp.',
-          400
-        );
-      } else if (anyAccount.status === 'DISCONNECTED') {
-        throw new AppError(
-          `WhatsApp account (${anyAccount.phoneNumber}) is disconnected. Please reconnect in Settings → WhatsApp.`,
-          400
-        );
-      } else {
-        throw new AppError(
-          `WhatsApp account (${anyAccount.phoneNumber}) status is ${anyAccount.status}. Please check Settings → WhatsApp.`,
-          400
-        );
+        // Check if account has required fields
+        if (!waAccount.wabaId) {
+          throw new AppError(
+            'WhatsApp Business Account ID missing. Please reconnect in Settings → WhatsApp.',
+            400
+          );
+        }
+
+        if (!waAccount.accessToken) {
+          throw new AppError(
+            'WhatsApp access token missing. Please reconnect in Settings → WhatsApp.',
+            400
+          );
+        }
+
+        // Get decrypted token
+        const accountWithToken = await metaService.getAccountWithToken(waAccount.id);
+
+        if (!accountWithToken) {
+          throw new AppError(
+            'Failed to decrypt token. Please reconnect in Settings → WhatsApp.',
+            400
+          );
+        }
+
+        return {
+          account: {
+            id: waAccount.id,
+            phoneNumberId: waAccount.phoneNumberId,
+            wabaId: waAccount.wabaId,
+            phoneNumber: waAccount.phoneNumber,
+            accessToken: accountWithToken.accessToken,
+            status: waAccount.status,
+            isDefault: waAccount.isDefault,
+          },
+          accessToken: accountWithToken.accessToken,
+          wabaId: waAccount.wabaId,
+          phoneNumberId: waAccount.phoneNumberId,
+        };
       }
-    }
 
-    // ============================================
-    // Validate WhatsAppAccount has required fields
-    // ============================================
-    if (!waAccount.wabaId) {
+      // ============================================
+      // Account Not Found - Retry or Throw
+      // ============================================
+      if (attempt < MAX_RETRIES - 1) {
+        const delay = RETRY_DELAYS[attempt];
+        console.log(`⏳ Account not found, retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+
+      // All retries exhausted
       throw new AppError(
-        'WhatsApp Business Account ID missing. Please reconnect your account in Settings → WhatsApp.',
+        'No WhatsApp account found. Please connect your WhatsApp Business account in Settings → WhatsApp.',
         400
       );
-    }
 
-    if (!waAccount.accessToken) {
-      throw new AppError(
-        'WhatsApp access token missing. Please reconnect your account in Settings → WhatsApp.',
-        400
-      );
-    }
+    } catch (error: any) {
+      // If it's a retryable error and we have retries left
+      if (
+        attempt < MAX_RETRIES - 1 &&
+        (error.message.includes('not found') || error.message.includes('No WhatsApp'))
+      ) {
+        const delay = RETRY_DELAYS[attempt];
+        console.log(`⏳ Error: ${error.message}, retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
 
-    // Get decrypted token
-    const accountWithToken = await metaService.getAccountWithToken(waAccount.id);
-
-    if (!accountWithToken) {
-      throw new AppError(
-        'Failed to decrypt WhatsApp access token. Please reconnect your account in Settings → WhatsApp.',
-        400
-      );
-    }
-
-    console.log('✅ Using WhatsAppAccount:', {
-      id: waAccount.id,
-      phone: waAccount.phoneNumber,
-      wabaId: waAccount.wabaId,
-      isDefault: waAccount.isDefault,
-    });
-
-    return {
-      account: {
-        id: waAccount.id,
-        phoneNumberId: waAccount.phoneNumberId,
-        wabaId: waAccount.wabaId,
-        phoneNumber: waAccount.phoneNumber,
-        accessToken: accountWithToken.accessToken,
-        status: waAccount.status,
-        isDefault: waAccount.isDefault,
-      },
-      accessToken: accountWithToken.accessToken,
-      wabaId: waAccount.wabaId,
-      phoneNumberId: waAccount.phoneNumberId,
-    };
-  } catch (error: any) {
-    console.error('❌ Get WhatsApp account error:', error);
-
-    if (error instanceof AppError) {
+      // Non-retryable or retries exhausted
+      console.error('❌ getWhatsAppAccountWithToken failed:', error);
       throw error;
     }
-
-    throw new AppError('Failed to get WhatsApp account: ' + error.message, 500);
   }
+
+  // Should never reach here, but TypeScript requires it
+  throw new AppError('No WhatsApp account found after all retries.', 400);
 };
 
 // ============================================

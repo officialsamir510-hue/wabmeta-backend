@@ -420,34 +420,35 @@ export class MetaController {
 
       console.log('✅ Meta callback successful');
 
-      // ✅ FIXED: Delayed template sync to ensure DB commit
+      // After saving WhatsAppAccount, VERIFY it exists
       if (savedAccount) {
-        console.log(`📊 Scheduling initial template sync for account: ${savedAccount.id}`);
+        // ✅ Verify save was successful
+        const verifyAccount = await prisma.whatsAppAccount.findUnique({
+          where: { id: savedAccount.id },
+        });
 
-        // ✅ CRITICAL FIX: Wait 3 seconds before syncing
-        // This ensures:
-        // 1. Database transaction is fully committed
-        // 2. Prisma connection pool is refreshed
-        // 3. WhatsApp account is queryable
+        if (!verifyAccount) {
+          console.error('❌ CRITICAL: Account save verification failed!');
+          throw new AppError('Failed to save WhatsApp account. Please try again.', 500);
+        }
+
+        console.log('✅ Account save verified:', verifyAccount.id);
+
+        // ✅ FIXED: Longer delay for template sync
         setTimeout(async () => {
           try {
             console.log('🔄 Starting delayed template sync...');
-            console.log(`   Account ID: ${savedAccount.id}`);
-            console.log(`   Organization ID: ${organizationId}`);
 
-            // ✅ Additional safety: Wait a bit more if needed
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            // Wait extra time for any DB replication
+            await new Promise(resolve => setTimeout(resolve, 2000));
 
             const result = await templatesService.syncFromMeta(organizationId, savedAccount.id);
-            console.log('✅ Template sync completed successfully:', result);
+            console.log('✅ Template sync completed:', result);
           } catch (syncError: any) {
             console.error('❌ Template sync error:', syncError.message);
-            console.error('   This is non-critical. Templates can be synced manually from UI.');
-
-            // ✅ Don't throw - connection is already established
-            // User can sync templates manually from Settings → Templates
+            // Non-critical, templates can be synced manually
           }
-        }, 3000); // Wait 3 seconds
+        }, 5000); // Increased to 5 seconds
       }
 
       console.log('🔄 ========== META CALLBACK END ==========\n');
