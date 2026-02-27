@@ -121,10 +121,19 @@ export class WebhookService {
       console.log('📨 Webhook received');
 
       const value = this.extractValue(payload);
+      const field = payload?.entry?.[0]?.changes?.[0]?.field || 'unknown';
       const phoneNumberId = value?.metadata?.phone_number_id;
 
+      // Handle cases where phone_number_id is missing
       if (!phoneNumberId) {
-        return { status: 'error', reason: 'No phone_number_id' };
+        // If it's a field we don't process (like account_update), ignore it gracefully
+        if (field !== 'messages' && field !== 'statuses') {
+          console.log(`ℹ️ Ignoring webhook field: ${field} (No phone_number_id)`);
+          return { status: 'ignored', reason: `Unhandled field type: ${field}` };
+        }
+
+        // If it's supposed to be a message/status but lacks ID, that's an error
+        return { status: 'error', reason: 'No phone_number_id for field: ' + field };
       }
 
       const account = await prisma.whatsAppAccount.findFirst({
@@ -132,6 +141,13 @@ export class WebhookService {
       });
 
       if (!account) {
+        // For test webhooks from Meta, the ID might be "123456789012345" or similar
+        // We should probably ignore it if the account isn't found instead of erroring, 
+        // to keep logs clean from Meta's periodic tests or unconfigured numbers.
+        if (phoneNumberId.length < 10) { // Simple heuristic for test/fake IDs
+          return { status: 'ignored', reason: 'Account not found for test/invalid phoneNumberId: ' + phoneNumberId };
+        }
+
         console.warn(`⚠️ Account not found for phoneNumberId: ${phoneNumberId}`);
         return { status: 'error', reason: 'Account not found for phoneNumberId: ' + phoneNumberId };
       }

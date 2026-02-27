@@ -8,6 +8,7 @@ import { MessageStatus } from '@prisma/client';
 import crypto from 'crypto';
 import axios from 'axios';
 import { config } from '../../config';
+import { templatesService } from '../templates/templates.service';
 
 // Helper to safely get organization ID from headers
 const getOrgId = (req: Request): string => {
@@ -387,6 +388,15 @@ export class MetaController {
       await (prisma as any).oAuthState.delete({ where: { state } });
 
       console.log('✅ Meta callback successful');
+
+      // ✅ TRIGGER INITIAL TEMPLATE SYNC (Background)
+      if (savedAccount) {
+        console.log(`📊 Triggering initial template sync for account: ${savedAccount.id}`);
+        templatesService.syncFromMeta(organizationId, savedAccount.id).catch(err => {
+          console.error('❌ Initial template sync failed:', err.message);
+        });
+      }
+
       console.log('🔄 ========== META CALLBACK END ==========\n');
 
       return sendSuccess(
