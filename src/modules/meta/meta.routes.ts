@@ -207,20 +207,25 @@ router.post('/webhook', async (req, res) => {
 });
 
 // ============================================
+// PUBLIC OAUTH CALLBACKS
+// These use state token verification instead of JWT
+// ============================================
+router.post('/callback', metaController.handleCallback.bind(metaController));
+router.post('/connect', metaController.handleCallback.bind(metaController));
+
+// ============================================
 // PROTECTED ROUTES
 // ============================================
 
 router.use(authenticate);
 
 // ============================================
-// OAUTH & CONNECTION ROUTES
+// OAUTH & CONNECTION ROUTES (Private - to generate URL)
 // ============================================
 
 router.get('/oauth-url', metaController.getOAuthUrl.bind(metaController));
 router.get('/auth/url', metaController.getAuthUrl.bind(metaController));
 router.post('/initiate-connection', metaController.initiateConnection.bind(metaController));
-router.post('/callback', metaController.handleCallback.bind(metaController));
-router.post('/connect', metaController.handleCallback.bind(metaController));
 
 // ============================================
 // CONFIGURATION ROUTES
