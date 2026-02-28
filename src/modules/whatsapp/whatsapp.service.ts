@@ -501,16 +501,10 @@ class WhatsAppService {
             wamId: waMessageId,
             direction: 'OUTBOUND',
             type: 'TEMPLATE',
-            // Store JSON to keep structure, but include body
-            content: JSON.stringify({
-              templateName,
-              body: fullContent, // This is what we show in UI
-              header: template?.headerContent || null,
-              footer: template?.footerText || null,
-              params: components
-            }),
+            content: fullContent, // ✅ Store readable text only
             status: 'SENT',
             sentAt: now,
+            timestamp: now, // Add timestamp for consistency
             createdAt: now,
             metadata: {
               ...(tempId ? { tempId } : {}),

@@ -509,43 +509,72 @@ export class InboxController {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      // Get WhatsApp account
+      // Get WhatsApp account with access token
       const account = await prisma.whatsAppAccount.findFirst({
         where: {
           organizationId,
           isActive: true,
         },
+        select: {
+          accessToken: true,
+        },
       });
 
-      if (!account || !account.accessToken) {
+      if (!account?.accessToken) {
         return res.status(404).json({ error: 'No active WhatsApp account' });
       }
 
-      // Get media URL from WhatsApp
-      const mediaUrl = await inboxMediaService.getMediaUrl(mediaId as string, account.accessToken!);
+      const accessToken = account.accessToken;
+
+      // Step 1: Get media URL from WhatsApp
+      const mediaInfoResponse = await axios.get(
+        `https://graph.facebook.com/v18.0/${mediaId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      );
+
+      const mediaUrl = mediaInfoResponse.data?.url;
 
       if (!mediaUrl) {
         return res.status(404).json({ error: 'Media not found' });
       }
 
-      // Proxy the media
-      const response = await axios.get(mediaUrl, {
+      // Step 2: Download media from WhatsApp
+      const mediaResponse = await axios.get(mediaUrl, {
         headers: {
-          Authorization: `Bearer ${account.accessToken}`,
+          Authorization: `Bearer ${accessToken}`,
         },
         responseType: 'stream',
+        timeout: 30000,
       });
 
-      // Set headers
-      const contentType = response.headers['content-type'];
-      res.setHeader('Content-Type', Array.isArray(contentType) ? contentType[0] : (contentType || 'application/octet-stream'));
-      res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 24 hours
+      // Step 3: Set response headers
+      const contentType = mediaResponse.headers['content-type'] || 'application/octet-stream';
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache 24 hours
+      res.setHeader('Access-Control-Allow-Origin', '*');
 
-      // Pipe the response
-      response.data.pipe(res);
+      // Step 4: Pipe the media stream to response
+      mediaResponse.data.pipe(res);
+
     } catch (error: any) {
-      console.error('Error proxying media:', error);
-      res.status(500).json({ error: 'Failed to load media' });
+      console.error('Error proxying media:', error.response?.data || error.message);
+
+      // Return placeholder for failed images
+      if (req.headers.accept?.includes('image')) {
+        res.setHeader('Content-Type', 'image/svg+xml');
+        res.send(`
+          <svg xmlns="http://www.w3.org/2000/svg" width="200" height="150" viewBox="0 0 200 150">
+            <rect fill="#f3f4f6" width="200" height="150"/>
+            <text x="100" y="75" text-anchor="middle" fill="#9ca3af" font-size="12">Media unavailable</text>
+          </svg>
+        `);
+      } else {
+        res.status(500).json({ error: 'Failed to load media' });
+      }
     }
   }
 }

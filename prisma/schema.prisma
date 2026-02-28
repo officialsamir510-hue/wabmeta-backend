@@ -513,8 +513,8 @@ model Message {
   wamId             String?          @unique
   direction         MessageDirection
   type              MessageType      @default(TEXT)
-  content           String?
-  mediaUrl          String?
+  content           String?          @db.Text
+  mediaUrl          String?          @db.Text
   mediaType         String?
   mediaMimeType     String?
   mediaId           String? // WhatsApp media ID for re-fetching
@@ -532,14 +532,18 @@ model Message {
   metadata          Json?
   retryCount        Int              @default(0)
   statusUpdatedAt   DateTime?
+  timestamp         DateTime         @default(now())
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
+  whatsappMessageId String?          @unique
   conversation      Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   whatsappAccount   WhatsAppAccount? @relation(fields: [whatsappAccountId], references: [id])
 
   @@index([conversationId])
+  @@index([timestamp])
   @@index([wamId])
   @@index([waMessageId])
+  @@index([whatsappMessageId])
   @@index([direction])
   @@index([status])
   @@index([createdAt])

@@ -524,6 +524,32 @@ export class InboxService {
 
     return message;
   }
+
+  /**
+   * Send template message
+   */
+  async sendTemplateMessage(
+    organizationId: string,
+    conversationId: string,
+    templateName: string,
+    language: string,
+    params: any[],
+    bodyText: string
+  ) {
+    // Store only the body text, not full JSON
+    const message = await prisma.message.create({
+      data: {
+        conversationId,
+        direction: 'OUTBOUND',
+        type: 'TEMPLATE',
+        content: bodyText, // ✅ Store readable text only
+        status: 'PENDING',
+        timestamp: new Date(),
+      },
+    });
+
+    return message;
+  }
 }
 
 export const inboxService = new InboxService();
