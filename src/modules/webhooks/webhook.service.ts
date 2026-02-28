@@ -5,6 +5,7 @@ import { contactsService } from '../contacts/contacts.service';
 import { EventEmitter } from 'events';
 import { MessageType, MessageStatus } from '@prisma/client';
 import { chatbotEngine } from '../chatbot/chatbot.engine';
+import { inboxMediaService } from '../inbox/inbox.media';
 
 // ✅ Socket.ts will subscribe to this
 export const webhookEvents = new EventEmitter();
@@ -194,6 +195,7 @@ export class WebhookService {
       const waFrom = String(message?.from || '');
       const waMessageId = String(message?.id || '');
       const typeRaw = String(message?.type || 'text');
+      const msgType = this.mapMessageType(typeRaw);
       const ts = Number(message?.timestamp || Date.now() / 1000);
       const messageTime = new Date(ts * 1000);
 
@@ -216,15 +218,135 @@ export class WebhookService {
             isWindowOpen: true,
             windowExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
             unreadCount: 0,
-            isRead: false, // Changed from true to false for new conversations
+            isRead: false,
             lastMessageAt: messageTime,
           },
         });
         console.log(`💬 Created new conversation: ${conversation.id}`);
       }
 
-      const { content, mediaUrl } = this.buildContentAndMedia(message);
-      const msgType = this.mapMessageType(typeRaw);
+      let content = '';
+      let mediaUrl: string | null = null;
+      let mediaType: string | null = null;
+      let mediaMimeType: string | null = null;
+      let mediaId: string | null = null;
+      let fileName: string | null = null;
+
+      // Handle different message types
+      switch (typeRaw) {
+        case 'text':
+          content = message.text?.body || '';
+          break;
+
+        case 'image':
+          mediaId = message.image?.id;
+          mediaMimeType = message.image?.mime_type || 'image/jpeg';
+          content = message.image?.caption || '[Image]';
+          mediaType = 'image';
+
+          if (mediaId) {
+            const mediaResult = await inboxMediaService.processIncomingMedia(
+              mediaId!,
+              mediaMimeType!,
+              organizationId
+            );
+            mediaUrl = mediaResult.url;
+          }
+          break;
+
+        case 'video':
+          mediaId = message.video?.id;
+          mediaMimeType = message.video?.mime_type || 'video/mp4';
+          content = message.video?.caption || '[Video]';
+          mediaType = 'video';
+
+          if (mediaId) {
+            const mediaResult = await inboxMediaService.processIncomingMedia(
+              mediaId!,
+              mediaMimeType!,
+              organizationId
+            );
+            mediaUrl = mediaResult.url;
+          }
+          break;
+
+        case 'audio':
+          mediaId = message.audio?.id;
+          mediaMimeType = message.audio?.mime_type || 'audio/ogg';
+          content = '[Audio]';
+          mediaType = 'audio';
+
+          if (mediaId) {
+            const mediaResult = await inboxMediaService.processIncomingMedia(
+              mediaId!,
+              mediaMimeType!,
+              organizationId
+            );
+            mediaUrl = mediaResult.url;
+          }
+          break;
+
+        case 'document':
+          mediaId = message.document?.id;
+          mediaMimeType = message.document?.mime_type || 'application/pdf';
+          fileName = message.document?.filename || 'document';
+          content = message.document?.caption || `[Document: ${fileName}]`;
+          mediaType = 'document';
+
+          if (mediaId) {
+            const mediaResult = await inboxMediaService.processIncomingMedia(
+              mediaId!,
+              mediaMimeType!,
+              organizationId
+            );
+            mediaUrl = mediaResult.url;
+          }
+          break;
+
+        case 'sticker':
+          mediaId = message.sticker?.id;
+          mediaMimeType = message.sticker?.mime_type || 'image/webp';
+          content = '[Sticker]';
+          mediaType = 'sticker';
+
+          if (mediaId) {
+            const mediaResult = await inboxMediaService.processIncomingMedia(
+              mediaId!,
+              mediaMimeType!,
+              organizationId
+            );
+            mediaUrl = mediaResult.url;
+          }
+          break;
+
+        case 'location':
+          const lat = message.location?.latitude;
+          const lng = message.location?.longitude;
+          content = `[Location: ${lat}, ${lng}]`;
+          mediaType = 'location';
+          mediaUrl = JSON.stringify({
+            latitude: lat,
+            longitude: lng,
+            name: message.location?.name,
+            address: message.location?.address,
+          });
+          break;
+
+        case 'contacts':
+          content = '[Contact Card]';
+          mediaType = 'contact';
+          mediaUrl = JSON.stringify(message.contacts);
+          break;
+
+        case 'interactive':
+          const iType = message?.interactive?.type;
+          content = iType === 'button_reply' ? message.interactive.button_reply.title :
+            iType === 'list_reply' ? message.interactive.list_reply.title : '[Interactive]';
+          break;
+
+        default:
+          content = `[${typeRaw}]`;
+      }
 
       const savedMessage = await prisma.message.create({
         data: {
@@ -236,6 +358,10 @@ export class WebhookService {
           type: msgType,
           content,
           mediaUrl,
+          mediaType,
+          mediaMimeType,
+          mediaId,
+          fileName,
           status: 'DELIVERED',
           sentAt: messageTime,
           deliveredAt: messageTime,

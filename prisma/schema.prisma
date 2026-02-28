@@ -112,14 +112,14 @@ model OrganizationMember {
 }
 
 model Plan {
-  id                   String         @id @default(cuid())
-  name                 String
-  type                 PlanType       @unique
-  slug                 String         @unique
-  description          String?
-  monthlyPrice         Decimal        @db.Decimal(10, 2)
-  yearlyPrice          Decimal        @db.Decimal(10, 2)
-  
+  id           String   @id @default(cuid())
+  name         String
+  type         PlanType @unique
+  slug         String   @unique
+  description  String?
+  monthlyPrice Decimal  @db.Decimal(10, 2)
+  yearlyPrice  Decimal  @db.Decimal(10, 2)
+
   // Limits
   maxContacts          Int
   maxMessages          Int
@@ -132,16 +132,16 @@ model Plan {
   maxCampaignsPerMonth Int
   maxAutomations       Int
   maxApiCalls          Int
-  
+
   // ✅ NEW FIELDS
-  validityDays         Int            @default(30)
-  isRecommended        Boolean        @default(false)
-  
-  features             Json           @default("[]")
-  isActive             Boolean        @default(true)
-  createdAt            DateTime       @default(now())
-  updatedAt            DateTime       @updatedAt
-  subscriptions        Subscription[]
+  validityDays  Int     @default(30)
+  isRecommended Boolean @default(false)
+
+  features      Json           @default("[]")
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  subscriptions Subscription[]
 
   @@index([slug])
   @@index([isActive])
@@ -193,6 +193,7 @@ model WhatsAppAccount {
   lastLimitReset         DateTime              @default(now())
   businessProfile        Json?
   isDefault              Boolean               @default(false)
+  isActive               Boolean               @default(true)
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
   campaigns              Campaign[]
@@ -301,7 +302,6 @@ model Contact {
   @@index([tags])
   @@index([lastMessageAt])
   @@index([createdAt])
-
   // ✅ CRITICAL INDEXES
   @@index([organizationId, phone])
   @@index([email])
@@ -517,6 +517,8 @@ model Message {
   mediaUrl          String?
   mediaType         String?
   mediaMimeType     String?
+  mediaId           String? // WhatsApp media ID for re-fetching
+  fileName          String? // For documents
   templateId        String?
   templateName      String?
   templateParams    Json?
@@ -541,7 +543,6 @@ model Message {
   @@index([direction])
   @@index([status])
   @@index([createdAt])
-
   // ✅ CRITICAL INDEXES
   @@index([conversationId, createdAt(sort: Desc)])
 }

@@ -39,6 +39,11 @@ router.post('/media/upload', upload.single('file'), (req, res, next) =>
   inboxController.uploadMedia(req as any, res, next)
 );
 
+// Media proxy endpoint
+router.get('/media/:mediaId', (req, res, next) =>
+  inboxController.getMedia(req as any, res, next)
+);
+
 // POST /inbox/conversations/:id/messages/media
 router.post('/conversations/:id/messages/media', (req, res, next) =>
   inboxController.sendMediaMessage(req as any, res, next)

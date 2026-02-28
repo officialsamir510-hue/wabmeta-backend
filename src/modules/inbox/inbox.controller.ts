@@ -13,6 +13,8 @@ import {
 
 import prisma from '../../config/database';
 import whatsappService from '../whatsapp/whatsapp.service';
+import axios from 'axios';
+import { inboxMediaService } from './inbox.media';
 
 // Extended Request interface
 interface AuthRequest extends Request {
@@ -491,6 +493,59 @@ export class InboxController {
       return sendSuccess(res, result, 'Media message sent successfully', 201);
     } catch (error) {
       next(error);
+    }
+  }
+
+  // ==========================================
+  // ✅ NEW: PROXY WHATSAPP MEDIA
+  // GET /inbox/media/:mediaId
+  // ==========================================
+  async getMedia(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const organizationId = req.user?.organizationId;
+      const { mediaId } = req.params;
+
+      if (!organizationId) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      // Get WhatsApp account
+      const account = await prisma.whatsAppAccount.findFirst({
+        where: {
+          organizationId,
+          isActive: true,
+        },
+      });
+
+      if (!account || !account.accessToken) {
+        return res.status(404).json({ error: 'No active WhatsApp account' });
+      }
+
+      // Get media URL from WhatsApp
+      const mediaUrl = await inboxMediaService.getMediaUrl(mediaId as string, account.accessToken!);
+
+      if (!mediaUrl) {
+        return res.status(404).json({ error: 'Media not found' });
+      }
+
+      // Proxy the media
+      const response = await axios.get(mediaUrl, {
+        headers: {
+          Authorization: `Bearer ${account.accessToken}`,
+        },
+        responseType: 'stream',
+      });
+
+      // Set headers
+      const contentType = response.headers['content-type'];
+      res.setHeader('Content-Type', Array.isArray(contentType) ? contentType[0] : (contentType || 'application/octet-stream'));
+      res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 24 hours
+
+      // Pipe the response
+      response.data.pipe(res);
+    } catch (error: any) {
+      console.error('Error proxying media:', error);
+      res.status(500).json({ error: 'Failed to load media' });
     }
   }
 }
