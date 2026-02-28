@@ -502,18 +502,24 @@ export class InboxController {
   // ==========================================
   async getMedia(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const organizationId = req.user?.organizationId;
-      const { mediaId } = req.params;
+      const organizationId = req.user?.organizationId || (req.query.organizationId as string) || (req.query.orgId as string);
+      const mediaId = req.params.mediaId || (req.query.url as string);
 
-      if (!organizationId) {
-        return res.status(401).json({ error: 'Unauthorized' });
+      if (!mediaId) {
+        return res.status(400).json({ error: 'Media ID is required' });
       }
+
+      // If still no organizationId, we'll try to find any active WhatsApp account
+      // but it's better to explicitly have it.
+      const searchOrgId = organizationId;
 
       // Get WhatsApp account with access token
       const account = await prisma.whatsAppAccount.findFirst({
-        where: {
-          organizationId,
-          isActive: true,
+        where: searchOrgId ? {
+          organizationId: searchOrgId,
+          isActive: true
+        } : {
+          isActive: true
         },
         select: {
           accessToken: true,

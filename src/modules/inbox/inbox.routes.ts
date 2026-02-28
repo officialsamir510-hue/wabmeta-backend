@@ -9,6 +9,18 @@ import fs from 'fs';
 import path from 'path';
 
 const router = Router();
+
+// ==========================================
+// PUBLIC MEDIA PROXY (Used for showing images in UI)
+// ==========================================
+router.get('/media/:mediaId', (req, res, next) =>
+  inboxController.getMedia(req as any, res, next)
+);
+
+router.get('/media-proxy', (req, res, next) =>
+  inboxController.getMedia(req as any, res, next)
+);
+
 router.use(authenticate);
 
 // ==========================================
@@ -31,17 +43,12 @@ const upload = multer({
 });
 
 // ==========================================
-// MEDIA (NEW)
+// MEDIA (REMOVED: Moved to public section)
 // ==========================================
 
 // POST /inbox/media/upload
 router.post('/media/upload', upload.single('file'), (req, res, next) =>
   inboxController.uploadMedia(req as any, res, next)
-);
-
-// Media proxy endpoint
-router.get('/media/:mediaId', (req, res, next) =>
-  inboxController.getMedia(req as any, res, next)
 );
 
 // POST /inbox/conversations/:id/messages/media

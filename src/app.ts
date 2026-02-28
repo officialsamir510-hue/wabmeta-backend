@@ -57,6 +57,7 @@ app.use(
   helmet({
     contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' }, // Allow loading media on different domains
   })
 );
 
@@ -240,6 +241,14 @@ console.log('✅ Inline webhook handlers registered');
 // ============================================
 // API ROUTES
 // ============================================
+
+// Support for legacy/misconfigured frontend paths (/api/v1/api/* -> /api/*)
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (req.url.startsWith('/api/v1/api')) {
+    req.url = req.url.replace('/api/v1/api', '/api');
+  }
+  next();
+});
 
 console.log('🔧 Registering API routes...');
 
