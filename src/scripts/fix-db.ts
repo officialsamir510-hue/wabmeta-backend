@@ -23,12 +23,12 @@ async function run() {
         console.log('Adding unique index...');
         try {
             await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "Message_whatsappMessageId_key" ON "Message"("whatsappMessageId")`);
-        } catch (e) {
+        } catch (e: any) {
             console.log('Index note:', e.message);
         }
 
         console.log('✅ DATABASE SCHEMA UPDATED SUCCESSFULLY');
-    } catch (err) {
+    } catch (err: any) {
         console.error('❌ DATABASE UPDATE FAILED:', err.message);
     } finally {
         await prisma.$disconnect();
