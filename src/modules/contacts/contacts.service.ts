@@ -129,47 +129,42 @@ export class ContactsService {
   /**
    * ✅ Try to normalize phone - returns null if invalid (for import)
    */
-  private tryNormalizePhone(phone: string): string | null {
+  /**
+   * ✅ Try to normalize phone - returns 10 digits if valid Indian Mobile, returns null if invalid.
+   */
+  private tryNormalizePhone(phone: any): string | null {
     try {
-      // Remove all non-numeric characters except +
-      let cleaned = phone.replace(/[^\d+]/g, '');
+      if (!phone) return null;
+      let cleaned = String(phone).trim();
 
-      // Remove + if present
-      cleaned = cleaned.replace(/^\+/, '');
+      // Remove non-numeric characters EXCEPT '+'
+      cleaned = cleaned.replace(/[^\d+]/g, '');
 
-      // Remove leading zeros
-      cleaned = cleaned.replace(/^0+/, '');
-
-      // Handle different formats
-      if (cleaned.startsWith('91') && cleaned.length === 12) {
-        // Format: 919876543210
-        cleaned = cleaned.substring(2);
-      } else if (cleaned.length === 10) {
-        // Format: 9876543210 - already correct
-      } else if (cleaned.length > 10 && cleaned.startsWith('91')) {
-        // Format: 91 9876543210 (with space converted)
-        cleaned = cleaned.substring(2);
-      } else if (cleaned.length === 11 && cleaned.startsWith('0')) {
-        // Format: 09876543210
+      // Handle + if present
+      if (cleaned.startsWith('+')) {
         cleaned = cleaned.substring(1);
       }
 
-      // Validate: must be 10 digits starting with 6-9
-      if (cleaned.length !== 10) {
-        return null;
+      // Remove leading zeros (e.g., 098..., 0091...)
+      cleaned = cleaned.replace(/^0+/, '');
+
+      // If it starts with 91 and length is 12 (91 followed by 10 digits)
+      if (cleaned.startsWith('91') && cleaned.length === 12) {
+        cleaned = cleaned.substring(2);
+      }
+      // If it's just 10 digits (9876543210)
+      else if (cleaned.length === 10) {
+        // No action needed, will validate below
+      }
+      // If it's 10 digits but starts with 91 already stripped? 
+      // Above replace(/^0+/) handles 0091 which becomes 91...
+
+      // Final Check: Must be exactly 10 digits and start with 6, 7, 8, or 9
+      if (/^[6-9]\d{9}$/.test(cleaned)) {
+        return cleaned;
       }
 
-      const firstDigit = parseInt(cleaned[0]);
-      if (firstDigit < 6 || firstDigit > 9) {
-        return null;
-      }
-
-      // All digits check
-      if (!/^\d{10}$/.test(cleaned)) {
-        return null;
-      }
-
-      return cleaned;
+      return null;
     } catch {
       return null;
     }
@@ -792,9 +787,9 @@ export class ContactsService {
           const value = values[index]?.trim() || '';
 
           // Map common column names
-          if (['phone', 'mobile', 'number', 'contact', 'whatsapp', 'phone_number', 'phonenumber'].includes(key)) {
+          if (['phone', 'mobile', 'number', 'contact', 'whatsapp', 'phone_number', 'phonenumber', 'phone number', 'mob'].includes(key)) {
             contact.phone = value;
-          } else if (['name', 'firstname', 'first_name', 'first name'].includes(key)) {
+          } else if (['name', 'firstname', 'first_name', 'first name', 'full name', 'fullname', 'contact name'].includes(key)) {
             contact.firstName = value;
           } else if (['lastname', 'last_name', 'last name', 'surname'].includes(key)) {
             contact.lastName = value;
