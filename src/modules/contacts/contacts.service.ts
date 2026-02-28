@@ -41,7 +41,6 @@ const formatContact = (contact: any): ContactResponse => ({
   source: contact.source,
   lastMessageAt: contact.lastMessageAt,
   messageCount: contact.messageCount,
-  // WhatsApp Profile Fields
   whatsappProfileFetched: contact.whatsappProfileFetched || false,
   lastProfileFetchAt: contact.lastProfileFetchAt,
   profileFetchAttempts: contact.profileFetchAttempts || 0,
@@ -79,7 +78,7 @@ const formatContactGroup = (group: any): ContactGroupResponse => ({
 export class ContactsService {
 
   // ==========================================
-  // PHONE VALIDATION HELPERS
+  // ✅ PHONE VALIDATION HELPERS (FIXED)
   // ==========================================
 
   /**
@@ -95,26 +94,30 @@ export class ContactsService {
    * Normalize phone to 10-digit format
    */
   private normalizeToTenDigits(phone: string): string {
-    const cleaned = phone.replace(/[\s\-\(\)]/g, '');
+    let cleaned = phone.replace(/[\s\-\(\)\+]/g, '');
 
-    if (cleaned.startsWith('+91')) {
-      return cleaned.substring(3);
-    } else if (cleaned.startsWith('91')) {
+    // Remove leading zeros
+    cleaned = cleaned.replace(/^0+/, '');
+
+    // Handle different formats
+    if (cleaned.startsWith('91') && cleaned.length === 12) {
       return cleaned.substring(2);
+    } else if (cleaned.length === 10) {
+      return cleaned;
     }
 
     return cleaned;
   }
 
   /**
-   * Validate and normalize phone (throws error if invalid)
+   * ✅ Validate and normalize phone (throws error if invalid)
    */
   private validateAndNormalizePhone(phone: string): string {
     const normalized = this.normalizeToTenDigits(phone);
 
     if (!this.validateIndianPhone(normalized)) {
       throw new AppError(
-        'Only Indian phone numbers (+91) starting with 6-9 are allowed',
+        `Invalid phone number: ${phone}. Only Indian numbers (+91) starting with 6-9 are allowed.`,
         400
       );
     }
@@ -122,20 +125,30 @@ export class ContactsService {
     return normalized;
   }
 
+  /**
+   * ✅ Try to normalize phone - returns null if invalid (for import)
+   */
+  private tryNormalizePhone(phone: string): string | null {
+    try {
+      return this.validateAndNormalizePhone(phone);
+    } catch {
+      return null;
+    }
+  }
+
   // ==========================================
   // WHATSAPP NAME FETCHING
   // ==========================================
 
-  /**
-   * Update contact from webhook (auto name fetch)
-   */
   async updateContactFromWebhook(
     phone: string,
     profileName: string,
     organizationId: string
   ): Promise<ContactResponse | null> {
     try {
-      const normalized = this.validateAndNormalizePhone(phone);
+      const normalized = this.tryNormalizePhone(phone);
+      if (!normalized) return null;
+
       const variants = buildINPhoneVariants(phone);
 
       let contact = await prisma.contact.findFirst({
@@ -146,7 +159,6 @@ export class ContactsService {
       });
 
       if (contact) {
-        // Update if name is Unknown or different
         if (
           !contact.firstName ||
           contact.firstName === 'Unknown' ||
@@ -166,7 +178,6 @@ export class ContactsService {
           console.log(`✅ Updated contact: ${contact.phone} → ${profileName}`);
         }
       } else {
-        // Create new contact from webhook
         contact = await prisma.contact.create({
           data: {
             organizationId,
@@ -182,7 +193,6 @@ export class ContactsService {
         });
         console.log(`✅ Created contact from webhook: ${profileName}`);
 
-        // Update subscription usage
         const subscription = await prisma.subscription.findFirst({
           where: { organizationId },
         });
@@ -201,9 +211,6 @@ export class ContactsService {
     }
   }
 
-  /**
-   * Refresh unknown contact names
-   */
   async refreshUnknownNames(organizationId: string): Promise<{
     total: number;
     updated: number;
@@ -236,7 +243,6 @@ export class ContactsService {
     const national10 = this.validateAndNormalizePhone(input.phone);
     const variants = buildINPhoneVariants(input.phone);
 
-    // Duplicate check
     const existing = await prisma.contact.findFirst({
       where: {
         organizationId,
@@ -248,7 +254,6 @@ export class ContactsService {
       throw new AppError('Contact with this phone number already exists', 409);
     }
 
-    // Check organization limits
     const org = await prisma.organization.findUnique({
       where: { id: organizationId },
       include: {
@@ -263,7 +268,6 @@ export class ContactsService {
       }
     }
 
-    // Create contact
     const contact = await prisma.contact.create({
       data: {
         organizationId,
@@ -280,7 +284,6 @@ export class ContactsService {
       },
     });
 
-    // Add to groups if specified
     if (input.groupIds && input.groupIds.length > 0) {
       await prisma.contactGroupMember.createMany({
         data: input.groupIds.map((groupId) => ({
@@ -291,7 +294,6 @@ export class ContactsService {
       });
     }
 
-    // Update subscription usage
     if (org?.subscription) {
       await prisma.subscription.update({
         where: { id: org.subscription.id },
@@ -319,7 +321,6 @@ export class ContactsService {
       hasWhatsAppProfile,
     } = query;
 
-    // ✅ Allow higher limits but cap at 10000
     const safeLimit = Math.min(limit, 10000);
     const skip = (page - 1) * safeLimit;
     const where: Prisma.ContactWhereInput = { organizationId };
@@ -457,29 +458,33 @@ export class ContactsService {
   }
 
   // ==========================================
-  // IMPORT CONTACTS (Updated with Group Support)
+  // ✅ IMPORT CONTACTS (COMPLETE FIXED)
   // ==========================================
 
-  async import(organizationId: string, input: ImportContactsInput & { groupName?: string }): Promise<ImportContactsResponse> {
+  async import(
+    organizationId: string,
+    input: ImportContactsInput & { groupName?: string }
+  ): Promise<ImportContactsResponse> {
     const { contacts, groupId, groupName, tags = [], skipDuplicates = true } = input;
 
     if (!contacts || contacts.length === 0) {
       throw new AppError('At least one contact is required', 400);
     }
 
-    // 1. Resolve Target Group (Existing ID or New Name)
+    console.log(`📊 Starting import of ${contacts.length} contacts for org ${organizationId}`);
+
+    // ✅ 1. RESOLVE TARGET GROUP
     let targetGroupId = groupId;
 
     if (!targetGroupId && groupName) {
-      // Check if group exists by name
       const existingGroup = await prisma.contactGroup.findUnique({
         where: { organizationId_name: { organizationId, name: groupName } },
       });
 
       if (existingGroup) {
         targetGroupId = existingGroup.id;
+        console.log(`✅ Using existing group: ${groupName}`);
       } else {
-        // Create new group
         const newGroup = await prisma.contactGroup.create({
           data: {
             organizationId,
@@ -489,16 +494,16 @@ export class ContactsService {
           },
         });
         targetGroupId = newGroup.id;
+        console.log(`✅ Created new group: ${groupName}`);
       }
     } else if (targetGroupId) {
-      // Verify existing group ID
       const group = await prisma.contactGroup.findFirst({
         where: { id: targetGroupId, organizationId },
       });
       if (!group) throw new AppError('Contact group not found', 404);
     }
 
-    // 2. Check Limits
+    // ✅ 2. CHECK LIMITS
     const org = await prisma.organization.findUnique({
       where: { id: organizationId },
       include: {
@@ -509,21 +514,49 @@ export class ContactsService {
 
     const currentCount = org?._count.contacts || 0;
     const maxContacts = org?.subscription?.plan?.maxContacts || 100;
-    const availableSlots = maxContacts - currentCount;
+    const availableSlots = Math.max(0, maxContacts - currentCount);
 
-    if (availableSlots <= 0) {
+    if (availableSlots === 0) {
       throw new AppError('Contact limit reached. Please upgrade your plan.', 400);
     }
 
-    // 3. Process Contacts
-    const sliced = contacts.slice(0, availableSlots);
-    const validContacts: any[] = [];
-    const errors: any[] = [];
+    console.log(`📊 Available slots: ${availableSlots} (current: ${currentCount}, max: ${maxContacts})`);
 
-    for (let i = 0; i < sliced.length; i++) {
-      const c = sliced[i];
+    // ✅ 3. PROCESS & VALIDATE CONTACTS
+    const validContacts: any[] = [];
+    const errors: Array<{ row: number; phone: string; error: string }> = [];
+    const seenPhones = new Set<string>();
+
+    for (let i = 0; i < contacts.length; i++) {
+      const c = contacts[i];
+      const rowNumber = i + 1;
+
       try {
-        const normalized = this.validateAndNormalizePhone(c.phone);
+        // Normalize phone
+        const normalized = this.tryNormalizePhone(c.phone);
+
+        if (!normalized) {
+          errors.push({
+            row: rowNumber,
+            phone: c.phone || 'N/A',
+            error: 'Invalid phone number. Only Indian numbers (+91) starting with 6-9 are allowed.',
+          });
+          continue;
+        }
+
+        // Skip duplicates within CSV
+        if (seenPhones.has(normalized)) {
+          errors.push({
+            row: rowNumber,
+            phone: c.phone,
+            error: 'Duplicate phone number in CSV',
+          });
+          continue;
+        }
+
+        seenPhones.add(normalized);
+
+        // Merge tags
         const mergedTags = Array.from(new Set([...(c.tags || []), ...tags]));
 
         validContacts.push({
@@ -539,82 +572,117 @@ export class ContactsService {
           source: 'import',
           whatsappProfileFetched: false,
         });
+
       } catch (error: any) {
         errors.push({
-          row: i + 1,
-          phone: c.phone,
-          error: error.message || 'Invalid Indian phone number',
+          row: rowNumber,
+          phone: c.phone || 'N/A',
+          error: error.message || 'Unknown error',
         });
       }
     }
 
+    console.log(`✅ Validated: ${validContacts.length} valid, ${errors.length} errors`);
+
     if (validContacts.length === 0) {
-      throw new AppError('No valid Indian phone numbers found.', 400);
+      return {
+        imported: 0,
+        skipped: 0,
+        failed: errors.length,
+        errors: errors.slice(0, 100),
+      };
     }
 
-    // 4. Remove Duplicates in Batch
-    const seen = new Set<string>();
-    const unique = validContacts.filter((c) => {
-      if (seen.has(c.phone)) return false;
-      seen.add(c.phone);
-      return true;
-    });
+    // ✅ 4. LIMIT TO AVAILABLE SLOTS
+    const contactsToImport = validContacts.slice(0, availableSlots);
+    const exceededCount = validContacts.length - contactsToImport.length;
 
-    // 5. Insert Contacts
-    // Note: We use createMany for speed.
-    // If skipDuplicates=true, phones already in DB won't be re-inserted.
-    // BUT we still need to add them to the group. So we need IDs.
+    if (exceededCount > 0) {
+      console.warn(`⚠️ Limit exceeded: ${exceededCount} contacts skipped`);
+      for (let i = availableSlots; i < validContacts.length; i++) {
+        errors.push({
+          row: i + 1,
+          phone: validContacts[i].phone,
+          error: 'Contact limit reached',
+        });
+      }
+    }
 
-    const createdRes = await prisma.contact.createMany({
-      data: unique,
-      skipDuplicates: true,
-    });
+    // ✅ 5. CREATE CONTACTS (WITH DUPLICATE HANDLING)
+    let imported = 0;
+    let skipped = 0;
 
-    const imported = createdRes.count;
-    const skipped = unique.length - imported; // roughly
+    try {
+      const result = await prisma.contact.createMany({
+        data: contactsToImport,
+        skipDuplicates: true,
+      });
 
-    // 6. Add ALL Valid Contacts to Group
+      imported = result.count;
+      skipped = contactsToImport.length - imported;
+
+      console.log(`✅ Created ${imported} contacts, ${skipped} duplicates skipped`);
+
+    } catch (error: any) {
+      console.error('❌ Bulk insert failed:', error);
+      throw new AppError(`Import failed: ${error.message}`, 500);
+    }
+
+    // ✅ 6. ADD TO GROUP (ALL VALID CONTACTS INCLUDING EXISTING)
     let addedToGroup = 0;
-    if (targetGroupId) {
+
+    if (targetGroupId && contactsToImport.length > 0) {
       try {
-        const phones = unique.map((c) => c.phone);
-        // Fetch ALL valid contact IDs (newly created + existing)
-        const allContactIds = await prisma.contact.findMany({
-          where: { organizationId, phone: { in: phones } },
+        const phones = contactsToImport.map((c) => c.phone);
+
+        // Get ALL contact IDs (newly created + existing)
+        const allContacts = await prisma.contact.findMany({
+          where: {
+            organizationId,
+            phone: { in: phones }
+          },
           select: { id: true },
         });
 
-        if (allContactIds.length > 0) {
-          const groupMembers = await prisma.contactGroupMember.createMany({
-            data: allContactIds.map((ct) => ({
-              groupId: targetGroupId!,
-              contactId: ct.id,
-            })),
-            skipDuplicates: true, // Ignore if already in group
+        if (allContacts.length > 0) {
+          const groupMemberData = allContacts.map((ct) => ({
+            groupId: targetGroupId!,
+            contactId: ct.id,
+          }));
+
+          const groupResult = await prisma.contactGroupMember.createMany({
+            data: groupMemberData,
+            skipDuplicates: true,
           });
-          addedToGroup = groupMembers.count;
+
+          addedToGroup = groupResult.count;
+          console.log(`✅ Added ${addedToGroup} contacts to group ${targetGroupId}`);
         }
       } catch (err: any) {
-        console.error('Failed to add contacts to group:', err);
-        errors.push({ row: 0, error: `Group add failed: ${err.message}` });
+        console.error('❌ Failed to add contacts to group:', err);
+        errors.push({
+          row: 0,
+          phone: 'N/A',
+          error: `Group add failed: ${err.message}`
+        });
       }
     }
 
-    // 7. Update Subscription
+    // ✅ 7. UPDATE SUBSCRIPTION USAGE
     if (org?.subscription && imported > 0) {
       await prisma.subscription.update({
         where: { id: org.subscription.id },
         data: { contactsUsed: { increment: imported } },
       });
+      console.log(`✅ Updated subscription usage: +${imported}`);
     }
 
-    console.log(`✅ Import complete: ${imported} imported, ${addedToGroup} added to group ${targetGroupId}`);
-
+    // ✅ 8. RETURN RESULTS
     return {
       imported,
       skipped,
       failed: errors.length,
-      errors: errors.slice(0, 50),
+      errors: errors.slice(0, 100), // Return first 100 errors
     };
   }
 
@@ -774,13 +842,10 @@ export class ContactsService {
   }
 
   // ==========================================
-  // CONTACT GROUPS
+  // CONTACT GROUPS (Unchanged)
   // ==========================================
 
-  async createGroup(
-    organizationId: string,
-    input: CreateContactGroupInput
-  ): Promise<ContactGroupResponse> {
+  async createGroup(organizationId: string, input: CreateContactGroupInput): Promise<ContactGroupResponse> {
     const existing = await prisma.contactGroup.findUnique({
       where: { organizationId_name: { organizationId, name: input.name } },
     });
@@ -810,10 +875,7 @@ export class ContactsService {
     return groups.map(formatContactGroup);
   }
 
-  async getGroupById(
-    organizationId: string,
-    groupId: string
-  ): Promise<ContactGroupResponse & { contacts: ContactResponse[] }> {
+  async getGroupById(organizationId: string, groupId: string): Promise<ContactGroupResponse & { contacts: ContactResponse[] }> {
     const group = await prisma.contactGroup.findFirst({
       where: { id: groupId, organizationId },
       include: {
@@ -830,11 +892,7 @@ export class ContactsService {
     };
   }
 
-  async updateGroup(
-    organizationId: string,
-    groupId: string,
-    input: UpdateContactGroupInput
-  ): Promise<ContactGroupResponse> {
+  async updateGroup(organizationId: string, groupId: string, input: UpdateContactGroupInput): Promise<ContactGroupResponse> {
     const group = await prisma.contactGroup.findFirst({
       where: { id: groupId, organizationId },
     });
@@ -872,11 +930,7 @@ export class ContactsService {
     return { message: 'Group deleted successfully' };
   }
 
-  async addContactsToGroup(
-    organizationId: string,
-    groupId: string,
-    contactIds: string[]
-  ): Promise<{ message: string; added: number }> {
+  async addContactsToGroup(organizationId: string, groupId: string, contactIds: string[]): Promise<{ message: string; added: number }> {
     const group = await prisma.contactGroup.findFirst({
       where: { id: groupId, organizationId },
     });
@@ -897,11 +951,7 @@ export class ContactsService {
     return { message: 'Contacts added to group successfully', added: result.count };
   }
 
-  async removeContactsFromGroup(
-    organizationId: string,
-    groupId: string,
-    contactIds: string[]
-  ): Promise<{ message: string; removed: number }> {
+  async removeContactsFromGroup(organizationId: string, groupId: string, contactIds: string[]): Promise<{ message: string; removed: number }> {
     const group = await prisma.contactGroup.findFirst({
       where: { id: groupId, organizationId },
     });
@@ -915,11 +965,7 @@ export class ContactsService {
     return { message: 'Contacts removed from group successfully', removed: result.count };
   }
 
-  async getGroupContacts(
-    organizationId: string,
-    groupId: string,
-    query: ContactsQueryInput
-  ): Promise<ContactsListResponse> {
+  async getGroupContacts(organizationId: string, groupId: string, query: ContactsQueryInput): Promise<ContactsListResponse> {
     const { page = 1, limit = 20, search, sortBy = 'createdAt', sortOrder = 'desc' } = query;
     const skip = (page - 1) * limit;
 
