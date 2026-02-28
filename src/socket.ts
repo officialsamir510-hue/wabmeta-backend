@@ -204,6 +204,11 @@ function wireWebhookEvents() {
         target.emit('message:status', data);
       });
 
+      webhookEvents.on('accountUpdated', (data: any) => {
+        if (!data?.organizationId) return;
+        io.to(`org:${data.organizationId}`).emit('account:updated', data);
+      });
+
       console.log('✅ Webhook events wired with throttling');
     })
     .catch((e) => console.log('ℹ️ Webhook events not available'));

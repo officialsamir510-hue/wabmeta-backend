@@ -413,6 +413,16 @@ export class WebhookService {
       webhookEvents.emit('newMessage', {
         organizationId,
         conversationId: updatedConversation.id,
+        conversation: {
+          ...updatedConversation,
+          contact: {
+            ...updatedConversation.contact,
+            name: (updatedConversation.contact as any).whatsappProfileName ||
+              ((updatedConversation.contact as any).firstName
+                ? `${(updatedConversation.contact as any).firstName} ${(updatedConversation.contact as any).lastName || ''}`.trim()
+                : (updatedConversation.contact as any).phone)
+          }
+        },
         message: {
           ...savedMessage,
         },

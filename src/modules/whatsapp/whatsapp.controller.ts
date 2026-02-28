@@ -175,6 +175,14 @@ class WhatsAppController {
         },
       });
 
+      // ✅ Emit socket event for real-time update
+      const { webhookEvents } = await import('../webhooks/webhook.service');
+      webhookEvents.emit('accountUpdated', {
+        organizationId,
+        accountId,
+        status: WhatsAppAccountStatus.DISCONNECTED,
+      });
+
       if (account.isDefault) {
         const another = await prisma.whatsAppAccount.findFirst({
           where: {
