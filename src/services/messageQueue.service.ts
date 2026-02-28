@@ -210,6 +210,7 @@ messageQueue.process(20, async (job: Job) => {
                 }),
                 status: 'SENT',
                 sentAt: now,
+                timestamp: now,
                 templateId: template.id,
                 metadata: {
                     campaignId,
@@ -261,15 +262,7 @@ messageQueue.process(20, async (job: Job) => {
                 organizationId,
                 conversationId: updatedConversation.id,
                 message: {
-                    id: savedMessage.id,
-                    conversationId: updatedConversation.id,
-                    waMessageId: savedMessage.waMessageId,
-                    wamId: savedMessage.wamId,
-                    direction: savedMessage.direction,
-                    type: savedMessage.type,
-                    content: savedMessage.content,
-                    status: savedMessage.status,
-                    createdAt: savedMessage.createdAt,
+                    ...savedMessage,
                 },
             });
 

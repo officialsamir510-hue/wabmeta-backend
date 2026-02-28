@@ -365,6 +365,7 @@ export class WebhookService {
           status: 'DELIVERED',
           sentAt: messageTime,
           deliveredAt: messageTime,
+          timestamp: messageTime,
           createdAt: messageTime,
         },
       });
@@ -413,16 +414,7 @@ export class WebhookService {
         organizationId,
         conversationId: updatedConversation.id,
         message: {
-          id: savedMessage.id,
-          conversationId: updatedConversation.id,
-          waMessageId: savedMessage.waMessageId,
-          wamId: savedMessage.wamId,
-          direction: savedMessage.direction,
-          type: savedMessage.type,
-          content: savedMessage.content,
-          mediaUrl: savedMessage.mediaUrl,
-          status: savedMessage.status,
-          createdAt: savedMessage.createdAt,
+          ...savedMessage,
         },
       });
 

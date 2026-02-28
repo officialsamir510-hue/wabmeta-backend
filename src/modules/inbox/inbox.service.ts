@@ -219,7 +219,11 @@ export class InboxService {
     ]);
 
     // ✅ Reverse back to chronological order for the UI (Bottom = Newest)
-    const chronologicalMessages = [...messages].reverse();
+    // ✅ Ensure timestamp is always populated for frontend
+    const chronologicalMessages = [...messages].reverse().map(m => ({
+      ...m,
+      timestamp: m.timestamp || m.createdAt
+    }));
 
     return {
       messages: chronologicalMessages,

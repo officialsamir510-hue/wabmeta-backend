@@ -155,6 +155,7 @@ export class InboxController {
       const serializedMessage = {
         ...message,
         createdAt: message.createdAt instanceof Date ? message.createdAt.toISOString() : message.createdAt,
+        timestamp: message.timestamp instanceof Date ? message.timestamp.toISOString() : (message.timestamp || message.createdAt),
         sentAt: message.sentAt instanceof Date ? message.sentAt.toISOString() : (message.sentAt || null),
         deliveredAt: message.deliveredAt instanceof Date ? message.deliveredAt.toISOString() : (message.deliveredAt || null),
         readAt: message.readAt instanceof Date ? message.readAt.toISOString() : (message.readAt || null),
