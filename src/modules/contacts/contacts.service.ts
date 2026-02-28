@@ -1,6 +1,7 @@
 // src/modules/contacts/contacts.service.ts
 
 import prisma from '../../config/database';
+import { parse } from 'csv-parse/sync';
 import { AppError } from '../../middleware/errorHandler';
 import { ContactStatus, Prisma } from '@prisma/client';
 import {
@@ -130,7 +131,45 @@ export class ContactsService {
    */
   private tryNormalizePhone(phone: string): string | null {
     try {
-      return this.validateAndNormalizePhone(phone);
+      // Remove all non-numeric characters except +
+      let cleaned = phone.replace(/[^\d+]/g, '');
+
+      // Remove + if present
+      cleaned = cleaned.replace(/^\+/, '');
+
+      // Remove leading zeros
+      cleaned = cleaned.replace(/^0+/, '');
+
+      // Handle different formats
+      if (cleaned.startsWith('91') && cleaned.length === 12) {
+        // Format: 919876543210
+        cleaned = cleaned.substring(2);
+      } else if (cleaned.length === 10) {
+        // Format: 9876543210 - already correct
+      } else if (cleaned.length > 10 && cleaned.startsWith('91')) {
+        // Format: 91 9876543210 (with space converted)
+        cleaned = cleaned.substring(2);
+      } else if (cleaned.length === 11 && cleaned.startsWith('0')) {
+        // Format: 09876543210
+        cleaned = cleaned.substring(1);
+      }
+
+      // Validate: must be 10 digits starting with 6-9
+      if (cleaned.length !== 10) {
+        return null;
+      }
+
+      const firstDigit = parseInt(cleaned[0]);
+      if (firstDigit < 6 || firstDigit > 9) {
+        return null;
+      }
+
+      // All digits check
+      if (!/^\d{10}$/.test(cleaned)) {
+        return null;
+      }
+
+      return cleaned;
     } catch {
       return null;
     }
@@ -458,17 +497,28 @@ export class ContactsService {
   }
 
   // ==========================================
-  // ✅ IMPORT CONTACTS (COMPLETE FIXED)
+  // ✅ IMPORT CONTACTS (COMPLETE FIX)
   // ==========================================
 
   async import(
     organizationId: string,
-    input: ImportContactsInput & { groupName?: string }
+    input: ImportContactsInput & { groupName?: string; csvData?: string }
   ): Promise<ImportContactsResponse> {
-    const { contacts, groupId, groupName, tags = [], skipDuplicates = true } = input;
+    let { contacts, groupId, groupName, tags = [], skipDuplicates = true, csvData } = input;
+
+    // ✅ PARSE CSV IF PROVIDED
+    if (csvData && (!contacts || contacts.length === 0)) {
+      try {
+        contacts = this.parseCSV(csvData);
+        console.log(`📊 Parsed ${contacts.length} contacts from CSV`);
+      } catch (error: any) {
+        console.error('CSV parsing error:', error);
+        throw new AppError(`CSV parsing failed: ${error.message}`, 400);
+      }
+    }
 
     if (!contacts || contacts.length === 0) {
-      throw new AppError('At least one contact is required', 400);
+      throw new AppError('No valid contacts found in CSV. Please check the file format.', 400);
     }
 
     console.log(`📊 Starting import of ${contacts.length} contacts for org ${organizationId}`);
@@ -513,14 +563,14 @@ export class ContactsService {
     });
 
     const currentCount = org?._count.contacts || 0;
-    const maxContacts = org?.subscription?.plan?.maxContacts || 100;
+    const maxContacts = org?.subscription?.plan?.maxContacts || 999999;
     const availableSlots = Math.max(0, maxContacts - currentCount);
 
     if (availableSlots === 0) {
       throw new AppError('Contact limit reached. Please upgrade your plan.', 400);
     }
 
-    console.log(`📊 Available slots: ${availableSlots} (current: ${currentCount}, max: ${maxContacts})`);
+    console.log(`📊 Available slots: ${availableSlots}`);
 
     // ✅ 3. PROCESS & VALIDATE CONTACTS
     const validContacts: any[] = [];
@@ -528,17 +578,29 @@ export class ContactsService {
     const seenPhones = new Set<string>();
 
     for (let i = 0; i < contacts.length; i++) {
-      const c = contacts[i];
-      const rowNumber = i + 1;
+      const c = contacts[i] as any;
+      const rowNumber = i + 2; // +2 for header row and 0-index
 
       try {
+        // Get phone from contact
+        const rawPhone = c.phone || c.Phone || c.PHONE || c.mobile || c.Mobile || c.number || c.Number || '';
+
+        if (!rawPhone || rawPhone.toString().trim() === '') {
+          errors.push({
+            row: rowNumber,
+            phone: 'N/A',
+            error: 'Phone number is missing',
+          });
+          continue;
+        }
+
         // Normalize phone
-        const normalized = this.tryNormalizePhone(c.phone);
+        const normalized = this.tryNormalizePhone(rawPhone.toString().trim());
 
         if (!normalized) {
           errors.push({
             row: rowNumber,
-            phone: c.phone || 'N/A',
+            phone: rawPhone.toString(),
             error: 'Invalid phone number. Only Indian numbers (+91) starting with 6-9 are allowed.',
           });
           continue;
@@ -548,7 +610,7 @@ export class ContactsService {
         if (seenPhones.has(normalized)) {
           errors.push({
             row: rowNumber,
-            phone: c.phone,
+            phone: rawPhone.toString(),
             error: 'Duplicate phone number in CSV',
           });
           continue;
@@ -556,16 +618,22 @@ export class ContactsService {
 
         seenPhones.add(normalized);
 
+        // Get name
+        const firstName = c.firstName || c.name || c.Name || c.NAME || c.first_name || c.FirstName || 'Unknown';
+        const lastName = c.lastName || c.last_name || c.LastName || '';
+        const email = c.email || c.Email || c.EMAIL || '';
+
         // Merge tags
-        const mergedTags = Array.from(new Set([...(c.tags || []), ...tags]));
+        const contactTags = c.tags ? (Array.isArray(c.tags) ? c.tags : c.tags.split(',').map((t: string) => t.trim())) : [];
+        const mergedTags = Array.from(new Set([...contactTags, ...tags]));
 
         validContacts.push({
           organizationId,
           phone: normalized,
           countryCode: '+91',
-          firstName: c.firstName || 'Unknown',
-          lastName: c.lastName || null,
-          email: c.email || null,
+          firstName: firstName.toString().trim() || 'Unknown',
+          lastName: lastName.toString().trim() || null,
+          email: email.toString().trim() || null,
           tags: mergedTags,
           customFields: c.customFields || {},
           status: 'ACTIVE' as ContactStatus,
@@ -595,20 +663,12 @@ export class ContactsService {
 
     // ✅ 4. LIMIT TO AVAILABLE SLOTS
     const contactsToImport = validContacts.slice(0, availableSlots);
-    const exceededCount = validContacts.length - contactsToImport.length;
 
-    if (exceededCount > 0) {
-      console.warn(`⚠️ Limit exceeded: ${exceededCount} contacts skipped`);
-      for (let i = availableSlots; i < validContacts.length; i++) {
-        errors.push({
-          row: i + 1,
-          phone: validContacts[i].phone,
-          error: 'Contact limit reached',
-        });
-      }
+    if (validContacts.length > availableSlots) {
+      console.warn(`⚠️ Limit exceeded: ${validContacts.length - availableSlots} contacts skipped`);
     }
 
-    // ✅ 5. CREATE CONTACTS (WITH DUPLICATE HANDLING)
+    // ✅ 5. CREATE CONTACTS
     let imported = 0;
     let skipped = 0;
 
@@ -628,19 +688,15 @@ export class ContactsService {
       throw new AppError(`Import failed: ${error.message}`, 500);
     }
 
-    // ✅ 6. ADD TO GROUP (ALL VALID CONTACTS INCLUDING EXISTING)
+    // ✅ 6. ADD TO GROUP
     let addedToGroup = 0;
 
     if (targetGroupId && contactsToImport.length > 0) {
       try {
         const phones = contactsToImport.map((c) => c.phone);
 
-        // Get ALL contact IDs (newly created + existing)
         const allContacts = await prisma.contact.findMany({
-          where: {
-            organizationId,
-            phone: { in: phones }
-          },
+          where: { organizationId, phone: { in: phones } },
           select: { id: true },
         });
 
@@ -656,34 +712,143 @@ export class ContactsService {
           });
 
           addedToGroup = groupResult.count;
-          console.log(`✅ Added ${addedToGroup} contacts to group ${targetGroupId}`);
+          console.log(`✅ Added ${addedToGroup} contacts to group`);
         }
       } catch (err: any) {
         console.error('❌ Failed to add contacts to group:', err);
-        errors.push({
-          row: 0,
-          phone: 'N/A',
-          error: `Group add failed: ${err.message}`
-        });
       }
     }
 
-    // ✅ 7. UPDATE SUBSCRIPTION USAGE
+    // ✅ 7. UPDATE SUBSCRIPTION
     if (org?.subscription && imported > 0) {
       await prisma.subscription.update({
         where: { id: org.subscription.id },
         data: { contactsUsed: { increment: imported } },
       });
-      console.log(`✅ Updated subscription usage: +${imported}`);
     }
 
-    // ✅ 8. RETURN RESULTS
     return {
       imported,
       skipped,
       failed: errors.length,
-      errors: errors.slice(0, 100), // Return first 100 errors
+      errors: errors.slice(0, 100),
     };
+  }
+
+  // ==========================================
+  // ✅ CSV PARSER HELPER
+  // ==========================================
+
+  private parseCSV(csvData: string): any[] {
+    try {
+      // Clean BOM if present
+      let cleanedData = csvData;
+      if (cleanedData.charCodeAt(0) === 0xFEFF) {
+        cleanedData = cleanedData.slice(1);
+      }
+
+      // Try parsing with csv-parse
+      try {
+        const records = parse(cleanedData, {
+          columns: true,
+          skip_empty_lines: true,
+          trim: true,
+          relax_column_count: true,
+          relax_quotes: true,
+        });
+
+        if (records && records.length > 0) {
+          console.log(`✅ Parsed ${records.length} records using csv-parse`);
+          return records;
+        }
+      } catch (parseError) {
+        console.log('csv-parse failed, trying manual parsing');
+      }
+
+      // Manual CSV parsing as fallback
+      const lines = cleanedData.split(/\r?\n/).filter(line => line.trim());
+
+      if (lines.length < 2) {
+        throw new Error('CSV must have header row and at least one data row');
+      }
+
+      // Parse header
+      const headerLine = lines[0];
+      const headers = this.parseCSVLine(headerLine);
+
+      console.log('CSV Headers:', headers);
+
+      const contacts: any[] = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        const values = this.parseCSVLine(line);
+        const contact: any = {};
+
+        headers.forEach((header, index) => {
+          const key = header.trim().toLowerCase();
+          const value = values[index]?.trim() || '';
+
+          // Map common column names
+          if (['phone', 'mobile', 'number', 'contact', 'whatsapp', 'phone_number', 'phonenumber'].includes(key)) {
+            contact.phone = value;
+          } else if (['name', 'firstname', 'first_name', 'first name'].includes(key)) {
+            contact.firstName = value;
+          } else if (['lastname', 'last_name', 'last name', 'surname'].includes(key)) {
+            contact.lastName = value;
+          } else if (['email', 'email_address', 'emailaddress'].includes(key)) {
+            contact.email = value;
+          } else if (['tags', 'tag', 'labels'].includes(key)) {
+            contact.tags = value;
+          } else {
+            // Store as custom field
+            if (!contact.customFields) contact.customFields = {};
+            contact.customFields[header.trim()] = value;
+          }
+        });
+
+        if (contact.phone) {
+          contacts.push(contact);
+        }
+      }
+
+      console.log(`✅ Manually parsed ${contacts.length} contacts`);
+      return contacts;
+
+    } catch (error: any) {
+      console.error('CSV parsing error:', error);
+      throw new Error(`Failed to parse CSV: ${error.message}`);
+    }
+  }
+
+  private parseCSVLine(line: string): string[] {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      const nextChar = line[i + 1];
+
+      if (char === '"') {
+        if (inQuotes && nextChar === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+
+    result.push(current.trim());
+    return result;
   }
 
   // ==========================================

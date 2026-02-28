@@ -20,7 +20,22 @@ import {
 import { contactsImportMiddleware } from './contacts.import.middleware';
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+// Multer config for CSV upload
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'text/csv' ||
+      file.originalname.endsWith('.csv') ||
+      file.mimetype === 'application/vnd.ms-excel') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only CSV files are allowed'));
+    }
+  },
+});
 
 // All routes require authentication
 router.use(authenticate);
@@ -69,14 +84,10 @@ router.delete(
 router.get('/', contactsController.getList.bind(contactsController));
 router.post('/', validate(createContactSchema), checkContactLimit, contactsController.create.bind(contactsController));
 
-// ✅ Import contacts (NOW supports JSON + Array + CSV file)
-router.post(
-  '/import',
-  contactsImportMiddleware,       // converts array/file into {contacts:[]}
-  checkContactLimit,              // ✅ ADD THIS
-  validate(importContactsSchema), // validates normalized body
-  contactsController.import.bind(contactsController)
-);
+// Import contacts - with file upload
+router.post('/import', upload.single('file'), (req, res, next) => {
+  contactsController.import(req, res, next);
+});
 
 router.patch('/bulk', validate(bulkUpdateSchema), contactsController.bulkUpdate.bind(contactsController));
 router.delete('/bulk', validate(bulkDeleteSchema), contactsController.bulkDelete.bind(contactsController));

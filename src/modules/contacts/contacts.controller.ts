@@ -131,7 +131,7 @@ export class ContactsController {
   }
 
   // ==========================================
-  // IMPORT CONTACTS
+  // IMPORT CONTACTS (FIXED)
   // ==========================================
   async import(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -140,12 +140,56 @@ export class ContactsController {
         throw new AppError('Organization context required', 400);
       }
 
-      const input: ImportContactsInput = req.body;
+      let input: ImportContactsInput & { csvData?: string; groupName?: string; groupId?: string } = req.body;
+
+      // ✅ Handle file upload (multer)
+      if (req.file) {
+        const csvData = req.file.buffer.toString('utf-8');
+        console.log(`📁 Received CSV file: ${req.file.originalname}, Size: ${req.file.size} bytes`);
+        input.csvData = csvData;
+      }
+
+      // ✅ Handle raw CSV in body
+      if (req.body.csvData && typeof req.body.csvData === 'string') {
+        input.csvData = req.body.csvData;
+      }
+
+      // ✅ Handle contacts array directly
+      if (req.body.contacts && Array.isArray(req.body.contacts)) {
+        input.contacts = req.body.contacts;
+      }
+
+      // Get tags
+      if (req.body.tags) {
+        if (typeof req.body.tags === 'string') {
+          try {
+            input.tags = JSON.parse(req.body.tags);
+          } catch {
+            input.tags = req.body.tags.split(',').map((t: string) => t.trim());
+          }
+        } else if (Array.isArray(req.body.tags)) {
+          input.tags = req.body.tags;
+        }
+      }
+
+      // Get group info
+      input.groupId = req.body.groupId;
+      input.groupName = req.body.groupName;
+
+      console.log('Import input:', {
+        hasCSVData: !!input.csvData,
+        csvLength: input.csvData?.length,
+        contactsCount: input.contacts?.length,
+        tags: input.tags,
+        groupId: input.groupId,
+        groupName: input.groupName,
+      });
+
       const result = await contactsService.import(organizationId, input);
 
       const message = result.failed > 0
-        ? `Imported ${result.imported} contacts. ${result.failed} failed (only Indian numbers allowed)`
-        : `Successfully imported ${result.imported} contacts`;
+        ? `Imported ${result.imported} contacts. ${result.failed} failed (only Indian +91 numbers allowed).`
+        : `Successfully imported ${result.imported} contacts.`;
 
       sendSuccess(res, result, message);
     } catch (error) {
