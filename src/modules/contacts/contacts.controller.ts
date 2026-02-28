@@ -143,9 +143,10 @@ export class ContactsController {
       let input: ImportContactsInput & { csvData?: string; groupName?: string; groupId?: string } = req.body;
 
       // ✅ Handle file upload (multer)
-      if (req.file) {
-        const csvData = req.file.buffer.toString('utf-8');
-        console.log(`📁 Received CSV file: ${req.file.originalname}, Size: ${req.file.size} bytes`);
+      const file = (req as any).file;
+      if (file) {
+        const csvData = file.buffer.toString('utf-8');
+        console.log(`📁 Received CSV file: ${file.originalname}, Size: ${file.size} bytes`);
         input.csvData = csvData;
       }
 
