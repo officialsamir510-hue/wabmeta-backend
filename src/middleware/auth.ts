@@ -37,10 +37,9 @@ export const authenticate = async (
     }
 
     if (!token) {
-      console.warn(`🔒 Auth failed: No token found.`, {
+      console.warn(`🔒 Auth failed: No token found. Cookies received: ${JSON.stringify(Object.keys(req.cookies || {}))}`, {
         url: req.originalUrl,
         headers: Object.keys(req.headers),
-        cookies: req.cookies ? Object.keys(req.cookies) : 'none',
         query: Object.keys(req.query)
       });
       throw new AppError('Access token required', 401);

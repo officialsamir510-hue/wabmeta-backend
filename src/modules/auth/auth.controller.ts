@@ -24,13 +24,17 @@ interface AuthRequest extends Request {
   };
 }
 
-const cookieOptions = () => ({
-  httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: (process.env.NODE_ENV === 'production' ? 'none' : 'lax') as 'none' | 'lax',
-  maxAge: 7 * 24 * 60 * 60 * 1000,
-  path: '/',
-});
+const cookieOptions = (isRefresh: boolean = false) => {
+  const isProduction = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
+
+  return {
+    httpOnly: true,
+    secure: true, // Always true for cross-site support in modern browsers
+    sameSite: 'none' as const, // Required for cross-site (Frontend .com to Backend .onrender.com)
+    maxAge: isRefresh ? 7 * 24 * 60 * 60 * 1000 : 1 * 60 * 60 * 1000, // 7 days or 1 hour
+    path: '/',
+  };
+};
 
 export class AuthController {
   async register(req: Request, res: Response, next: NextFunction) {
@@ -38,7 +42,8 @@ export class AuthController {
       const input: RegisterInput = req.body;
       const result = await authService.register(input);
 
-      res.cookie('refreshToken', result.tokens.refreshToken, cookieOptions());
+      res.cookie('refreshToken', result.tokens.refreshToken, cookieOptions(true));
+      res.cookie('accessToken', result.tokens.accessToken, cookieOptions(false));
       return sendSuccess(res, result, 'Registration successful', 201);
     } catch (error) {
       next(error);
@@ -50,7 +55,8 @@ export class AuthController {
       const input: LoginInput = req.body;
       const result = await authService.login(input);
 
-      res.cookie('refreshToken', result.tokens.refreshToken, cookieOptions());
+      res.cookie('refreshToken', result.tokens.refreshToken, cookieOptions(true));
+      res.cookie('accessToken', result.tokens.accessToken, cookieOptions(false));
       return sendSuccess(res, result, 'Login successful');
     } catch (error) {
       next(error);
@@ -112,7 +118,8 @@ export class AuthController {
       const { email, otp }: VerifyOTPInput = req.body;
       const result = await authService.verifyOTP(email, otp);
 
-      res.cookie('refreshToken', result.tokens.refreshToken, cookieOptions());
+      res.cookie('refreshToken', result.tokens.refreshToken, cookieOptions(true));
+      res.cookie('accessToken', result.tokens.accessToken, cookieOptions(false));
       return sendSuccess(res, result, 'OTP verified successfully');
     } catch (error) {
       next(error);
@@ -124,7 +131,8 @@ export class AuthController {
       const { credential }: GoogleAuthInput = req.body;
       const result = await authService.googleAuth(credential);
 
-      res.cookie('refreshToken', result.tokens.refreshToken, cookieOptions());
+      res.cookie('refreshToken', result.tokens.refreshToken, cookieOptions(true));
+      res.cookie('accessToken', result.tokens.accessToken, cookieOptions(false));
       return sendSuccess(res, result, 'Google authentication successful');
     } catch (error) {
       next(error);
@@ -136,6 +144,8 @@ export class AuthController {
       const refreshToken =
         req.cookies?.refreshToken || (req.body as RefreshTokenInput)?.refreshToken;
 
+      console.log('🔄 Refreshing token. Has cookie:', !!req.cookies?.refreshToken, 'Has body:', !!(req.body as any)?.refreshToken);
+
       if (!refreshToken) {
         return res.status(401).json({
           success: false,
@@ -145,7 +155,8 @@ export class AuthController {
 
       const tokens = await authService.refreshToken(refreshToken);
 
-      res.cookie('refreshToken', tokens.refreshToken, cookieOptions());
+      res.cookie('refreshToken', tokens.refreshToken, cookieOptions(true));
+      res.cookie('accessToken', tokens.accessToken, cookieOptions(false));
       return sendSuccess(res, tokens, 'Token refreshed');
     } catch (error) {
       next(error);
@@ -160,7 +171,8 @@ export class AuthController {
         await authService.logout(refreshToken);
       }
 
-      res.clearCookie('refreshToken', cookieOptions());
+      res.clearCookie('refreshToken', cookieOptions(true));
+      res.clearCookie('accessToken', cookieOptions(false));
       return sendSuccess(res, null, 'Logged out successfully');
     } catch (error) {
       next(error);
@@ -172,7 +184,8 @@ export class AuthController {
       const userId = req.user!.id;
       const result = await authService.logoutAll(userId);
 
-      res.clearCookie('refreshToken', cookieOptions());
+      res.clearCookie('refreshToken', cookieOptions(true));
+      res.clearCookie('accessToken', cookieOptions(false));
       return sendSuccess(res, result, result.message);
     } catch (error) {
       next(error);

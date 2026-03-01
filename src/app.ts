@@ -97,9 +97,12 @@ app.use(
     allowedHeaders: [
       'Content-Type',
       'Authorization',
+      'authorization',
       'X-Requested-With',
       'X-Organization-Id',
       'x-organization-id',
+      'X-Access-Token',
+      'x-access-token',
       'Accept',
       'Origin',
       'X-Hub-Signature-256',
