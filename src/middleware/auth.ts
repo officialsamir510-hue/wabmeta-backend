@@ -6,10 +6,22 @@ import { verifyAccessToken, TokenPayload } from '../utils/jwt';
 import { AppError } from './errorHandler';
 import prisma from '../config/database';
 import { getRedis } from '../config/redis';
+import { authService } from '../modules/auth/auth.service';
 
 const redis = getRedis();
+
 const USER_CACHE_PREFIX = 'user:auth:';
 const CACHE_TTL = 120; // 120 seconds
+
+const cookieOptions = (isRefresh: boolean = false) => {
+  return {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'none' as const,
+    maxAge: isRefresh ? 7 * 24 * 60 * 60 * 1000 : 1 * 60 * 60 * 1000,
+    path: '/',
+  };
+};
 
 export const authenticate = async (
   req: AuthRequest,
@@ -34,6 +46,24 @@ export const authenticate = async (
     // 4. Check Query Parameter (as a last resort)
     else if (req.query.token) {
       token = req.query.token as string;
+    }
+
+    // 🔄 AUTO-HEALING: If no access token but refresh cookie exists
+    if (!token && req.cookies?.refreshToken) {
+      try {
+        console.log('🛡️ Auto-healing: Missing access token but found refresh cookie. Attempting background refresh...');
+        const newTokens = await authService.refreshToken(req.cookies.refreshToken);
+
+        // Success! Set new cookies and use the new access token
+        res.cookie('refreshToken', newTokens.refreshToken, cookieOptions(true));
+        res.cookie('accessToken', newTokens.accessToken, cookieOptions(false));
+        token = newTokens.accessToken;
+
+        console.log('✅ Auto-healing: Session restored silently.');
+      } catch (refreshError) {
+        console.warn('❌ Auto-healing failed:', (refreshError as Error).message);
+        // Fall through to regular error handling
+      }
     }
 
     if (!token) {
