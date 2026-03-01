@@ -107,7 +107,13 @@ app.use(
       'Origin',
       'X-Hub-Signature-256',
     ],
-    exposedHeaders: ['Content-Range', 'X-Content-Range', 'X-Total-Count'],
+    exposedHeaders: [
+      'Content-Range',
+      'X-Content-Range',
+      'X-Total-Count',
+      'x-new-access-token',
+      'x-token-refreshed',
+    ],
     maxAge: 600,
     optionsSuccessStatus: 204,
   })

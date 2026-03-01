@@ -57,12 +57,15 @@ export const authenticate = async (
         // Success! Set new cookies and use the new access token
         res.cookie('refreshToken', newTokens.refreshToken, cookieOptions(true));
         res.cookie('accessToken', newTokens.accessToken, cookieOptions(false));
-        token = newTokens.accessToken;
+        res.setHeader('x-new-access-token', newTokens.accessToken);
+        res.setHeader('x-token-refreshed', 'true');
+        res.setHeader('Access-Control-Expose-Headers', 'x-new-access-token, x-token-refreshed');
 
-        console.log('✅ Auto-healing: Session restored silently.');
+        token = newTokens.accessToken;
+        console.log('✅ Auto-healing: Session restored silently and synced.');
       } catch (refreshError) {
         console.warn('❌ Auto-healing failed:', (refreshError as Error).message);
-        // Fall through to regular error handling
+        // Fall through to 401 handling
       }
     }
 
