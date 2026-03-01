@@ -17,14 +17,28 @@ export const authenticate = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    // Get token from header
-    const authHeader = req.headers.authorization;
+    // Get token from header (try both capitalization)
+    let token = '';
+    const authHeader = req.headers.authorization || (req.headers as any).Authorization;
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new AppError('Access token required', 401);
+    if (authHeader && /^Bearer /i.test(authHeader)) {
+      token = authHeader.split(' ')[1];
+    }
+    // Fallback to cookie if exists
+    else if (req.cookies?.accessToken) {
+      token = req.cookies.accessToken;
     }
 
-    const token = authHeader.split(' ')[1];
+    if (!token) {
+      console.warn(`🔒 Auth failed: No token found. Headers:`, {
+        host: req.headers.host,
+        origin: req.headers.origin,
+        'user-agent': req.headers['user-agent'],
+        hasAuth: !!authHeader,
+        authPrefix: authHeader ? authHeader.substring(0, 10) : 'none'
+      });
+      throw new AppError('Access token required', 401);
+    }
 
     // Verify token
     const decoded = verifyAccessToken(token) as TokenPayload;
