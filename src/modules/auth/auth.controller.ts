@@ -134,7 +134,7 @@ export class AuthController {
   async refreshToken(req: Request, res: Response, next: NextFunction) {
     try {
       const refreshToken =
-        req.cookies.refreshToken || (req.body as RefreshTokenInput)?.refreshToken;
+        req.cookies?.refreshToken || (req.body as RefreshTokenInput)?.refreshToken;
 
       if (!refreshToken) {
         return res.status(401).json({
@@ -154,7 +154,7 @@ export class AuthController {
 
   async logout(req: Request, res: Response, next: NextFunction) {
     try {
-      const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
+      const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
 
       if (refreshToken) {
         await authService.logout(refreshToken);

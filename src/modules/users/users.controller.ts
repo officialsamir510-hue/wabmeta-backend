@@ -91,7 +91,7 @@ export class UsersController {
   async getSessions(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user!.id;
-      const currentToken = req.cookies.refreshToken;
+      const currentToken = req.cookies?.refreshToken;
       const sessions = await usersService.getActiveSessions(userId, currentToken);
       return sendSuccess(res, sessions, 'Sessions fetched successfully');
     } catch (error) {
@@ -119,7 +119,7 @@ export class UsersController {
   async revokeAllSessions(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const userId = req.user!.id;
-      const currentToken = req.cookies.refreshToken;
+      const currentToken = req.cookies?.refreshToken;
       const result = await usersService.revokeAllSessions(userId, currentToken);
       return sendSuccess(res, result, result.message);
     } catch (error) {
