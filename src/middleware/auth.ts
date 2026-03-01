@@ -17,25 +17,31 @@ export const authenticate = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    // Get token from header (try both capitalization)
     let token = '';
+    // 1. Check Header (Authorization or authorization)
     const authHeader = req.headers.authorization || (req.headers as any).Authorization;
-
     if (authHeader && /^Bearer /i.test(authHeader)) {
       token = authHeader.split(' ')[1];
     }
-    // Fallback to cookie if exists
-    else if (req.cookies?.accessToken) {
-      token = req.cookies.accessToken;
+    // 2. Check Alternative Headers
+    else if (req.headers['x-access-token']) {
+      token = req.headers['x-access-token'] as string;
+    }
+    // 3. Check Cookies
+    else if (req.cookies?.accessToken || req.cookies?.token) {
+      token = req.cookies.accessToken || req.cookies.token;
+    }
+    // 4. Check Query Parameter (as a last resort)
+    else if (req.query.token) {
+      token = req.query.token as string;
     }
 
     if (!token) {
-      console.warn(`🔒 Auth failed: No token found. Headers:`, {
-        host: req.headers.host,
-        origin: req.headers.origin,
-        'user-agent': req.headers['user-agent'],
-        hasAuth: !!authHeader,
-        authPrefix: authHeader ? authHeader.substring(0, 10) : 'none'
+      console.warn(`🔒 Auth failed: No token found.`, {
+        url: req.originalUrl,
+        headers: Object.keys(req.headers),
+        cookies: req.cookies ? Object.keys(req.cookies) : 'none',
+        query: Object.keys(req.query)
       });
       throw new AppError('Access token required', 401);
     }
