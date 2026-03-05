@@ -511,7 +511,7 @@ export class ContactsController {
 
       const {
         phoneNumbers,      // Raw string with numbers
-        countryCode = '+91',
+        // ❌ No countryCode parameter - auto detect
         tags = [],
         groupId
       } = req.body;
@@ -520,11 +520,11 @@ export class ContactsController {
         throw new AppError('Phone numbers are required', 400);
       }
 
-      // ✅ Parse international numbers
-      const { valid, invalid } = parseMultiplePhones(phoneNumbers, countryCode);
+      // ✅ Parse with auto-detection
+      const { valid, invalid } = parseMultiplePhones(phoneNumbers);
 
       if (valid.length === 0) {
-        throw new AppError('No valid phone numbers found', 400);
+        throw new AppError('No valid phone numbers found. Make sure to include country code (e.g., +91, +1)', 400);
       }
 
       // ✅ Limit check
@@ -592,7 +592,7 @@ export class ContactsController {
           validNumbers: valid.length,
           invalidNumbers: invalid.length,
           created: createdCount,
-          duplicatesSkipped: valid.length - createdCount - (newContacts.length - createdCount),
+          duplicatesSkipped: valid.length - createdCount,
           invalidDetails: invalid.slice(0, 10) // Return first 10 invalid
         },
         message: `${createdCount} contacts created successfully`
@@ -619,7 +619,7 @@ export class ContactsController {
 
       const {
         contacts,           // Array of contact objects from CSV
-        defaultCountryCode = '+91',
+        // ❌ No defaultCountryCode parameter - auto detect
         groupId,
         tags = []
       } = req.body;
@@ -651,7 +651,7 @@ export class ContactsController {
             continue;
           }
 
-          const { valid } = parseMultiplePhones(String(phoneInput), defaultCountryCode);
+          const { valid } = parseMultiplePhones(String(phoneInput));
           if (valid.length === 0) {
             results.skipped++;
             results.errors.push(`Invalid: ${phoneInput}`);
