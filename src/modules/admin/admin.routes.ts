@@ -214,6 +214,17 @@ router.put(
   adminController.updateSubscription.bind(adminController)
 );
 
+// Feature Management
+router.get(
+  '/organizations/:organizationId/features',
+  adminController.getOrganizationFeatures.bind(adminController)
+);
+
+router.put(
+  '/organizations/:organizationId/features',
+  adminController.updateOrganizationFeatures.bind(adminController)
+);
+
 // ============================================
 // SUBSCRIPTION MANAGEMENT ROUTES
 // ============================================
@@ -380,6 +391,20 @@ router.put(
   requireSuperAdmin,
   validate(updateSystemSettingsSchema),
   adminController.updateSystemSettings.bind(adminController)
+);
+
+// ============================================
+// WHATSAPP CONNECTION MANAGEMENT
+// ============================================
+
+router.get(
+  '/whatsapp-connections',
+  adminController.getWhatsAppConnections.bind(adminController)
+);
+
+router.post(
+  '/whatsapp-connections/:accountId/disconnect',
+  adminController.disconnectWhatsAppAccount.bind(adminController)
 );
 
 export default router;

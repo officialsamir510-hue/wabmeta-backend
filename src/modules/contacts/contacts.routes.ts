@@ -41,6 +41,13 @@ const upload = multer({
 router.use(authenticate);
 
 // ============================================
+// FEATURE ACCESS & COMMON
+// ============================================
+
+router.get('/feature-access', contactsController.getFeatureAccess.bind(contactsController));
+router.get('/country-codes', contactsController.getCountryCodes.bind(contactsController));
+
+// ============================================
 // CONTACT ROUTES (STATIC FIRST)
 // ============================================
 
@@ -88,6 +95,12 @@ router.post('/', validate(createContactSchema), checkContactLimit, contactsContr
 router.post('/import', upload.single('file'), (req, res, next) => {
   contactsController.import(req, res, next);
 });
+
+// ✅ Simple Bulk Paste (₹2,500+)
+router.post('/bulk-paste', contactsController.simpleBulkPaste.bind(contactsController));
+
+// ✅ CSV Upload (₹899+)
+router.post('/csv-upload', contactsController.csvUpload.bind(contactsController));
 
 router.patch('/bulk', validate(bulkUpdateSchema), contactsController.bulkUpdate.bind(contactsController));
 router.delete('/bulk', validate(bulkDeleteSchema), contactsController.bulkDelete.bind(contactsController));

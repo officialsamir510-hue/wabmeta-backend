@@ -4,7 +4,10 @@ import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../../types/express';
 import { contactsService } from './contacts.service';
 import { sendSuccess } from '../../utils/response';
+import prisma from '../../config/database';
 import { AppError } from '../../middleware/errorHandler';
+import { contactFeaturesService } from './contacts.features';
+import { parseMultiplePhones, COUNTRY_CODES } from '../../utils/phoneInternational';
 import {
   CreateContactInput,
   UpdateContactInput,
@@ -454,6 +457,278 @@ export class ContactsController {
         data: result.contacts,
         meta: result.meta,
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ============================================
+  // FEATURE ACCESS
+  // ============================================
+
+  async getFeatureAccess(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        throw new AppError('Organization not found', 404);
+      }
+
+      const access = await contactFeaturesService.getFeatureAccess(organizationId);
+
+      return res.json({
+        success: true,
+        data: access
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ============================================
+  // GET COUNTRY CODES
+  // ============================================
+
+  async getCountryCodes(req: AuthRequest, res: Response) {
+    return res.json({
+      success: true,
+      data: COUNTRY_CODES
+    });
+  }
+
+  // ============================================
+  // SIMPLE BULK PASTE (₹2,500+ Plans)
+  // ============================================
+
+  async simpleBulkPaste(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        throw new AppError('Organization not found', 404);
+      }
+
+      // ✅ Check feature access (Quarterly+)
+      await contactFeaturesService.validateAccess(organizationId, 'simpleBulkPaste');
+
+      const {
+        phoneNumbers,      // Raw string with numbers
+        countryCode = '+91',
+        tags = [],
+        groupId
+      } = req.body;
+
+      if (!phoneNumbers || typeof phoneNumbers !== 'string') {
+        throw new AppError('Phone numbers are required', 400);
+      }
+
+      // ✅ Parse international numbers
+      const { valid, invalid } = parseMultiplePhones(phoneNumbers, countryCode);
+
+      if (valid.length === 0) {
+        throw new AppError('No valid phone numbers found', 400);
+      }
+
+      // ✅ Limit check
+      const MAX_BULK = 5000;
+      if (valid.length > MAX_BULK) {
+        throw new AppError(`Maximum ${MAX_BULK} contacts per upload`, 400);
+      }
+
+      // ✅ Get existing contacts (check duplicates)
+      const existingContacts = await prisma.contact.findMany({
+        where: {
+          organizationId,
+          phone: { in: valid.map(p => p.fullNumber) }
+        },
+        select: { phone: true }
+      });
+
+      const existingPhones = new Set(existingContacts.map(c => c.phone));
+      const newContacts = valid.filter(p => !existingPhones.has(p.fullNumber));
+
+      // ✅ Create contacts
+      const contactsToCreate = newContacts.map((parsed, index) => ({
+        organizationId,
+        phone: parsed.fullNumber,
+        countryCode: parsed.countryCode,
+        firstName: `Contact ${index + 1}`,
+        tags: Array.isArray(tags) ? tags : [],
+        source: 'BULK_PASTE',
+        status: 'ACTIVE' as const
+      }));
+
+      let createdCount = 0;
+
+      if (contactsToCreate.length > 0) {
+        const result = await prisma.contact.createMany({
+          data: contactsToCreate,
+          skipDuplicates: true
+        });
+        createdCount = result.count;
+      }
+
+      // ✅ Add to group if specified
+      if (groupId && createdCount > 0) {
+        const newContactIds = await prisma.contact.findMany({
+          where: {
+            organizationId,
+            phone: { in: newContacts.map(p => p.fullNumber) }
+          },
+          select: { id: true }
+        });
+
+        await prisma.contactGroupMember.createMany({
+          data: newContactIds.map(c => ({
+            groupId,
+            contactId: c.id
+          })),
+          skipDuplicates: true
+        });
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          totalInput: valid.length + invalid.length,
+          validNumbers: valid.length,
+          invalidNumbers: invalid.length,
+          created: createdCount,
+          duplicatesSkipped: valid.length - createdCount - (newContacts.length - createdCount),
+          invalidDetails: invalid.slice(0, 10) // Return first 10 invalid
+        },
+        message: `${createdCount} contacts created successfully`
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ============================================
+  // CSV UPLOAD (₹899+ Plans)
+  // ============================================
+
+  async csvUpload(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        throw new AppError('Organization not found', 404);
+      }
+
+      // ✅ Check feature access (Monthly+)
+      await contactFeaturesService.validateAccess(organizationId, 'csvUpload');
+
+      const {
+        contacts,           // Array of contact objects from CSV
+        defaultCountryCode = '+91',
+        groupId,
+        tags = []
+      } = req.body;
+
+      if (!contacts || !Array.isArray(contacts) || contacts.length === 0) {
+        throw new AppError('No contacts provided', 400);
+      }
+
+      // ✅ Limit check
+      const MAX_CSV = 10000;
+      if (contacts.length > MAX_CSV) {
+        throw new AppError(`Maximum ${MAX_CSV} contacts per CSV upload`, 400);
+      }
+
+      const results = {
+        created: 0,
+        updated: 0,
+        skipped: 0,
+        errors: [] as string[]
+      };
+
+      // ✅ Process each contact
+      for (const contact of contacts) {
+        try {
+          // Parse phone number (support international)
+          const phoneInput = contact.phone || contact.phoneNumber || contact.mobile;
+          if (!phoneInput) {
+            results.skipped++;
+            continue;
+          }
+
+          const { valid } = parseMultiplePhones(String(phoneInput), defaultCountryCode);
+          if (valid.length === 0) {
+            results.skipped++;
+            results.errors.push(`Invalid: ${phoneInput}`);
+            continue;
+          }
+
+          const parsed = valid[0];
+
+          // Check existing
+          const existing = await prisma.contact.findFirst({
+            where: {
+              organizationId,
+              phone: parsed.fullNumber
+            }
+          });
+
+          if (existing) {
+            // Update existing contact
+            await prisma.contact.update({
+              where: { id: existing.id },
+              data: {
+                firstName: contact.firstName || contact.first_name || existing.firstName,
+                lastName: contact.lastName || contact.last_name || existing.lastName,
+                email: contact.email || existing.email,
+                tags: {
+                  push: tags
+                }
+              }
+            });
+            results.updated++;
+          } else {
+            // Create new contact
+            const newContact = await prisma.contact.create({
+              data: {
+                organizationId,
+                phone: parsed.fullNumber,
+                countryCode: parsed.countryCode,
+                firstName: contact.firstName || contact.first_name || 'Unknown',
+                lastName: contact.lastName || contact.last_name || undefined,
+                email: contact.email || undefined,
+                tags: tags,
+                source: 'CSV_IMPORT',
+                status: 'ACTIVE'
+              }
+            });
+
+            // Add to group if specified
+            if (groupId) {
+              await prisma.contactGroupMember.create({
+                data: {
+                  groupId,
+                  contactId: newContact.id
+                }
+              }).catch(() => { }); // Ignore if already exists
+            }
+
+            results.created++;
+          }
+
+        } catch (err: any) {
+          results.skipped++;
+          results.errors.push(err.message);
+        }
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          totalProcessed: contacts.length,
+          created: results.created,
+          updated: results.updated,
+          skipped: results.skipped,
+          errors: results.errors.slice(0, 10)
+        },
+        message: `${results.created} created, ${results.updated} updated`
+      });
+
     } catch (error) {
       next(error);
     }

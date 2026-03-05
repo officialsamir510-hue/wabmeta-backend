@@ -68,6 +68,12 @@ model Organization {
   timezone         String               @default("UTC")
   ownerId          String
   planType         PlanType             @default(FREE_DEMO)
+  
+  // ✅ Feature Flags (Admin Override)
+  featureSimpleBulkUpload  Boolean  @default(false)
+  featureCsvUpload         Boolean  @default(false)
+  featureOverrideByAdmin   Boolean  @default(false)
+
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
   activityLogs     ActivityLog[]

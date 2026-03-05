@@ -4,6 +4,7 @@ import { Request, Response, NextFunction } from 'express';
 import { adminService } from './admin.service';
 import { adminBillingService } from './admin.billing.service';
 import { AppError } from '../../middleware/errorHandler';
+import prisma from '../../config/database';
 
 // ============================================
 // TYPES
@@ -423,6 +424,82 @@ export class AdminController {
     }
   }
 
+  // ============================================
+  // FEATURE MANAGEMENT
+  // ============================================
+
+  async getOrganizationFeatures(req: AdminRequest, res: Response, next: NextFunction) {
+    try {
+      const organizationId = getParamId(req.params.organizationId);
+
+      const org = await prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: {
+          id: true,
+          name: true,
+          planType: true,
+          featureSimpleBulkUpload: true,
+          featureCsvUpload: true,
+          featureOverrideByAdmin: true
+        }
+      });
+
+      if (!org) {
+        throw new AppError('Organization not found', 404);
+      }
+
+      return sendSuccess(res, {
+        organizationId: org.id,
+        organizationName: org.name,
+        currentPlan: org.planType,
+        features: {
+          simpleBulkPaste: (org as any).featureSimpleBulkUpload ?? false,
+          csvUpload: (org as any).featureCsvUpload ?? false,
+          adminOverride: (org as any).featureOverrideByAdmin ?? false
+        }
+      }, 'Features fetched');
+
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async updateOrganizationFeatures(req: AdminRequest, res: Response, next: NextFunction) {
+    try {
+      const organizationId = getParamId(req.params.organizationId);
+      const { simpleBulkPaste, csvUpload, enableOverride } = req.body;
+
+      const org = await prisma.organization.findUnique({
+        where: { id: organizationId }
+      });
+
+      if (!org) {
+        throw new AppError('Organization not found', 404);
+      }
+
+      const updated = await prisma.organization.update({
+        where: { id: organizationId },
+        data: {
+          featureSimpleBulkUpload: simpleBulkPaste,
+          featureCsvUpload: csvUpload,
+          featureOverrideByAdmin: enableOverride ?? true
+        } as any
+      });
+
+      return sendSuccess(res, {
+        organizationId,
+        features: {
+          simpleBulkPaste: (updated as any).featureSimpleBulkUpload,
+          csvUpload: (updated as any).featureCsvUpload,
+          adminOverride: (updated as any).featureOverrideByAdmin
+        }
+      }, 'Features updated');
+
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // ==========================================
   // PLAN MANAGEMENT
   // ==========================================
@@ -715,6 +792,63 @@ export class AdminController {
     } catch (error: any) {
       console.error('Get subscription stats error:', error);
       return sendError(res, error.message || 'Failed to get stats', 500);
+    }
+  }
+
+  // ============================================
+  // WHATSAPP CONNECTION MANAGEMENT
+  // ============================================
+
+  async getWhatsAppConnections(req: AdminRequest, res: Response, next: NextFunction) {
+    try {
+      const connections = await prisma.whatsAppAccount.findMany({
+        include: {
+          organization: {
+            select: {
+              id: true,
+              name: true,
+              owner: {
+                select: {
+                  id: true,
+                  email: true,
+                  firstName: true,
+                  lastName: true
+                }
+              }
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      return sendSuccess(res, connections, 'WhatsApp connections fetched');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async disconnectWhatsAppAccount(req: AdminRequest, res: Response, next: NextFunction) {
+    try {
+      const accountId = getParamId(req.params.accountId);
+
+      if (!accountId) {
+        throw new AppError('Account ID required', 400);
+      }
+
+      // Soft disconnect (preserves data)
+      await prisma.whatsAppAccount.update({
+        where: { id: accountId },
+        data: {
+          status: 'DISCONNECTED',
+          accessToken: null,
+          tokenExpiresAt: null,
+          isActive: false
+        }
+      });
+
+      return sendSuccess(res, null, 'Account disconnected successfully');
+    } catch (error) {
+      next(error);
     }
   }
 }
