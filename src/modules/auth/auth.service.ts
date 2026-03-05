@@ -178,46 +178,49 @@ export class AuthService {
         },
       });
 
-      // Create organization if name provided (your current flow)
-      let organization = null;
+      // Create organization always
+      const computedOrgName = organizationName && organizationName.trim().length > 0
+        ? organizationName.trim()
+        : `${firstName || 'User'}'s Workspace`;
 
-      if (organizationName && organizationName.trim().length > 0) {
-        organization = await tx.organization.create({
-          data: {
-            name: organizationName.trim(),
-            slug: generateSlug(organizationName),
-            ownerId: user.id,
-            planType: 'FREE_DEMO',
-          },
-        });
+      const organization = await tx.organization.create({
+        data: {
+          name: computedOrgName,
+          slug: generateSlug(computedOrgName) + '-' + Math.random().toString(36).substring(2, 7),
+          ownerId: user.id,
+          planType: 'FREE_DEMO',
+          featureSimpleBulkUpload: false,
+          featureCsvUpload: false,
+          featureOverrideByAdmin: false,
+        } as any,
+      });
 
-        // Add user as organization member
-        await tx.organizationMember.create({
-          data: {
-            organizationId: organization.id,
-            userId: user.id,
-            role: 'OWNER',
-            joinedAt: new Date(),
-          },
-        });
+      // Add user as organization member
+      await tx.organizationMember.create({
+        data: {
+          organizationId: organization.id,
+          userId: user.id,
+          role: 'OWNER',
+          joinedAt: new Date(),
+        },
+      });
 
-        // Wait, we can define the subscription for FREE_DEMO if needed, else it is handled
-        const freePlan = await tx.plan.findUnique({ where: { type: 'FREE_DEMO' } });
-        if (!freePlan) {
-          throw new AppError('FREE_DEMO plan not found. Please run db:seed.', 500);
-        }
-
-        await tx.subscription.create({
-          data: {
-            organizationId: organization.id,
-            planId: freePlan.id,
-            status: 'ACTIVE',
-            billingCycle: 'monthly',
-            currentPeriodStart: new Date(),
-            currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-          },
-        });
+      // Wait, we can define the subscription for FREE_DEMO if needed, else it is handled
+      const freePlan = await tx.plan.findUnique({ where: { type: 'FREE_DEMO' } });
+      if (!freePlan) {
+        throw new AppError('FREE_DEMO plan not found. Please run db:seed.', 500);
       }
+
+      await tx.subscription.create({
+        data: {
+          organizationId: organization.id,
+          planId: freePlan.id,
+          status: 'ACTIVE',
+          billingCycle: 'monthly',
+          currentPeriodStart: new Date(),
+          currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        },
+      });
 
       return { user, organization };
     });
@@ -312,11 +315,46 @@ export class AuthService {
     }
 
     // Get default organization
-    const organization = await getDefaultOrganization(user.id);
+    let organization = await getDefaultOrganization(user.id);
 
     if (!organization) {
-      console.log('⚠️ No organization found for user');
-      // You might want to create one here or handle differently
+      console.log('⚠️ No organization found for user, auto-creating...');
+      const orgName = `${user.firstName || 'User'}'s Workspace`;
+      organization = await prisma.organization.create({
+        data: {
+          name: orgName,
+          slug: generateSlug(orgName) + '-' + Math.random().toString(36).substring(2, 7),
+          ownerId: user.id,
+          planType: 'FREE_DEMO',
+          featureSimpleBulkUpload: false,
+          featureCsvUpload: false,
+          featureOverrideByAdmin: false,
+        } as any,
+      });
+
+      await prisma.organizationMember.create({
+        data: {
+          organizationId: organization.id,
+          userId: user.id,
+          role: 'OWNER',
+          joinedAt: new Date(),
+        },
+      });
+
+      // Assign FREE_DEMO subscription
+      const freePlan = await prisma.plan.findUnique({ where: { type: 'FREE_DEMO' } });
+      if (freePlan) {
+        await prisma.subscription.create({
+          data: {
+            organizationId: organization.id,
+            planId: freePlan.id,
+            status: 'ACTIVE',
+            billingCycle: 'monthly',
+            currentPeriodStart: new Date(),
+            currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          },
+        });
+      }
     }
 
     // Update last login
@@ -662,10 +700,13 @@ export class AuthService {
       const organization = await prisma.organization.create({
         data: {
           name: `${given_name}'s Workspace`,
-          slug: generateSlug(`${given_name}-workspace`),
+          slug: generateSlug(`${given_name}-workspace`) + '-' + Math.random().toString(36).substring(2, 7),
           ownerId: user.id,
           planType: 'FREE_DEMO',
-        },
+          featureSimpleBulkUpload: false,
+          featureCsvUpload: false,
+          featureOverrideByAdmin: false,
+        } as any,
       });
 
       await prisma.organizationMember.create({
@@ -700,7 +741,46 @@ export class AuthService {
     });
 
     // Get organization
-    const organization = await getDefaultOrganization(user.id);
+    let organization = await getDefaultOrganization(user.id);
+
+    // Auto heal Google Users missing organization
+    if (!organization) {
+      const orgName = `${user.firstName || 'User'}'s Workspace`;
+      organization = await prisma.organization.create({
+        data: {
+          name: orgName,
+          slug: generateSlug(orgName) + '-' + Math.random().toString(36).substring(2, 7),
+          ownerId: user.id,
+          planType: 'FREE_DEMO',
+          featureSimpleBulkUpload: false,
+          featureCsvUpload: false,
+          featureOverrideByAdmin: false,
+        } as any,
+      });
+
+      await prisma.organizationMember.create({
+        data: {
+          organizationId: organization.id,
+          userId: user.id,
+          role: 'OWNER',
+          joinedAt: new Date(),
+        },
+      });
+
+      const freePlan = await prisma.plan.findUnique({ where: { type: 'FREE_DEMO' } });
+      if (freePlan) {
+        await prisma.subscription.create({
+          data: {
+            organizationId: organization.id,
+            planId: freePlan.id,
+            status: 'ACTIVE',
+            billingCycle: 'monthly',
+            currentPeriodStart: new Date(),
+            currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          },
+        });
+      }
+    }
 
     // Generate tokens
     const tokens = await generateTokens(user.id, user.email, organization?.id);

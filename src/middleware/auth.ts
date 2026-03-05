@@ -81,6 +81,64 @@ export const authenticate = async (
     // Verify token
     const decoded = verifyAccessToken(token) as TokenPayload;
 
+    // ✅ Get organizationId (from token or fetch from DB)
+    let organizationId = decoded.organizationId;
+
+    if (!organizationId) {
+      console.log('⚠️ organizationId missing in token, fixing...');
+
+      let membership = await prisma.organizationMember.findFirst({
+        where: { userId: decoded.userId },
+        include: { organization: true }
+      });
+
+      if (!membership) {
+        // Auto create organization
+        const userToFix = await prisma.user.findUnique({ where: { id: decoded.userId } });
+        if (userToFix) {
+          const orgName = `${userToFix.firstName || 'User'}'s Workspace`;
+          const organization = await prisma.organization.create({
+            data: {
+              name: orgName,
+              slug: orgName.toLowerCase().replace(/[^a-z0-9]/g, '') + '-' + Math.random().toString(36).substring(2, 7),
+              ownerId: userToFix.id,
+              planType: 'FREE_DEMO',
+              featureSimpleBulkUpload: false,
+              featureCsvUpload: false,
+              featureOverrideByAdmin: false,
+            } as any
+          });
+          membership = await prisma.organizationMember.create({
+            data: {
+              organizationId: organization.id,
+              userId: userToFix.id,
+              role: 'OWNER',
+              joinedAt: new Date()
+            },
+            include: { organization: true }
+          });
+
+          const freePlan = await prisma.plan.findUnique({ where: { type: 'FREE_DEMO' } });
+          if (freePlan) {
+            await prisma.subscription.create({
+              data: {
+                organizationId: organization.id,
+                planId: freePlan.id,
+                status: 'ACTIVE',
+                billingCycle: 'monthly',
+                currentPeriodStart: new Date(),
+                currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+              },
+            });
+          }
+        }
+      }
+
+      if (membership) {
+        organizationId = membership.organization.id;
+      }
+    }
+
     // ✅ Distributed Caching for Production
     let user: any = null;
 
@@ -126,7 +184,7 @@ export const authenticate = async (
     req.user = {
       id: user.id,
       email: user.email,
-      organizationId: decoded.organizationId,
+      organizationId: organizationId,
     };
 
     next();
