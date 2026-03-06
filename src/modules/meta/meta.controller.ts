@@ -601,7 +601,7 @@ export class MetaController {
 
       console.log('   Found accounts:', accounts.length);
 
-      return sendSuccess(res, { accounts }, 'Accounts fetched successfully');
+      return sendSuccess(res, accounts, 'Accounts fetched successfully');
     } catch (error) {
       next(error);
     }
@@ -651,7 +651,7 @@ export class MetaController {
           }));
 
           console.log('📤 Returning accounts from MetaConnection:', accounts.length);
-          return sendSuccess(res, { accounts }, 'Accounts fetched successfully');
+          return sendSuccess(res, accounts, 'Accounts fetched successfully');
         }
       } catch (e: any) {
         console.log('⚠️ MetaConnection check failed:', e.message);
@@ -685,7 +685,7 @@ export class MetaController {
 
       console.log('📤 Returning accounts:', accounts.length);
 
-      return sendSuccess(res, { accounts }, 'Accounts fetched successfully');
+      return sendSuccess(res, accounts, 'Accounts fetched successfully');
 
     } catch (error: any) {
       console.error('❌ Get WhatsApp accounts error:', error);
