@@ -501,12 +501,13 @@ export class WebhookService {
         },
       });
 
-      // ✅ Race Condition Fix: If message not found, wait 1s and retry once
+      // ✅ Race Condition Fix: If message not found, wait and retry
       // (Meta sometimes sends status updates faster than we can save the message)
-      if (!message) {
-        console.log(`⏳ Message not found yet, retrying in 1s for waMessageId: ${waMessageId}`);
+      let retries = 3;
+      while (!message && retries > 0) {
+        console.log(`⏳ Message not found yet, retrying in 1s for waMessageId: ${waMessageId} (${retries} retries left)`);
         await new Promise(resolve => setTimeout(resolve, 1000));
-
+        
         message = await prisma.message.findFirst({
           where: {
             OR: [
@@ -524,6 +525,7 @@ export class WebhookService {
             },
           },
         });
+        retries--;
       }
 
       if (!message) {

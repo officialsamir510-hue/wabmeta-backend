@@ -613,7 +613,51 @@ class WhatsAppService {
       const formattedTo = this.formatPhoneNumber(to);
       console.log(`   Formatted Phone: ${formattedTo}`);
 
-      // ✅ Check if contact has WhatsApp BEFORE sending
+      // ✅ 24-HOUR WINDOW CHECK (For Text/Media/Interactive)
+      // Meta requires Templates for messages outside the 24h window
+      if (type !== 'template') {
+        const contact = await this.getOrCreateContact(organizationId, to);
+        const conversation = await this.getOrCreateConversation(
+          organizationId,
+          contact.id,
+          account.phoneNumberId,
+          '',
+          conversationId
+        );
+
+        if (conversation) {
+          const lastCustomerMsgAt = conversation.lastCustomerMessageAt;
+          const now = new Date();
+          const windowExpired = !lastCustomerMsgAt || (now.getTime() - new Date(lastCustomerMsgAt).getTime()) > 24 * 60 * 60 * 1000;
+
+          if (windowExpired) {
+            const errorMsg = lastCustomerMsgAt
+              ? 'User session expired (24h window closed). Send a Template Message to re-engage.'
+              : 'No inbound message from user yet. You must start with a Template Message.';
+
+            console.warn(`⚠️ ${errorMsg}`);
+
+            // Save as failed message so user sees it in inbox
+            await prisma.message.create({
+              data: {
+                conversationId: conversation.id,
+                whatsappAccountId: accountId,
+                direction: MessageDirection.OUTBOUND,
+                type: this.mapMessageType(type),
+                content: this.extractMessageContent(type, content),
+                status: MessageStatus.FAILED,
+                failureReason: errorMsg,
+                sentAt: now,
+                failedAt: now,
+              },
+            });
+
+            throw new Error(errorMsg);
+          }
+        }
+      }
+
+      // ✅ 3. Check if contact has WhatsApp BEFORE sending (Meta API check)
       let contactValid = true;
       try {
         console.log('📞 Checking if contact has WhatsApp...');
@@ -631,22 +675,29 @@ class WhatsAppService {
           const errorMsg = `Recipient does not have WhatsApp or number is invalid (status: ${status})`;
           console.error(`❌ ${errorMsg}`);
 
-          if (conversationId) {
-            const failedContent = this.extractMessageContent(type, content);
-            await prisma.message.create({
-              data: {
-                conversationId,
-                whatsappAccountId: accountId,
-                direction: MessageDirection.OUTBOUND,
-                type: this.mapMessageType(type),
-                content: failedContent,
-                status: MessageStatus.FAILED,
-                failureReason: errorMsg,
-                sentAt: new Date(),
-                failedAt: new Date(),
-              },
-            });
-          }
+          // Find or create conversation for the failed message log
+          const contact = await this.getOrCreateContact(organizationId, to);
+          const conversation = await this.getOrCreateConversation(
+            organizationId,
+            contact.id,
+            account.phoneNumberId,
+            '',
+            conversationId
+          );
+
+          await prisma.message.create({
+            data: {
+              conversationId: conversation.id,
+              whatsappAccountId: accountId,
+              direction: MessageDirection.OUTBOUND,
+              type: this.mapMessageType(type),
+              content: this.extractMessageContent(type, content),
+              status: MessageStatus.FAILED,
+              failureReason: errorMsg,
+              sentAt: new Date(),
+              failedAt: new Date(),
+            },
+          });
 
           throw new Error(errorMsg);
         }

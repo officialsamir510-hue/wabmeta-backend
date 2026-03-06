@@ -81,7 +81,7 @@ export class ChatbotEngine {
 
       // Send responses via WhatsApp
       if (responses.length > 0) {
-        await this.sendResponses(organizationId, senderPhone, responses);
+        await this.sendResponses(organizationId, senderPhone, responses, conversationId);
       }
 
       return { handled: responses.length > 0, responses };
@@ -331,7 +331,8 @@ export class ChatbotEngine {
   private async sendResponses(
     organizationId: string,
     recipientPhone: string,
-    responses: string[]
+    responses: string[],
+    conversationId: string
   ): Promise<void> {
     try {
       // Get default WhatsApp account
@@ -358,10 +359,10 @@ export class ChatbotEngine {
         }
 
         await whatsappService.sendTextMessage(
-          organizationId,
           waAccount.id,
           recipientPhone,
-          response
+          response,
+          conversationId
         );
 
         console.log(`   📤 Sent chatbot response: "${response.substring(0, 50)}..."`);
