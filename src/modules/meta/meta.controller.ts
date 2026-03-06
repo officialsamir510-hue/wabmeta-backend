@@ -9,8 +9,9 @@ import crypto from 'crypto';
 import axios from 'axios';
 import { config } from '../../config';
 import { templatesService } from '../templates/templates.service';
-import { metaApi } from '../meta/meta.api';
+import { metaApi } from './meta.api';
 import { encrypt } from '../../utils/encryption';
+import { metaService } from './meta.service';
 
 // Helper to safely get organization ID from headers
 const getOrgId = (req: Request): string => {
@@ -1056,6 +1057,47 @@ export class MetaController {
       console.error('❌ Webhook processing error:', error);
       // Still return 200 to Meta to prevent retries
       res.sendStatus(200);
+    }
+  }
+  // ============================================
+  // COMPLETE CONNECTION
+  // ============================================
+  async completeConnection(req: Request, res: Response, next: NextFunction) {
+    try {
+      const organizationId = (req as AuthRequest).user?.organizationId;
+      const userId = (req as AuthRequest).user?.id; // Note: using id instead of userId based on AuthRequest interface
+      
+      if (!organizationId || !userId) {
+        throw new AppError('Organization not found', 404);
+      }
+
+      const { code, accessToken, connectionType } = req.body; // ✅ Get connectionType
+      
+      const codeOrToken = accessToken || code;
+      
+      if (!codeOrToken) {
+        throw new AppError('Authorization code or access token is required', 400);
+      }
+
+      // ✅ Pass connectionType to service
+      const result = await metaService.completeConnection(
+        codeOrToken,
+        organizationId,
+        userId,
+        connectionType || 'CLOUD_API' // Default to CLOUD_API
+      );
+
+      if (result.success) {
+        return res.json({
+          success: true,
+          message: 'WhatsApp account connected successfully',
+          data: result.account
+        });
+      } else {
+        throw new AppError(result.error || 'Failed to connect', 400);
+      }
+    } catch (error) {
+      next(error);
     }
   }
 }

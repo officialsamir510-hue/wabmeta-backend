@@ -98,11 +98,13 @@ export class MetaService {
     codeOrToken: string,
     organizationId: string,
     userId: string,
+    connectionType: 'CLOUD_API' | 'WHATSAPP_BUSINESS_APP' = 'CLOUD_API',
     onProgress?: (progress: ConnectionProgress) => void
   ): Promise<{ success: boolean; account?: any; error?: string }> {
     try {
       console.log('\n🔄 ========== META CONNECTION START ==========');
       console.log('   Organization ID:', organizationId);
+      console.log('   Connection Type:', connectionType);
       console.log('   User ID:', userId);
 
       // ============================================
@@ -313,6 +315,7 @@ export class MetaService {
               verifiedName: primaryPhone.verifiedName,
               qualityRating: primaryPhone.qualityRating,
               status: WhatsAppAccountStatus.CONNECTED,
+              connectionType,
               isDefault: existingAccount.isDefault || !hasDefault, // Restore or set as default if no other default
               codeVerificationStatus: primaryPhone.codeVerificationStatus,
               nameStatus: primaryPhone.nameStatus,
@@ -362,6 +365,7 @@ export class MetaService {
               tokenExpiresAt,
               webhookSecret: encryptedWebhookSecret,
               status: WhatsAppAccountStatus.CONNECTED,
+              connectionType,
               isDefault: accountCount === 0,
               codeVerificationStatus: primaryPhone.codeVerificationStatus,
               nameStatus: primaryPhone.nameStatus,
@@ -395,6 +399,7 @@ export class MetaService {
             tokenExpiresAt,
             webhookSecret: encryptedWebhookSecret,
             status: WhatsAppAccountStatus.CONNECTED,
+            connectionType,
             isDefault: accountCount === 0,
             codeVerificationStatus: primaryPhone.codeVerificationStatus,
             nameStatus: primaryPhone.nameStatus,

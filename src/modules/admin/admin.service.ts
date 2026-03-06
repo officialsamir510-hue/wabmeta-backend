@@ -141,11 +141,26 @@ export class AdminService {
         prisma.user.count({ where: { status: 'SUSPENDED' } }),
       ]);
 
-      // Users this month
+      // ✅ FIXED: Calculate revenue from actual payments
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
       const startOfMonth = new Date();
       startOfMonth.setDate(1);
       startOfMonth.setHours(0, 0, 0, 0);
 
+      // ✅ Today's new users
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      
+      const todayUsers = await prisma.user.count({
+        where: {
+          createdAt: {
+            gte: today,
+            lt: tomorrow
+          }
+        }
+      });
       const usersThisMonth = await prisma.user.count({
         where: { createdAt: { gte: startOfMonth } },
       });
@@ -176,7 +191,7 @@ export class AdminService {
           where: {
             direction: 'OUTBOUND',
             createdAt: {
-              gte: new Date(new Date().setHours(0, 0, 0, 0)),
+              gte: today,
             },
           },
         }),
@@ -189,20 +204,87 @@ export class AdminService {
       ]);
 
       // WhatsApp stats
-      const [connectedAccounts, totalContacts, totalCampaigns] = await Promise.all([
-        prisma.whatsAppAccount.count({ where: { status: 'CONNECTED' } }),
+      const [totalContacts, totalCampaigns] = await Promise.all([
         prisma.contact.count(),
         prisma.campaign.count(),
       ]);
 
-      // Revenue (placeholder - adjust based on your billing model)
-      const activeSubscriptions = await prisma.subscription.count({
-        where: { status: 'ACTIVE' },
+      // ✅ Get ACTUAL revenue from Payment table
+      const [totalRevenue, monthlyRevenue, todayRevenue] = await Promise.all([
+        // Total all-time revenue
+        prisma.payment.aggregate({
+          where: {
+            status: 'SUCCESS'
+          },
+          _sum: {
+            amount: true
+          }
+        }),
+        
+        // This month's revenue
+        prisma.payment.aggregate({
+          where: {
+            status: 'SUCCESS',
+            createdAt: {
+              gte: startOfMonth
+            }
+          },
+          _sum: {
+            amount: true
+          }
+        }),
+        
+        // Today's revenue
+        prisma.payment.aggregate({
+          where: {
+            status: 'SUCCESS',
+            createdAt: {
+              gte: today,
+              lt: tomorrow
+            }
+          },
+          _sum: {
+            amount: true
+          }
+        })
+      ]);
+
+      // ✅ Get subscription breakdown
+      const subscriptionsByPlan = await prisma.subscription.groupBy({
+        by: ['planId'],
+        where: {
+          status: 'ACTIVE'
+        },
+        _count: true
       });
 
-      // Simple MRR calculation (you'll want to make this more sophisticated)
-      const mrr = activeSubscriptions * 999; // Assuming average $999/month
-      const arr = mrr * 12;
+      // Get plan details for MRR calculation
+      const plans = await prisma.plan.findMany();
+      const planMap = new Map(plans.map(p => [p.id, p]));
+
+      // ✅ Calculate actual MRR from active subscriptions
+      let mrr = 0;
+      for (const sub of subscriptionsByPlan) {
+        if (!sub.planId) continue;
+        const plan = planMap.get(sub.planId);
+        if (plan) {
+          mrr += Number(plan.monthlyPrice) * sub._count;
+        }
+      }
+
+      // ✅ WhatsApp connection stats with connectionType
+      const whatsappStats = await prisma.whatsAppAccount.groupBy({
+        by: ['connectionType', 'status'],
+        _count: true
+      });
+
+      const connectedCloudApi = whatsappStats.find(
+        (s: any) => s.connectionType === 'CLOUD_API' && s.status === 'CONNECTED'
+      )?._count || 0;
+
+      const connectedBusinessApp = whatsappStats.find(
+        (s: any) => s.connectionType === 'WHATSAPP_BUSINESS_APP' && s.status === 'CONNECTED'
+      )?._count || 0;
 
       return {
         users: {
@@ -211,6 +293,7 @@ export class AdminService {
           pending: pendingUsers,
           suspended: suspendedUsers,
           newThisMonth: usersThisMonth,
+          todayUsers, // ✅ Today's new users
         },
         organizations: {
           total: totalOrgs,
@@ -223,25 +306,30 @@ export class AdminService {
           thisMonthSent: messagesThisMonth,
         },
         revenue: {
-          mrr,
-          arr,
+          // ✅ Actual revenue from payments (in paise, divide by 100 for rupees)
+          totalRevenue: totalRevenue._sum.amount || 0,
+          monthlyRevenue: monthlyRevenue._sum.amount || 0,
+          todayRevenue: todayRevenue._sum.amount || 0,
+          mrr, // ✅ Actual MRR from active subscriptions
+          arr: mrr * 12,
         },
         whatsapp: {
-          connectedAccounts,
+          connectedAccounts: connectedCloudApi + connectedBusinessApp,
+          cloudApiConnected: connectedCloudApi,
+          businessAppConnected: connectedBusinessApp,
           totalContacts,
           totalCampaigns,
         },
       };
     } catch (error) {
       console.error('Dashboard stats error:', error);
-
-      // Return safe defaults on error
+      // Return safe defaults
       return {
-        users: { total: 0, active: 0, pending: 0, suspended: 0, newThisMonth: 0 },
+        users: { total: 0, active: 0, pending: 0, suspended: 0, newThisMonth: 0, todayUsers: 0 },
         organizations: { total: 0, byPlan: {}, newThisMonth: 0 },
         messages: { totalSent: 0, todaySent: 0, thisMonthSent: 0 },
-        revenue: { mrr: 0, arr: 0 },
-        whatsapp: { connectedAccounts: 0, totalContacts: 0, totalCampaigns: 0 },
+        revenue: { totalRevenue: 0, monthlyRevenue: 0, todayRevenue: 0, mrr: 0, arr: 0 },
+        whatsapp: { connectedAccounts: 0, cloudApiConnected: 0, businessAppConnected: 0, totalContacts: 0, totalCampaigns: 0 },
       };
     }
   }

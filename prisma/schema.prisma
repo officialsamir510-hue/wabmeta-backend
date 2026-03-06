@@ -94,6 +94,7 @@ model Organization {
   webhooks         Webhook[]
   webhookLogs      WebhookLog[]
   whatsappAccounts WhatsAppAccount[]
+  payments         Payment[]
 
   @@index([slug])
   @@index([ownerId])
@@ -172,6 +173,7 @@ model Subscription {
   updatedAt          DateTime           @updatedAt
   organization       Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   plan               Plan               @relation(fields: [planId], references: [id])
+  payments           Payment[]
 
   @@index([organizationId])
   @@index([status])
@@ -190,6 +192,10 @@ model WhatsAppAccount {
   tokenExpiresAt         DateTime?
   webhookSecret          String?
   status                 WhatsAppAccountStatus @default(PENDING)
+  
+  // ✅ ADD THIS FIELD - Connection Type
+  connectionType         String                @default("CLOUD_API")  // "CLOUD_API" or "WHATSAPP_BUSINESS_APP"
+  
   codeVerificationStatus String?
   nameStatus             String?
   verifiedName           String?
@@ -212,6 +218,7 @@ model WhatsAppAccount {
   @@index([wabaId])
   @@index([phoneNumberId])
   @@index([status])
+  @@index([connectionType])
 }
 
 model MetaConnection {
@@ -860,4 +867,55 @@ enum ActivityAction {
   IMPORT
   SEND
   RECEIVE
+}
+
+model Payment {
+  id               String        @id @default(cuid())
+  organizationId   String
+  subscriptionId   String?
+  
+  // Razorpay details
+  razorpayOrderId  String?       @unique
+  razorpayPaymentId String?      @unique
+  razorpaySignature String?
+  
+  // Amount in paise (smallest unit)
+  amount           Int
+  currency         String        @default("INR")
+  
+  // Status
+  status           PaymentStatus @default(PENDING)
+  
+  // Plan info at time of payment
+  planId           String?
+  planName         String?
+  billingCycle     String?       // monthly, quarterly, annual
+  
+  // Metadata
+  description      String?
+  receipt          String?
+  notes            Json?
+  
+  // Timestamps
+  paidAt           DateTime?
+  failedAt         DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  
+  // Relations
+  organization     Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  subscription     Subscription? @relation(fields: [subscriptionId], references: [id])
+  
+  @@index([organizationId])
+  @@index([status])
+  @@index([razorpayOrderId])
+  @@index([razorpayPaymentId])
+  @@index([createdAt])
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
 }
