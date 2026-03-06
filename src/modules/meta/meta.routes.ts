@@ -627,6 +627,9 @@ router.delete('/organizations/:organizationId/disconnect', async (req, res, next
 router.get('/accounts', metaController.getAccounts.bind(metaController));
 router.get('/accounts/:id', metaController.getAccount.bind(metaController));
 router.delete('/accounts/:id', metaController.disconnectAccount.bind(metaController));
+// ✅ Also support POST /accounts/:id/disconnect (frontend uses this)
+router.post('/accounts/:id/disconnect', metaController.disconnectAccount.bind(metaController));
+
 
 // ============================================
 // HEALTH CHECK
