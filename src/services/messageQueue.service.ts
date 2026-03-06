@@ -1,11 +1,11 @@
-// src/services/messageQueue.service.ts - COMPLETE FIXED VERSION
+// src/services/messageQueue.service.ts - COMPLETE PRODUCTION FIXED VERSION
 
-import Bull, { Queue, Job } from 'bull';
+import Bull, { Job } from 'bull';
 import { EventEmitter } from 'events';
 import { config } from '../config';
-import whatsappApi from '../modules/whatsapp/whatsapp.api';
+import { metaApi } from '../modules/meta/meta.api';  // ✅ FIXED: Use metaApi
 import prisma from '../config/database';
-import { decrypt } from '../utils/encryption';
+import { safeDecrypt } from '../utils/encryption';  // ✅ FIXED: Use safeDecrypt
 import { inboxService } from '../modules/inbox/inbox.service';
 import { webhookEvents } from '../modules/webhooks/webhook.service';
 import { campaignSocketService } from '../modules/campaigns/campaigns.socket';
@@ -96,31 +96,49 @@ async function getOrCreateConversation(
 }
 
 /**
- * Build template parameters from variables
+ * ✅ FIXED: Build template components in CORRECT Meta API format
  */
-function buildTemplateParams(template: any, variables: Record<string, any>): any[] {
-    const params: any[] = [];
-
-    // Extract variable count from template body
+function buildTemplateComponents(
+    template: any,
+    variables: Record<string, any>
+): any[] {
     const bodyText = template.bodyText || '';
     const matches = bodyText.match(/\{\{(\d+)\}\}/g) || [];
-    const varCount = matches.length;
 
-    if (varCount === 0) {
+    if (matches.length === 0) {
         return []; // No parameters needed
     }
 
-    // Build parameters array
-    for (let i = 1; i <= varCount; i++) {
-        const value = variables[`var_${i}`] || variables[i] || 'N/A';
-        params.push(value);
-    }
+    // Build parameters in Meta format
+    const parameters = matches.map((_: string, index: number) => {
+        const varIndex = index + 1;
+        const value = variables[`var_${varIndex}`] ||
+            variables[varIndex] ||
+            variables[`${varIndex}`] ||
+            'N/A';
+        return {
+            type: 'text',
+            text: String(value)
+        };
+    });
 
-    return params;
+    // Return in Meta format: array of components
+    return [{
+        type: 'body',
+        parameters: parameters
+    }];
+}
+
+/**
+ * Helper: Check if token looks valid
+ */
+function isValidToken(token: string | null | undefined): boolean {
+    if (!token) return false;
+    return token.startsWith('EAA') || token.startsWith('EAAG');
 }
 
 // ============================================
-// PROCESS MESSAGE JOB
+// ✅ FIXED: PROCESS MESSAGE JOB
 // ============================================
 messageQueue.process(80, async (job: Job) => {
     console.log(`📤 Processing message job: ${job.id}`);
@@ -149,68 +167,97 @@ messageQueue.process(80, async (job: Job) => {
             throw new Error(`Template not found: ${templateId}`);
         }
 
+        if (template.status !== 'APPROVED') {
+            throw new Error(`Template not approved: ${template.name} (status: ${template.status})`);
+        }
+
         // ✅ 2. Get WhatsApp account
         const account = await prisma.whatsAppAccount.findUnique({
             where: { id: whatsappAccountId },
         });
 
-        if (!account || !account.accessToken) {
-            throw new Error(`WhatsApp account not found or no token: ${whatsappAccountId}`);
+        if (!account) {
+            throw new Error(`WhatsApp account not found: ${whatsappAccountId}`);
         }
 
-        // ✅ 3. Get or create conversation BEFORE sending
+        if (!account.accessToken) {
+            throw new Error(`No access token for account: ${whatsappAccountId}`);
+        }
+
+        if (account.status !== 'CONNECTED') {
+            throw new Error(`WhatsApp account not connected. Status: ${account.status}`);
+        }
+
+        // ✅ 3. Decrypt access token SAFELY
+        let accessToken: string | null = null;
+
+        // Check if already plain text (starts with EAA)
+        if (isValidToken(account.accessToken)) {
+            accessToken = account.accessToken;
+            console.log(`📝 Token is already plain text`);
+        } else {
+            // Try to decrypt
+            accessToken = safeDecrypt(account.accessToken);
+            console.log(`🔓 Token decrypted`);
+        }
+
+        if (!isValidToken(accessToken)) {
+            throw new Error('Invalid access token. Please reconnect WhatsApp account in Settings.');
+        }
+
+        // ✅ 4. Get or create conversation BEFORE sending
         const conversation = await getOrCreateConversation(organizationId, contactId);
         console.log(`💬 Using conversation: ${conversation.id}`);
 
-        // ✅ 4. Build template components
-        const params = buildTemplateParams(template, variables);
-        const components = params.length > 0 ? {
-            body: params
-        } : undefined;
+        // ✅ 5. Build template components in CORRECT Meta format
+        const components = buildTemplateComponents(template, variables);
 
-        console.log(`📧 Sending template: ${template.name} with ${params.length} params`);
+        console.log(`📧 Sending template: ${template.name} with ${components.length > 0 ? components[0].parameters?.length || 0 : 0} params`);
 
-        // ✅ 5. Decrypt access token
-        const token = decrypt(account.accessToken) || undefined;
+        // ✅ 6. Format phone number (remove all non-digits)
+        const formattedPhone = phone.replace(/[^0-9]/g, '');
 
-        // ✅ 6. Send message via WhatsApp API
-        const result = await whatsappApi.sendTemplateMessage(
+        // ✅ 7. Send message via Meta API (CORRECT METHOD!)
+        const result = await metaApi.sendMessage(
             account.phoneNumberId,
-            phone,
-            template.name || '',
-            template.language || 'en',
-            components,
-            token
+            accessToken!,
+            formattedPhone,
+            {
+                type: 'template',
+                template: {
+                    name: template.name,
+                    language: {
+                        code: template.language || 'en_US'
+                    },
+                    components: components
+                }
+            }
         );
 
-        console.log(`✅ Message sent: ${result.waMessageId}`);
+        const waMessageId = result.messageId;
+        console.log(`✅ Message sent: ${waMessageId}`);
 
-        // ✅ 7. Update campaign contact status
+        // ✅ 8. Update campaign contact status
         await prisma.campaignContact.updateMany({
             where: { id: campaignContactId },
             data: {
                 status: 'SENT',
-                waMessageId: result.waMessageId,
+                waMessageId: waMessageId,
                 sentAt: new Date(),
             },
         });
 
-        // ✅ 8. Save message to database with conversation link
+        // ✅ 9. Save message to database with conversation link
         const now = new Date();
         const savedMessage = await prisma.message.create({
             data: {
-                conversationId: conversation.id, // ✅ CRITICAL!
+                conversationId: conversation.id,
                 whatsappAccountId,
-                waMessageId: result.waMessageId,
-                wamId: result.waMessageId,
+                waMessageId: waMessageId,
+                wamId: waMessageId,
                 direction: 'OUTBOUND',
                 type: 'TEMPLATE',
-                content: JSON.stringify({
-                    templateName: template.name,
-                    language: template.language,
-                    params,
-                    body: template.bodyText, // Store body for UI display
-                }),
+                content: template.bodyText || `Template: ${template.name}`, // ✅ Store readable text
                 status: 'SENT',
                 sentAt: now,
                 timestamp: now,
@@ -218,13 +265,15 @@ messageQueue.process(80, async (job: Job) => {
                 metadata: {
                     campaignId,
                     campaignContactId,
+                    templateName: template.name,
+                    templateLanguage: template.language,
                 },
             },
         });
 
         console.log(`💾 Message saved to DB: ${savedMessage.id}`);
 
-        // ✅ 9. Update conversation preview
+        // ✅ 10. Update conversation preview
         await prisma.conversation.update({
             where: { id: conversation.id },
             data: {
@@ -235,13 +284,14 @@ messageQueue.process(80, async (job: Job) => {
             },
         });
 
-        // ✅ 10. Clear inbox cache
-        await inboxService.clearCache(organizationId);
+        // ✅ 11. Clear inbox cache
+        try {
+            await inboxService.clearCache(organizationId);
+        } catch (cacheErr) {
+            console.warn('⚠️ Failed to clear cache:', cacheErr);
+        }
 
-        // ✅ 11. Emit socket events for real-time updates
-        // webhookEvents is already imported at top level
-
-        // Get full conversation with contact for socket event
+        // ✅ 12. Emit socket events for real-time updates
         const updatedConversation = await prisma.conversation.findUnique({
             where: { id: conversation.id },
             include: {
@@ -259,16 +309,12 @@ messageQueue.process(80, async (job: Job) => {
         });
 
         if (updatedConversation) {
-            // Emit new message event
             webhookEvents.emit('newMessage', {
                 organizationId,
                 conversationId: updatedConversation.id,
-                message: {
-                    ...savedMessage,
-                },
+                message: savedMessage,
             });
 
-            // Emit conversation update event
             webhookEvents.emit('conversationUpdated', {
                 organizationId,
                 conversation: {
@@ -284,46 +330,49 @@ messageQueue.process(80, async (job: Job) => {
                 },
             });
         }
-        
-        // ✅ 12. Emit individual contact status update for real-time campaign UI
+
+        // ✅ 13. Emit individual contact status for campaign UI
         if (campaignId) {
             campaignSocketService.emitContactStatus(organizationId, campaignId, {
                 contactId: contactId,
                 phone: phone,
                 status: 'SENT',
-                messageId: result.waMessageId
+                messageId: waMessageId
             });
         }
 
-        // ✅ 13. Update campaign stats (Optimized)
+        // ✅ 14. Update campaign stats
         if (campaignId) {
             await incrementCampaignStats(campaignId, 'sent');
         }
 
         console.log(`✅ Job ${job.id} completed successfully`);
-        return { success: true, waMessageId: result.waMessageId };
+        return { success: true, waMessageId: waMessageId };
 
     } catch (error: any) {
-        // Detailed Meta error extraction - always get the real message first
+        // ✅ IMPROVED: Better error extraction
         let failureReason = error.message || 'Unknown error';
 
+        // Extract Meta API error details
         if (error.response?.data?.error) {
             const metaErr = error.response.data.error;
             const code = metaErr.code ? ` (Code: ${metaErr.code})` : '';
-            failureReason = `${metaErr.message}${code}`;
+            const subcode = metaErr.error_subcode ? ` [Subcode: ${metaErr.error_subcode}]` : '';
+            failureReason = `${metaErr.message}${code}${subcode}`;
         }
 
-        // Apply human-readable overrides only for known error patterns
-        if (error.response?.status === 401 || failureReason.includes('OAuthException')) {
-            failureReason = `WhatsApp account disconnected. Please reconnect. (${failureReason})`;
-        } else if (failureReason.includes('rate limit') || failureReason.includes('spam')) {
-            failureReason = `Meta Rate Limit Reached. Messages will be delayed.`;
-        } else if (failureReason.includes('permission')) {
-            failureReason = `Missing permissions to send messages.`;
-        } else if (failureReason.includes('policy violation')) {
-            failureReason = `Meta Policy Violation. Check your business account.`;
+        // Human-readable overrides for common errors
+        if (failureReason.includes('OAuthException') || error.response?.status === 401) {
+            failureReason = `WhatsApp account disconnected. Please reconnect in Settings. (Original: ${failureReason})`;
+        } else if (failureReason.includes('rate') || failureReason.includes('spam') || failureReason.includes('limit')) {
+            failureReason = `Rate limit reached. Message will be retried. (${failureReason})`;
+        } else if (failureReason.includes('131047') || failureReason.includes('Re-engagement')) {
+            failureReason = `User hasn't messaged in 24 hours. Use a Marketing template instead.`;
+        } else if (failureReason.includes('132000') || failureReason.includes('template')) {
+            failureReason = `Template error: ${failureReason}`;
+        } else if (failureReason.includes('131026') || failureReason.includes('not valid')) {
+            failureReason = `Invalid phone number or user doesn't have WhatsApp.`;
         }
-        // Note: Do NOT override template name errors - they should show the real code (132001, etc.)
 
         console.error(`❌ Job ${job.id} failed:`, failureReason);
 
@@ -334,12 +383,12 @@ messageQueue.process(80, async (job: Job) => {
                     where: { id: campaignContactId },
                     data: {
                         status: 'FAILED',
-                        failureReason: failureReason,
+                        failureReason: failureReason.substring(0, 500), // Limit length
                         failedAt: new Date(),
                     },
                 });
 
-                // ✅ Emit individual contact failure for real-time campaign UI
+                // Emit failure to campaign UI
                 if (campaignId && organizationId) {
                     campaignSocketService.emitContactStatus(organizationId, campaignId, {
                         contactId: contactId,
@@ -349,7 +398,7 @@ messageQueue.process(80, async (job: Job) => {
                     });
                 }
 
-                // Update campaign stats (Optimized)
+                // Update campaign stats
                 if (campaignId) {
                     await incrementCampaignStats(campaignId, 'failed');
                 }
@@ -363,15 +412,12 @@ messageQueue.process(80, async (job: Job) => {
 });
 
 /**
- * Increment campaign stats atomically (MUCH FASTER than groupBy)
- */
-/**
- * Increment campaign stats atomically (MUCH FASTER than groupBy)
+ * ✅ Increment campaign stats atomically
  */
 async function incrementCampaignStats(campaignId: string, type: 'sent' | 'failed') {
     try {
         const field = type === 'sent' ? 'sentCount' : 'failedCount';
-        
+
         const campaign = await prisma.campaign.update({
             where: { id: campaignId },
             data: { [field]: { increment: 1 } },
@@ -380,25 +426,29 @@ async function incrementCampaignStats(campaignId: string, type: 'sent' | 'failed
                 organizationId: true,
                 sentCount: true,
                 failedCount: true,
+                deliveredCount: true,
+                readCount: true,
                 totalContacts: true,
                 status: true,
             }
         });
 
-        // ✅ Emit progress update
+        // Emit progress update
         const processed = campaign.sentCount + campaign.failedCount;
         const percentage = Math.round((processed / (campaign.totalContacts || 1)) * 100);
-        
+
         campaignSocketService.emitCampaignProgress(campaign.organizationId, campaignId, {
             sent: campaign.sentCount,
             failed: campaign.failedCount,
+            delivered: campaign.deliveredCount,
+            read: campaign.readCount,
             total: campaign.totalContacts,
             percentage,
             status: campaign.status,
         });
 
-        // ✅ Smarter completion check: only if we are at the end
-        if (processed >= campaign.totalContacts && campaign.status !== 'COMPLETED') {
+        // Check completion
+        if (processed >= campaign.totalContacts && campaign.status === 'RUNNING') {
             const finalCampaign = await prisma.campaign.update({
                 where: { id: campaignId },
                 data: {
@@ -426,16 +476,11 @@ async function incrementCampaignStats(campaignId: string, type: 'sent' | 'failed
     }
 }
 
-// Deprecated in favor of incrementCampaignStats but kept for compatibility if needed
-async function updateCampaignStats(campaignId: string) {
-    console.log('⚠️ updateCampaignStats called (Legacy), please use incrementCampaignStats');
-}
-
 // ============================================
 // EVENT LISTENERS
 // ============================================
 messageQueue.on('completed', (job, result) => {
-    console.log(`✅ Job ${job.id} completed:`, result);
+    console.log(`✅ Job ${job.id} completed:`, result?.waMessageId || 'success');
 });
 
 messageQueue.on('failed', (job, err) => {
@@ -448,6 +493,10 @@ messageQueue.on('error', (error) => {
 
 messageQueue.on('active', (job) => {
     console.log(`⚡ Job ${job.id} is now active`);
+});
+
+messageQueue.on('stalled', (job) => {
+    console.warn(`⚠️ Job ${job.id} stalled`);
 });
 
 // ============================================
