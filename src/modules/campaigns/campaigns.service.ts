@@ -2,11 +2,13 @@
 
 import { PrismaClient, CampaignStatus, MessageStatus, Prisma } from '@prisma/client';
 import { AppError } from '../../middleware/errorHandler';
-import { whatsappApi } from '../whatsapp/whatsapp.api';
 import { metaService } from '../meta/meta.service';
-import { campaignSocketService } from './campaigns.socket'; // ✅ Added
+import { metaApi } from '../meta/meta.api';
+import { campaignSocketService } from './campaigns.socket';
 import { v4 as uuidv4 } from 'uuid';
-import { addMessage } from '../../services/messageQueue.service';
+import { safeDecrypt } from '../../utils/encryption';
+import { inboxService } from '../inbox/inbox.service';
+import { webhookEvents } from '../webhooks/webhook.service';
 import {
   CreateCampaignInput,
   UpdateCampaignInput,
@@ -710,49 +712,75 @@ export class CampaignsService {
     return formatCampaign(updatedCampaign);
   }
 
-  // ✅ PROCESS CAMPAIGN CONTACTS
+  // ✅ PROCESS CAMPAIGN CONTACTS - Direct send (no Bull queue to avoid stalling)
   private async processCampaignContacts(campaignId: string, organizationId: string): Promise<void> {
     console.log(`📤 Processing contacts for campaign: ${campaignId}`);
 
     const campaign = await prisma.campaign.findUnique({
       where: { id: campaignId },
-      include: {
-        template: true,
-        whatsappAccount: true,
-      },
+      include: { template: true, whatsappAccount: true },
     });
 
-    if (!campaign) {
-      console.error('❌ Campaign not found');
+    if (!campaign || !campaign.template || !campaign.whatsappAccount) {
+      console.error('❌ Campaign, template or WhatsApp account not found');
       return;
     }
 
-    // ✅ Get pending contacts in batches - Increased batch size
+    // Validate template is approved
+    if (campaign.template.status !== 'APPROVED') {
+      console.error(`❌ Template "${campaign.template.name}" is not APPROVED (status: ${campaign.template.status})`);
+      await prisma.campaign.update({
+        where: { id: campaignId },
+        data: { status: 'FAILED', completedAt: new Date() },
+      });
+      return;
+    }
+
+    // Decrypt access token
+    const rawToken = campaign.whatsappAccount.accessToken;
+    let accessToken: string | null = null;
+    if (rawToken?.startsWith('EAA')) {
+      accessToken = rawToken;
+    } else if (rawToken) {
+      accessToken = safeDecrypt(rawToken);
+    }
+
+    if (!accessToken || !accessToken.startsWith('EAA')) {
+      console.error('❌ Invalid WhatsApp access token. Please reconnect the account.');
+      await prisma.campaign.update({
+        where: { id: campaignId },
+        data: { status: 'FAILED', completedAt: new Date() },
+      });
+      return;
+    }
+
+    const phoneNumberId = campaign.whatsappAccount.phoneNumberId;
+    const template = campaign.template;
+
+    // Rate limit: 300ms per message = ~200 msgs/min (safe for Meta)
+    const MESSAGE_DELAY_MS = 300;
     const BATCH_SIZE = 250;
+
     let processedCount = 0;
+    let sentCount = 0;
+    let failedCount = 0;
     let hasMore = true;
 
     while (hasMore) {
-      // Check if campaign is still running
+      // Check if campaign is still RUNNING
       const currentCampaign = await prisma.campaign.findUnique({
         where: { id: campaignId },
-        select: { status: true },
+        select: { status: true, totalContacts: true },
       });
 
       if (currentCampaign?.status !== 'RUNNING') {
-        console.log('⏸️ Campaign stopped, halting processing');
+        console.log('⏸️ Campaign paused/cancelled, stopping');
         break;
       }
 
-      // Get batch of pending contacts
       const contacts = await prisma.campaignContact.findMany({
-        where: {
-          campaignId,
-          status: 'PENDING',
-        },
-        include: {
-          contact: true,
-        },
+        where: { campaignId, status: 'PENDING' },
+        include: { contact: true },
         take: BATCH_SIZE,
         orderBy: { createdAt: 'asc' },
       });
@@ -764,82 +792,226 @@ export class CampaignsService {
         break;
       }
 
-      // ✅ CRITICAL: Mark contacts as QUEUED immediately to avoid duplicate processing in the next batch
-      const contactIds = contacts.map(c => c.id);
+      // Mark batch as QUEUED to prevent re-processing
       await prisma.campaignContact.updateMany({
-        where: { id: { in: contactIds } },
-        data: { status: 'QUEUED' as any }, // Using 'any' as type might still be being updated in TS
+        where: { id: { in: contacts.map(c => c.id) } },
+        data: { status: 'QUEUED' as any },
       });
 
-      // ✅ Process each contact in parallel within the batch for maximum speed
-      await Promise.all(contacts.map(async (campaignContact) => {
+      for (const campaignContact of contacts) {
+        // Re-check campaign status before each message
+        const isRunning = await prisma.campaign.findUnique({
+          where: { id: campaignId },
+          select: { status: true },
+        });
+        if (isRunning?.status !== 'RUNNING') break;
+
+        const contact = (campaignContact as any).contact;
+        const phone = contact?.phone;
+
+        if (!phone) {
+          await prisma.campaignContact.update({
+            where: { id: campaignContact.id },
+            data: { status: 'FAILED', failureReason: 'No phone number', failedAt: new Date() },
+          });
+          failedCount++;
+          await this.updateCampaignCounters(campaignId, organizationId, sentCount, failedCount);
+          continue;
+        }
+
         try {
-          const contact = (campaignContact as any).contact;
-          const phone = contact?.phone;
+          const cleanPhone = phone.replace(/[^0-9]/g, '');
+          const variables = (campaignContact as any).variables || {};
 
-          if (!phone) {
-            console.warn(`⚠️ Skipping contact ${campaignContact.id} - no phone`);
-            // Mark as failed if no phone
-            await prisma.campaignContact.update({
-              where: { id: campaignContact.id },
-              data: {
-                status: 'FAILED',
-                failureReason: 'No phone number found',
-                failedAt: new Date()
-              }
-            });
-            return;
-          }
+          // Build template components
+          const bodyText = template.bodyText || '';
+          const matches = bodyText.match(/\{\{(\d+)\}\}/g) || [];
+          const components = matches.length > 0 ? [{
+            type: 'body',
+            parameters: matches.map((_: string, i: number) => ({
+              type: 'text',
+              text: String(variables[`var_${i + 1}`] || variables[i + 1] || 'N/A'),
+            })),
+          }] : [];
 
-          // ✅ Add to message queue
-          await addMessage({
-            campaignId,
-            campaignContactId: campaignContact.id,
-            contactId: campaignContact.contactId,
-            phone,
-            templateId: campaign.templateId!,
-            whatsappAccountId: campaign.whatsappAccountId!,
-            organizationId: campaign.organizationId,
-            variables: (campaignContact as any).variables || {},
+          console.log(`➕ Sending to ${cleanPhone.slice(0, 6)}... via Meta API`);
+
+          // ✅ DIRECT SEND - no Bull queue
+          const result = await metaApi.sendMessage(
+            phoneNumberId,
+            accessToken,
+            cleanPhone,
+            {
+              type: 'template',
+              template: {
+                name: template.name,
+                language: { code: template.language || 'en_US' },
+                ...(components.length > 0 ? { components } : {}),
+              },
+            }
+          );
+
+          const waMessageId = result.messageId;
+          const now = new Date();
+
+          // Update campaign contact to SENT
+          await prisma.campaignContact.update({
+            where: { id: campaignContact.id },
+            data: { status: 'SENT', waMessageId, sentAt: now },
           });
 
-          processedCount++;
-        } catch (error: any) {
-          console.error(`❌ Failed to queue contact ${campaignContact.id}:`, error.message);
+          // Save message to DB
+          let conversationId: string | null = null;
+          try {
+            let conv = await prisma.conversation.findFirst({
+              where: { organizationId, contactId: campaignContact.contactId },
+            });
+            if (!conv) {
+              conv = await prisma.conversation.create({
+                data: {
+                  organizationId,
+                  whatsappAccount: { connect: { id: campaign.whatsappAccountId! } },
+                  contact: { connect: { id: campaignContact.contactId } },
+                  lastMessageAt: now,
+                  lastMessagePreview: `Template: ${template.name}`,
+                } as any,
+              });
+            } else {
+              await prisma.conversation.update({
+                where: { id: conv.id },
+                data: { lastMessageAt: now, lastMessagePreview: `Template: ${template.name}` } as any,
+              });
+            }
+            conversationId = conv.id;
 
-          // Mark as failed
+            const savedMessage = await prisma.message.create({
+              data: {
+                conversationId,
+                whatsappAccountId: campaign.whatsappAccountId!,
+                waMessageId,
+                wamId: waMessageId,
+                direction: 'OUTBOUND',
+                type: 'TEMPLATE',
+                content: template.bodyText || `Template: ${template.name}`,
+                status: 'SENT',
+                sentAt: now,
+                timestamp: now,
+                metadata: { campaignId, campaignContactId: campaignContact.id },
+              } as any,
+            });
+
+            // Emit to inbox
+            webhookEvents.emit('newMessage', { organizationId, conversationId, message: savedMessage });
+          } catch (dbErr) {
+            console.warn('⚠️ Failed to save message to DB:', dbErr);
+          }
+
+          sentCount++;
+          processedCount++;
+          console.log(`✅ Sent (${sentCount}/${campaign.totalContacts}): ${waMessageId}`);
+
+          // Emit contact status update
+          campaignSocketService.emitContactStatus(organizationId, campaignId, {
+            contactId: campaignContact.contactId,
+            phone: cleanPhone,
+            status: 'SENT',
+            messageId: waMessageId,
+          });
+
+        } catch (error: any) {
+          let failureReason = error.message || 'Unknown error';
+          if (error.response?.data?.error) {
+            const me = error.response.data.error;
+            failureReason = `${me.message} (Code: ${me.code})`;
+          }
+
+          console.error(`❌ Failed to send to ${phone}:`, failureReason);
+
           await prisma.campaignContact.update({
             where: { id: campaignContact.id },
             data: {
               status: 'FAILED',
-              failureReason: error.message,
+              failureReason: failureReason.substring(0, 500),
               failedAt: new Date(),
             },
           });
+
+          failedCount++;
+          processedCount++;
+
+          campaignSocketService.emitContactStatus(organizationId, campaignId, {
+            contactId: campaignContact.contactId,
+            phone: phone.replace(/[^0-9]/g, ''),
+            status: 'FAILED',
+            error: failureReason.substring(0, 200),
+          });
         }
-      }));
 
-      // ✅ Emit batch progress
-      const totalProcessed = await prisma.campaignContact.count({
-        where: { campaignId, status: { not: 'PENDING' } }
-      });
+        // Update running counters after each message
+        await this.updateCampaignCounters(campaignId, organizationId, sentCount, failedCount);
 
-      campaignSocketService.emitCampaignProgress(organizationId, campaignId, {
-        sent: totalProcessed, // This includes Sent + Failed. Adjust if you only want SENT
-        failed: 0, // Will be updated by queue
-        total: campaign.totalContacts,
-        percentage: Math.round((totalProcessed / campaign.totalContacts) * 100),
-        status: 'RUNNING'
-      });
-
-      // ✅ Delay between batches (avoid rate limits)
-      await new Promise(resolve => setTimeout(resolve, 2000));
+        // Rate limit: short delay between messages
+        if (contacts.indexOf(campaignContact) < contacts.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, MESSAGE_DELAY_MS));
+        }
+      }
     }
 
-    console.log(`✅ Campaign processing complete: ${processedCount} contacts queued`);
-    // NOTE: Do NOT call updateCampaignStats here.
-    // Campaign completion is handled by incrementCampaignStats in the Bull queue worker
-    // (triggered per-message when each message is actually SENT or FAILED).
+    console.log(`✅ Campaign ${campaignId} done: ${sentCount} sent, ${failedCount} failed`);
+
+    // Mark campaign as COMPLETED
+    const finalCampaign = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      select: { status: true, sentCount: true, failedCount: true, deliveredCount: true, readCount: true, totalContacts: true },
+    });
+
+    if (finalCampaign?.status === 'RUNNING') {
+      await prisma.campaign.update({
+        where: { id: campaignId },
+        data: { status: 'COMPLETED', completedAt: new Date() },
+      });
+
+      campaignSocketService.emitCampaignCompleted(organizationId, campaignId, {
+        sentCount: finalCampaign.sentCount,
+        failedCount: finalCampaign.failedCount,
+        deliveredCount: finalCampaign.deliveredCount,
+        readCount: finalCampaign.readCount,
+        totalRecipients: finalCampaign.totalContacts,
+      });
+
+      console.log(`🏁 Campaign ${campaignId} marked COMPLETED`);
+    }
+  }
+
+  // Helper: update campaign sent/failed counters + emit progress socket
+  private async updateCampaignCounters(
+    campaignId: string,
+    organizationId: string,
+    sent: number,
+    failed: number
+  ): Promise<void> {
+    try {
+      const updated = await prisma.campaign.update({
+        where: { id: campaignId },
+        data: { sentCount: sent, failedCount: failed },
+        select: { totalContacts: true, deliveredCount: true, readCount: true, status: true },
+      });
+
+      const processed = sent + failed;
+      const percentage = Math.round((processed / (updated.totalContacts || 1)) * 100);
+
+      campaignSocketService.emitCampaignProgress(organizationId, campaignId, {
+        sent,
+        failed,
+        delivered: updated.deliveredCount,
+        read: updated.readCount,
+        total: updated.totalContacts,
+        percentage,
+        status: updated.status,
+      });
+    } catch (e) {
+      // Non-fatal
+    }
   }
 
   // UPDATE CAMPAIGN STATS (used after resume/manual refresh - NOT for completion tracking)
