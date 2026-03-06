@@ -1165,6 +1165,61 @@ export class AdminService {
     };
     return systemSettings;
   }
+
+  // ==========================================
+  // WHATSAPP STATS AND OVERRIDES
+  // ==========================================
+
+  async getWhatsAppConnectionStats() {
+    const stats = await prisma.whatsAppAccount.groupBy({
+      by: ['connectionType', 'status'],
+      _count: true,
+    });
+
+    const formatted = {
+      cloudApi: { active: 0, inactive: 0, total: 0 },
+      businessApp: { active: 0, inactive: 0, total: 0 },
+      onPremise: { active: 0, inactive: 0, total: 0 },
+    };
+
+    stats.forEach((stat) => {
+      const type = (stat.connectionType || 'CLOUD_API').toUpperCase();
+      let key: 'cloudApi' | 'businessApp' | 'onPremise' = 'cloudApi';
+      
+      if (type === 'WHATSAPP_BUSINESS_APP' || type === 'BUSINESS_APP') {
+        key = 'businessApp';
+      } else if (type === 'ON_PREMISE') {
+        key = 'onPremise';
+      }
+
+      formatted[key].total += stat._count;
+      if (stat.status === 'CONNECTED' || stat.status === ('active' as any)) {
+        formatted[key].active += stat._count;
+      } else {
+        formatted[key].inactive += stat._count;
+      }
+    });
+
+    return formatted;
+  }
+
+  async updateWhatsAppConnectionType(accountId: string, connectionType: string) {
+    const account = await prisma.whatsAppAccount.findUnique({ where: { id: accountId } });
+    if (!account) {
+      throw new AppError('WhatsApp account not found', 404);
+    }
+
+    const updated = await prisma.whatsAppAccount.update({
+      where: { id: accountId },
+      data: { connectionType },
+    });
+
+    return {
+      success: true,
+      message: 'Connection type updated successfully',
+      account: updated,
+    };
+  }
 }
 
 export const adminService = new AdminService();

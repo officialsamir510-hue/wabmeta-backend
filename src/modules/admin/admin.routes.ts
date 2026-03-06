@@ -398,6 +398,16 @@ router.put(
 // ============================================
 
 router.get(
+  '/whatsapp-stats',
+  adminController.getWhatsAppStats.bind(adminController)
+);
+
+router.patch(
+  '/whatsapp-connections/:accountId/connection-type',
+  adminController.updateConnectionType.bind(adminController)
+);
+
+router.get(
   '/whatsapp-connections',
   adminController.getWhatsAppConnections.bind(adminController)
 );

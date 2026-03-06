@@ -799,6 +799,35 @@ export class AdminController {
   // WHATSAPP CONNECTION MANAGEMENT
   // ============================================
 
+  async getWhatsAppStats(req: AdminRequest, res: Response, next: NextFunction) {
+    try {
+      const stats = await adminService.getWhatsAppConnectionStats();
+      return sendSuccess(res, stats, 'WhatsApp stats fetched successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async updateConnectionType(req: AdminRequest, res: Response, next: NextFunction) {
+    try {
+      const accountId = getParamId(req.params.accountId);
+      const { connectionType } = req.body;
+
+      if (!connectionType) {
+        throw new AppError('Connection type is required', 400);
+      }
+
+      const result = await adminService.updateWhatsAppConnectionType(
+        accountId,
+        connectionType
+      );
+
+      return sendSuccess(res, result, 'Connection type updated successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async getWhatsAppConnections(req: AdminRequest, res: Response, next: NextFunction) {
     try {
       const connections = await prisma.whatsAppAccount.findMany({

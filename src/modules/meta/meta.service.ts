@@ -32,6 +32,28 @@ export class MetaService {
     };
   }
 
+  // ✅ Detect Connection Type Helper
+  private detectConnectionType(metaData: any): string {
+    if (!metaData) return 'CLOUD_API';
+    
+    // Check if it's Cloud API
+    if (metaData.api_version || metaData.cloud_api || metaData.platformType === 'CLOUD_API') {
+      return 'CLOUD_API';
+    }
+    
+    // Check if it's Business App
+    if (metaData.business_app || metaData.app_based || metaData.platformType === 'WHATSAPP_BUSINESS_APP') {
+      return 'BUSINESS_APP';
+    }
+
+    // Check if it's On-Premise
+    if (metaData.on_premise || metaData.self_hosted || metaData.platformType === 'ON_PREMISE') {
+      return 'ON_PREMISE';
+    }
+
+    return 'CLOUD_API';
+  }
+
   // ============================================
   // OAUTH & CONFIGURATION
   // ============================================
@@ -237,6 +259,10 @@ export class MetaService {
         message: `Found phone: ${primaryPhone.displayPhoneNumber}`,
       });
 
+      // Auto-detect connection type based on primary phone data
+      const autoDetected = this.detectConnectionType(primaryPhone);
+      const finalConnectionType = autoDetected !== 'CLOUD_API' ? autoDetected : connectionType;
+
       // ============================================
       // STEP 4: Subscribe to Webhooks
       // ============================================
@@ -315,7 +341,7 @@ export class MetaService {
               verifiedName: primaryPhone.verifiedName,
               qualityRating: primaryPhone.qualityRating,
               status: WhatsAppAccountStatus.CONNECTED,
-              connectionType,
+              connectionType: finalConnectionType,
               isDefault: existingAccount.isDefault || !hasDefault, // Restore or set as default if no other default
               codeVerificationStatus: primaryPhone.codeVerificationStatus,
               nameStatus: primaryPhone.nameStatus,
@@ -365,7 +391,7 @@ export class MetaService {
               tokenExpiresAt,
               webhookSecret: encryptedWebhookSecret,
               status: WhatsAppAccountStatus.CONNECTED,
-              connectionType,
+              connectionType: finalConnectionType,
               isDefault: accountCount === 0,
               codeVerificationStatus: primaryPhone.codeVerificationStatus,
               nameStatus: primaryPhone.nameStatus,
@@ -399,7 +425,7 @@ export class MetaService {
             tokenExpiresAt,
             webhookSecret: encryptedWebhookSecret,
             status: WhatsAppAccountStatus.CONNECTED,
-            connectionType,
+            connectionType: finalConnectionType,
             isDefault: accountCount === 0,
             codeVerificationStatus: primaryPhone.codeVerificationStatus,
             nameStatus: primaryPhone.nameStatus,
