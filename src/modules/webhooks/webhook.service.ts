@@ -594,11 +594,9 @@ export class WebhookService {
     try {
       const campaignContact = await prisma.campaignContact.findFirst({
         where: { waMessageId },
-        select: {
-          id: true,
-          campaignId: true,
-          contactId: true,
-          status: true,
+        include: {
+          campaign: { select: { organizationId: true } },
+          contact: { select: { phone: true } },
         },
       });
 
@@ -636,6 +634,20 @@ export class WebhookService {
 
       console.log(`✅ Campaign contact updated: ${campaignContact.id} -> ${newStatus}`);
 
+      // ✅ Emit real-time update to campaign UI
+      const orgId = campaignContact.campaign?.organizationId;
+      const contactPhone = campaignContact.contact?.phone || '';
+      if (orgId) {
+        import('../campaigns/campaigns.socket').then(({ campaignSocketService }) => {
+          campaignSocketService.emitContactStatus(orgId, campaignContact.campaignId, {
+            contactId: campaignContact.contactId,
+            phone: contactPhone,
+            status: newStatus,
+            messageId: waMessageId
+          });
+        }).catch(e => console.error('❌ Socket emission failed in webhook:', e));
+      }
+
       const campaign = await prisma.campaign.findUnique({
         where: { id: campaignContact.campaignId },
         select: {
@@ -646,6 +658,7 @@ export class WebhookService {
           failedCount: true,
           sentCount: true,
           totalContacts: true,
+          status: true,
         },
       });
 
@@ -659,6 +672,7 @@ export class WebhookService {
 
       if (newStatus === 'READ' && currentStatus !== 'READ') {
         updateData.readCount = { increment: 1 };
+        // If it jumped from SENT to READ directly, increment delivered too
         if (currentStatus === 'SENT') {
           updateData.deliveredCount = { increment: 1 };
         }
@@ -669,10 +683,26 @@ export class WebhookService {
       }
 
       if (Object.keys(updateData).length > 0) {
-        await prisma.campaign.update({
+        const updatedCampaign = await prisma.campaign.update({
           where: { id: campaign.id },
           data: updateData,
         });
+
+        // ✅ Emit overall progress to campaign list/dashboard
+        import('../campaigns/campaigns.socket').then(({ campaignSocketService }) => {
+          const processed = updatedCampaign.sentCount + updatedCampaign.failedCount;
+          const percentage = Math.round((processed / (updatedCampaign.totalContacts || 1)) * 100);
+          
+          campaignSocketService.emitCampaignProgress(campaign.organizationId, campaign.id, {
+            sent: updatedCampaign.sentCount,
+            failed: updatedCampaign.failedCount,
+            delivered: updatedCampaign.deliveredCount,
+            read: updatedCampaign.readCount,
+            total: updatedCampaign.totalContacts,
+            percentage,
+            status: updatedCampaign.status,
+          });
+        }).catch(e => console.error('❌ Campaign progress emission failed in webhook:', e));
 
         console.log(`✅ Campaign ${campaign.id} stats updated:`, updateData);
       }

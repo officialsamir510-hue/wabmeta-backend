@@ -304,21 +304,26 @@ messageQueue.process(80, async (job: Job) => {
         return { success: true, waMessageId: result.waMessageId };
 
     } catch (error: any) {
-        let failureReason = error.message;
-        
-        // Detailed Meta error extraction
-        if (error.response?.data?.error?.message) {
-            failureReason = error.response.data.error.message;
+        // Detailed Meta error extraction - always get the real message first
+        let failureReason = error.message || 'Unknown error';
+
+        if (error.response?.data?.error) {
+            const metaErr = error.response.data.error;
+            const code = metaErr.code ? ` (Code: ${metaErr.code})` : '';
+            failureReason = `${metaErr.message}${code}`;
         }
-        
-        // classify error
-        if (failureReason.includes('400')) failureReason = `Meta API Error: ${failureReason}`;
-        if (failureReason.includes('token') || failureReason.includes('OAuth')) failureReason = "WhatsApp account disconnected. Please reconnect.";
-        if (failureReason.includes('limit')) failureReason = "Meta Rate Limit Reached. Messages will be delayed.";
-        if (failureReason.includes('template')) failureReason = "Template mismatch or not approved by Meta.";
-        if (failureReason.includes('permission')) failureReason = "Missing permissions to send messages.";
-        if (failureReason.includes('user')) failureReason = "Invalid phone number or WhatsApp user not found.";
-        if (failureReason.includes('policy')) failureReason = "Meta Policy Violation. Check your business account.";
+
+        // Apply human-readable overrides only for known error patterns
+        if (error.response?.status === 401 || failureReason.includes('OAuthException')) {
+            failureReason = `WhatsApp account disconnected. Please reconnect. (${failureReason})`;
+        } else if (failureReason.includes('rate limit') || failureReason.includes('spam')) {
+            failureReason = `Meta Rate Limit Reached. Messages will be delayed.`;
+        } else if (failureReason.includes('permission')) {
+            failureReason = `Missing permissions to send messages.`;
+        } else if (failureReason.includes('policy violation')) {
+            failureReason = `Meta Policy Violation. Check your business account.`;
+        }
+        // Note: Do NOT override template name errors - they should show the real code (132001, etc.)
 
         console.error(`❌ Job ${job.id} failed:`, failureReason);
 

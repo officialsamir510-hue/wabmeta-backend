@@ -61,6 +61,8 @@ class CampaignSocketService {
         data: {
             sent: number;
             failed: number;
+            delivered?: number;
+            read?: number;
             total: number;
             percentage: number;
             status: string;
