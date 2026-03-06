@@ -903,6 +903,12 @@ export class TemplatesService {
     }
 
     // 2. Handle DB relations
+    // Nullify templateId in message history to preserve chat history but break link
+    await prisma.message.updateMany({
+      where: { templateId },
+      data: { templateId: null },
+    });
+
     // Delete message queue entries for this template
     await prisma.messageQueue.deleteMany({
       where: { templateId },

@@ -190,7 +190,7 @@ export class AuthService {
           ownerId: user.id,
           planType: 'FREE_DEMO',
           featureSimpleBulkUpload: false,
-          featureCsvUpload: false,
+          featureCsvUpload: true,
           featureOverrideByAdmin: false,
         } as any,
       });
@@ -327,7 +327,7 @@ export class AuthService {
           ownerId: user.id,
           planType: 'FREE_DEMO',
           featureSimpleBulkUpload: false,
-          featureCsvUpload: false,
+          featureCsvUpload: true,
           featureOverrideByAdmin: false,
         } as any,
       });
@@ -704,7 +704,7 @@ export class AuthService {
           ownerId: user.id,
           planType: 'FREE_DEMO',
           featureSimpleBulkUpload: false,
-          featureCsvUpload: false,
+          featureCsvUpload: true,
           featureOverrideByAdmin: false,
         } as any,
       });
@@ -753,7 +753,7 @@ export class AuthService {
           ownerId: user.id,
           planType: 'FREE_DEMO',
           featureSimpleBulkUpload: false,
-          featureCsvUpload: false,
+          featureCsvUpload: true,
           featureOverrideByAdmin: false,
         } as any,
       });

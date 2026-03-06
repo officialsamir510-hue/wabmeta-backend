@@ -5,6 +5,10 @@ import { EventEmitter } from 'events';
 import { config } from '../config';
 import whatsappApi from '../modules/whatsapp/whatsapp.api';
 import prisma from '../config/database';
+import { decrypt } from '../utils/encryption';
+import { inboxService } from '../modules/inbox/inbox.service';
+import { webhookEvents } from '../modules/webhooks/webhook.service';
+import { campaignSocketService } from '../modules/campaigns/campaigns.socket';
 
 // ============================================
 // REDIS CONFIGURATION
@@ -118,7 +122,7 @@ function buildTemplateParams(template: any, variables: Record<string, any>): any
 // ============================================
 // PROCESS MESSAGE JOB
 // ============================================
-messageQueue.process(20, async (job: Job) => {
+messageQueue.process(80, async (job: Job) => {
     console.log(`📤 Processing message job: ${job.id}`);
 
     const {
@@ -167,7 +171,6 @@ messageQueue.process(20, async (job: Job) => {
         console.log(`📧 Sending template: ${template.name} with ${params.length} params`);
 
         // ✅ 5. Decrypt access token
-        const { decrypt } = await import('../utils/encryption');
         const token = decrypt(account.accessToken) || undefined;
 
         // ✅ 6. Send message via WhatsApp API
@@ -233,11 +236,10 @@ messageQueue.process(20, async (job: Job) => {
         });
 
         // ✅ 10. Clear inbox cache
-        const { inboxService } = await import('../modules/inbox/inbox.service');
         await inboxService.clearCache(organizationId);
 
         // ✅ 11. Emit socket events for real-time updates
-        const { webhookEvents } = await import('../modules/webhooks/webhook.service');
+        // webhookEvents is already imported at top level
 
         // Get full conversation with contact for socket event
         const updatedConversation = await prisma.conversation.findUnique({
@@ -282,17 +284,43 @@ messageQueue.process(20, async (job: Job) => {
                 },
             });
         }
-
-        // ✅ 12. Update campaign stats
+        
+        // ✅ 12. Emit individual contact status update for real-time campaign UI
         if (campaignId) {
-            await updateCampaignStats(campaignId);
+            campaignSocketService.emitContactStatus(organizationId, campaignId, {
+                contactId: contactId,
+                phone: phone,
+                status: 'SENT',
+                messageId: result.waMessageId
+            });
+        }
+
+        // ✅ 13. Update campaign stats (Optimized)
+        if (campaignId) {
+            await incrementCampaignStats(campaignId, 'sent');
         }
 
         console.log(`✅ Job ${job.id} completed successfully`);
         return { success: true, waMessageId: result.waMessageId };
 
     } catch (error: any) {
-        console.error(`❌ Job ${job.id} failed:`, error.message);
+        let failureReason = error.message;
+        
+        // Detailed Meta error extraction
+        if (error.response?.data?.error?.message) {
+            failureReason = error.response.data.error.message;
+        }
+        
+        // classify error
+        if (failureReason.includes('400')) failureReason = `Meta API Error: ${failureReason}`;
+        if (failureReason.includes('token') || failureReason.includes('OAuth')) failureReason = "WhatsApp account disconnected. Please reconnect.";
+        if (failureReason.includes('limit')) failureReason = "Meta Rate Limit Reached. Messages will be delayed.";
+        if (failureReason.includes('template')) failureReason = "Template mismatch or not approved by Meta.";
+        if (failureReason.includes('permission')) failureReason = "Missing permissions to send messages.";
+        if (failureReason.includes('user')) failureReason = "Invalid phone number or WhatsApp user not found.";
+        if (failureReason.includes('policy')) failureReason = "Meta Policy Violation. Check your business account.";
+
+        console.error(`❌ Job ${job.id} failed:`, failureReason);
 
         // Update campaign contact as failed
         if (campaignContactId) {
@@ -301,14 +329,24 @@ messageQueue.process(20, async (job: Job) => {
                     where: { id: campaignContactId },
                     data: {
                         status: 'FAILED',
-                        failureReason: error.message,
+                        failureReason: failureReason,
                         failedAt: new Date(),
                     },
                 });
 
-                // Update campaign stats
+                // ✅ Emit individual contact failure for real-time campaign UI
+                if (campaignId && organizationId) {
+                    campaignSocketService.emitContactStatus(organizationId, campaignId, {
+                        contactId: contactId,
+                        phone: phone,
+                        status: 'FAILED',
+                        error: failureReason
+                    });
+                }
+
+                // Update campaign stats (Optimized)
                 if (campaignId) {
-                    await updateCampaignStats(campaignId);
+                    await incrementCampaignStats(campaignId, 'failed');
                 }
             } catch (updateError) {
                 console.error('⚠️ Failed to update campaign contact status:', updateError);
@@ -319,78 +357,73 @@ messageQueue.process(20, async (job: Job) => {
     }
 });
 
-// ============================================
-// UPDATE CAMPAIGN STATS
-// ============================================
-async function updateCampaignStats(campaignId: string) {
+/**
+ * Increment campaign stats atomically (MUCH FASTER than groupBy)
+ */
+/**
+ * Increment campaign stats atomically (MUCH FASTER than groupBy)
+ */
+async function incrementCampaignStats(campaignId: string, type: 'sent' | 'failed') {
     try {
-        const stats = await prisma.campaignContact.groupBy({
-            by: ['status'],
-            where: { campaignId },
-            _count: true,
-        });
-
-        const statusCounts: Record<string, number> = {};
-        stats.forEach((stat) => {
-            statusCounts[stat.status] = stat._count;
-        });
-
-        await prisma.campaign.update({
+        const field = type === 'sent' ? 'sentCount' : 'failedCount';
+        
+        const campaign = await prisma.campaign.update({
             where: { id: campaignId },
-            data: {
-                sentCount: statusCounts.SENT || 0,
-                deliveredCount: statusCounts.DELIVERED || 0,
-                readCount: statusCounts.READ || 0,
-                failedCount: statusCounts.FAILED || 0,
-            },
+            data: { [field]: { increment: 1 } },
+            select: {
+                id: true,
+                organizationId: true,
+                sentCount: true,
+                failedCount: true,
+                totalContacts: true,
+                status: true,
+            }
         });
 
-        console.log('📊 Campaign stats updated:', statusCounts);
-
-        // Check if campaign should be marked complete
-        const pendingCount = await prisma.campaignContact.count({
-            where: {
-                campaignId,
-                status: { in: ['PENDING', 'QUEUED'] }
-            },
+        // ✅ Emit progress update
+        const processed = campaign.sentCount + campaign.failedCount;
+        const percentage = Math.round((processed / (campaign.totalContacts || 1)) * 100);
+        
+        campaignSocketService.emitCampaignProgress(campaign.organizationId, campaignId, {
+            sent: campaign.sentCount,
+            failed: campaign.failedCount,
+            total: campaign.totalContacts,
+            percentage,
+            status: campaign.status,
         });
 
-        if (pendingCount === 0) {
-            const campaign = await prisma.campaign.update({
+        // ✅ Smarter completion check: only if we are at the end
+        if (processed >= campaign.totalContacts && campaign.status !== 'COMPLETED') {
+            const finalCampaign = await prisma.campaign.update({
                 where: { id: campaignId },
                 data: {
                     status: 'COMPLETED',
                     completedAt: new Date(),
                 },
-                select: {
-                    organizationId: true,
-                    sentCount: true,
-                    deliveredCount: true,
-                    readCount: true,
-                    failedCount: true,
-                    totalContacts: true,
-                },
             });
 
             console.log(`🏁 Campaign ${campaignId} completed!`);
 
-            // Emit completion event
-            const { campaignSocketService } = await import('../modules/campaigns/campaigns.socket');
             campaignSocketService.emitCampaignCompleted(
                 campaign.organizationId,
                 campaignId,
                 {
-                    sentCount: campaign.sentCount,
-                    deliveredCount: campaign.deliveredCount,
-                    readCount: campaign.readCount,
-                    failedCount: campaign.failedCount,
-                    totalRecipients: campaign.totalContacts,
+                    sentCount: finalCampaign.sentCount,
+                    deliveredCount: finalCampaign.deliveredCount,
+                    readCount: finalCampaign.readCount,
+                    failedCount: finalCampaign.failedCount,
+                    totalRecipients: finalCampaign.totalContacts,
                 }
             );
         }
     } catch (error) {
-        console.error('❌ Failed to update campaign stats:', error);
+        console.error('❌ Failed to increment campaign stats:', error);
     }
+}
+
+// Deprecated in favor of incrementCampaignStats but kept for compatibility if needed
+async function updateCampaignStats(campaignId: string) {
+    console.log('⚠️ updateCampaignStats called (Legacy), please use incrementCampaignStats');
 }
 
 // ============================================
