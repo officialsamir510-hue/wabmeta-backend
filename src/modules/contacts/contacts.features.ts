@@ -5,7 +5,7 @@ import { AppError } from '../../middleware/errorHandler';
 const PLAN_FEATURES = {
     FREE_DEMO: {
         simpleBulkPaste: false,
-        csvUpload: false
+        csvUpload: true          // ✅ Enabled for Demo Users
     },
     MONTHLY: {
         simpleBulkPaste: false,  // ❌ Not available
@@ -80,7 +80,7 @@ export class ContactFeaturesService {
 
     private getUpgradeMessage(plan: string, features: any): string | undefined {
         if (plan === 'FREE_DEMO') {
-            return 'Upgrade to Monthly (₹899) for CSV Import or Quarterly (₹2,500) for all features';
+            return 'Upgrade to Quarterly (₹2,500) to unlock Simple Bulk Paste and other premium features';
         }
         if (plan === 'MONTHLY' && !features.simpleBulkPaste) {
             return 'Upgrade to Quarterly (₹2,500) to unlock Simple Bulk Paste';
@@ -106,7 +106,7 @@ export class ContactFeaturesService {
 
         if (feature === 'csvUpload' && !access.csvUpload) {
             throw new AppError(
-                'CSV Upload requires Monthly plan (₹899) or higher. Your current plan: ' + access.currentPlan,
+                'CSV Upload is not available for your current plan: ' + access.currentPlan,
                 403
             );
         }

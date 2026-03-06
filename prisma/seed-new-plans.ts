@@ -14,7 +14,7 @@ async function main() {
             monthlyPrice: 0,
             yearlyPrice: 0,
             validityDays: 2,
-            maxContacts: 50,
+            maxContacts: 1000,
             maxMessages: 100,
             maxMessagesPerMonth: 100,
             maxTeamMembers: 1,
@@ -35,7 +35,7 @@ async function main() {
             features: [
                 '100 messages',
                 '1 campaign',
-                '50 contacts',
+                '1,000 contacts',
                 'Basic support',
                 '2-day trial period'
             ],

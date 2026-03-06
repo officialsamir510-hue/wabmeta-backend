@@ -563,8 +563,8 @@ export class ContactsService {
 
     // ✅ FREE PLAN RESTRICTIONS
     if (planName.includes('free') || planName.includes('trial')) {
-      // Free users can only import 10 contacts at a time
-      const FREE_IMPORT_LIMIT = 10;
+      // Free users can only import 500 contacts at a time (Increased from 10)
+      const FREE_IMPORT_LIMIT = 500;
 
       if (contacts.length > FREE_IMPORT_LIMIT) {
         throw new AppError(
@@ -573,10 +573,10 @@ export class ContactsService {
         );
       }
 
-      // Free users can only have 50 total contacts
-      if (currentCount >= 50) {
+      // Free users can only have 1000 total contacts (Increased from 50)
+      if (currentCount >= 1000) {
         throw new AppError(
-          'Free plan limit of 50 contacts reached. Upgrade to add more contacts.',
+          'Free plan limit of 1000 contacts reached. Upgrade to add more contacts.',
           403
         );
       }
@@ -1200,12 +1200,12 @@ export class ContactsService {
     });
 
     const totalContacts = org?._count.contacts || 0;
-    const maxContacts = org?.subscription?.plan?.maxContacts || 50;
+    const maxContacts = org?.subscription?.plan?.maxContacts || 1000;
     const planName = org?.subscription?.plan?.name || 'Free';
     const isFree = planName.toLowerCase().includes('free') || planName.toLowerCase().includes('trial');
 
     const remainingSlots = Math.max(0, maxContacts - totalContacts);
-    const maxPerImport = isFree ? 10 : 10000;
+    const maxPerImport = isFree ? 500 : 10000;
 
     return {
       totalContacts,

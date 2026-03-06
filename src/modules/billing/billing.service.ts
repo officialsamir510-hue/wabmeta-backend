@@ -58,7 +58,7 @@ const SLUG_TO_PLAN_TYPE: Record<string, PlanType> = {
 
 const DEFAULT_PLAN_LIMITS = {
   FREE_DEMO: {
-    maxContacts: 50,
+    maxContacts: 1000,
     maxMessages: 100,
     maxCampaigns: 1,
     maxCampaignsPerMonth: 1,
@@ -436,7 +436,7 @@ class BillingService {
         monthlyPrice: 0,
         yearlyPrice: 0,
         ...DEFAULT_PLAN_LIMITS.FREE_DEMO,
-        features: ['100 messages', '1 campaign', '50 contacts', '2-day trial'],
+        features: ['100 Messages', 'Limited Campaigns', '1,000 Contacts', '2-Day Trial'],
         isActive: true,
         isRecommended: false,
         popular: false,
