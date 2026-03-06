@@ -874,15 +874,50 @@ export class TemplatesService {
   async delete(organizationId: string, templateId: string): Promise<{ message: string }> {
     const template = await prisma.template.findFirst({
       where: { id: templateId, organizationId },
+      include: { whatsappAccount: true },
     });
 
     if (!template) {
       throw new AppError('Template not found', 404);
     }
 
+    // 1. Attempt to delete from Meta if synced
+    if (template.metaTemplateId && template.whatsappAccount) {
+      try {
+        const waData = await getWhatsAppAccountWithToken(
+          organizationId,
+          template.whatsappAccountId || undefined
+        );
+
+        console.log(`📤 Deleting template "${template.name}" from Meta...`);
+        await whatsappApi.deleteMessageTemplate(
+          waData.wabaId,
+          waData.accessToken,
+          template.name
+        );
+        console.log('✅ Deleted from Meta');
+      } catch (metaErr: any) {
+        console.warn('⚠️ Failed to delete template from Meta:', metaErr.message);
+        // We continue even if Meta delete fails (might already be deleted there)
+      }
+    }
+
+    // 2. Handle DB relations
+    // Delete message queue entries for this template
+    await prisma.messageQueue.deleteMany({
+      where: { templateId },
+    });
+
+    // Handle Campaigns - If we want to allow delete, we must handle campaigns.
+    // We'll delete related campaigns too to ensure the delete succeeds.
+    await prisma.campaign.deleteMany({
+      where: { templateId },
+    });
+
+    // 3. Final Delete
     await prisma.template.delete({ where: { id: templateId } });
 
-    console.log(`✅ Template deleted: ${templateId}`);
+    console.log(`✅ Template completely deleted: ${templateId}`);
 
     return { message: 'Template deleted successfully' };
   }
