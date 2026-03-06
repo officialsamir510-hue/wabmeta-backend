@@ -714,12 +714,18 @@ export class TemplatesService {
 
     console.log(`📥 Found ${metaTemplates.length} templates in Meta`);
 
+    // ✅ Track found names to handle deletions
+    const foundMetaKeys = new Set<string>();
+
     let synced = 0;
     for (const mt of metaTemplates) {
       try {
         const metaId = String(mt.id);
         const metaName = String(mt.name);
         const metaLang = String(mt.language);
+        
+        // Track this key (name:lang)
+        foundMetaKeys.add(`${metaName}:${metaLang}`);
 
         const metaStatusRaw = String(mt.status || 'PENDING').toUpperCase();
         const mappedStatus: TemplateStatus =
@@ -790,9 +796,34 @@ export class TemplatesService {
       }
     }
 
-    console.log(`✅ Synced ${synced} templates from Meta`);
+    // ✅ Handle Ghost Templates (Deleted in Meta)
+    // Find templates in DB for this org/waba that were NOT in Meta's response
+    const dbTemplates = await prisma.template.findMany({
+      where: {
+        organizationId,
+        wabaId: waData.wabaId,
+        status: { in: ['APPROVED', 'PENDING'] } // Only worry about active ones
+      }
+    });
 
-    return { message: 'Templates synced from Meta', synced };
+    let cleaned = 0;
+    for (const dt of dbTemplates) {
+      if (!foundMetaKeys.has(`${dt.name}:${dt.language}`)) {
+        console.log(`⚠️ Marking ghost template as REJECTED (Deleted in Meta): ${dt.name}`);
+        await prisma.template.update({
+          where: { id: dt.id },
+          data: {
+            status: 'REJECTED',
+            rejectionReason: 'Template deleted from Meta Business Suite.'
+          }
+        });
+        cleaned++;
+      }
+    }
+
+    console.log(`✅ Synced ${synced} templates. Cleaned ${cleaned} ghosts.`);
+
+    return { message: `Sync complete. ${synced} synced, ${cleaned} cleaned.`, synced };
   }
 
   /**
