@@ -559,13 +559,36 @@ export class ContactsService {
 
     const currentCount = org?._count.contacts || 0;
     const maxContacts = org?.subscription?.plan?.maxContacts || 999999;
+    const planName = org?.subscription?.plan?.name?.toLowerCase() || 'free';
+
+    // ✅ FREE PLAN RESTRICTIONS
+    if (planName.includes('free') || planName.includes('trial')) {
+      // Free users can only import 10 contacts at a time
+      const FREE_IMPORT_LIMIT = 10;
+
+      if (contacts.length > FREE_IMPORT_LIMIT) {
+        throw new AppError(
+          `Free plan allows maximum ${FREE_IMPORT_LIMIT} contacts per import. Upgrade to import more.`,
+          403
+        );
+      }
+
+      // Free users can only have 50 total contacts
+      if (currentCount >= 50) {
+        throw new AppError(
+          'Free plan limit of 50 contacts reached. Upgrade to add more contacts.',
+          403
+        );
+      }
+    }
+
     const availableSlots = Math.max(0, maxContacts - currentCount);
 
     if (availableSlots === 0) {
       throw new AppError('Contact limit reached. Please upgrade your plan.', 400);
     }
 
-    console.log(`📊 Available slots: ${availableSlots}`);
+    console.log(`📊 Plan: ${planName}, Current: ${currentCount}/${maxContacts}, Available: ${availableSlots}`);
 
     // ✅ 3. PROCESS & VALIDATE CONTACTS
     const validContacts: any[] = [];
@@ -1157,6 +1180,40 @@ export class ContactsService {
     return {
       contacts: contacts.map(formatContact),
       meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  async getImportStats(organizationId: string): Promise<{
+    totalContacts: number;
+    maxContacts: number;
+    remainingSlots: number;
+    planName: string;
+    canImport: boolean;
+    maxPerImport: number;
+  }> {
+    const org = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      include: {
+        subscription: { include: { plan: true } },
+        _count: { select: { contacts: true } },
+      },
+    });
+
+    const totalContacts = org?._count.contacts || 0;
+    const maxContacts = org?.subscription?.plan?.maxContacts || 50;
+    const planName = org?.subscription?.plan?.name || 'Free';
+    const isFree = planName.toLowerCase().includes('free') || planName.toLowerCase().includes('trial');
+
+    const remainingSlots = Math.max(0, maxContacts - totalContacts);
+    const maxPerImport = isFree ? 10 : 10000;
+
+    return {
+      totalContacts,
+      maxContacts,
+      remainingSlots,
+      planName,
+      canImport: remainingSlots > 0,
+      maxPerImport,
     };
   }
 }

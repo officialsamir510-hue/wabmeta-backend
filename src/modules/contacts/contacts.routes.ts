@@ -52,6 +52,7 @@ router.get('/country-codes', contactsController.getCountryCodes.bind(contactsCon
 // ============================================
 
 router.get('/stats', contactsController.getStats.bind(contactsController));
+router.get('/import-stats', contactsController.getImportStats.bind(contactsController));
 router.get('/tags', contactsController.getTags.bind(contactsController));
 router.get('/export', contactsController.export.bind(contactsController));
 

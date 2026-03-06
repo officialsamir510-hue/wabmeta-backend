@@ -733,6 +733,23 @@ export class ContactsController {
       next(error);
     }
   }
+
+  // ==========================================
+  // GET IMPORT STATS
+  // ==========================================
+  async getImportStats(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        throw new AppError('Organization context required', 400);
+      }
+
+      const stats = await contactsService.getImportStats(organizationId);
+      sendSuccess(res, stats, 'Import stats fetched successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const contactsController = new ContactsController();
