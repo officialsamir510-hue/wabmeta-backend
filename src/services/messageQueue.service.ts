@@ -28,6 +28,7 @@ export const messageQueue = new Bull('whatsapp-messages', redisUrl || 'redis://l
         tls: redisUrl?.startsWith('rediss://') ? { rejectUnauthorized: false } : undefined,
         maxRetriesPerRequest: null,
         enableReadyCheck: false,
+        connectTimeout: 10000,
     },
     limiter: {
         max: 80, // Meta allows 80 messages/sec
@@ -36,11 +37,13 @@ export const messageQueue = new Bull('whatsapp-messages', redisUrl || 'redis://l
     defaultJobOptions: {
         attempts: 3,
         backoff: {
-            type: 'exponential',
-            delay: 2000,
+            type: 'fixed',   // ✅ FIXED: Use fixed delay, not exponential (prevents 5-6 min delays)
+            delay: 3000,     // Wait 3s between retries (not 2s, 4s, 8s...)
         },
         removeOnComplete: 100,
         removeOnFail: 500,
+        priority: 1,         // ✅ High priority
+        delay: 0,            // ✅ No artificial delay on enqueue
     },
 });
 

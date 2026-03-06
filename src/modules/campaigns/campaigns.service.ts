@@ -837,12 +837,12 @@ export class CampaignsService {
     }
 
     console.log(`✅ Campaign processing complete: ${processedCount} contacts queued`);
-
-    // ✅ Update campaign stats
-    await this.updateCampaignStats(campaignId);
+    // NOTE: Do NOT call updateCampaignStats here.
+    // Campaign completion is handled by incrementCampaignStats in the Bull queue worker
+    // (triggered per-message when each message is actually SENT or FAILED).
   }
 
-  // ✅ UPDATE CAMPAIGN STATS
+  // UPDATE CAMPAIGN STATS (used after resume/manual refresh - NOT for completion tracking)
   private async updateCampaignStats(campaignId: string): Promise<void> {
     const stats = await prisma.campaignContact.groupBy({
       by: ['status'],
@@ -868,20 +868,24 @@ export class CampaignsService {
 
     console.log('📊 Campaign stats updated:', statusCounts);
 
-    // Check if finished
-    const pendingCount = await prisma.campaignContact.count({
-      where: { campaignId, status: 'PENDING' }
+    // ✅ FIXED: Check BOTH PENDING and QUEUED — don't mark complete if messages are still in queue
+    const remainingCount = await prisma.campaignContact.count({
+      where: { campaignId, status: { in: ['PENDING', 'QUEUED'] } }
     });
 
-    if (pendingCount === 0) {
-      await prisma.campaign.update({
-        where: { id: campaignId },
-        data: {
-          status: 'COMPLETED',
-          completedAt: new Date()
-        }
-      });
-      console.log(`🏁 Campaign ${campaignId} marked as COMPLETED`);
+    if (remainingCount === 0) {
+      // Verify all contacts are truly done (SENT/DELIVERED/READ/FAILED)
+      const totalCount = Object.values(statusCounts).reduce((a, b) => a + b, 0);
+      const doneCount = (statusCounts.SENT || 0) + (statusCounts.DELIVERED || 0) +
+        (statusCounts.READ || 0) + (statusCounts.FAILED || 0);
+
+      if (doneCount >= totalCount && totalCount > 0) {
+        await prisma.campaign.update({
+          where: { id: campaignId },
+          data: { status: 'COMPLETED', completedAt: new Date() }
+        });
+        console.log(`🏁 Campaign ${campaignId} marked as COMPLETED (via updateCampaignStats)`);
+      }
     }
   }
 
