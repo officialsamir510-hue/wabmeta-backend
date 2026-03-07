@@ -6,6 +6,7 @@ import { EventEmitter } from 'events';
 import { MessageType, MessageStatus } from '@prisma/client';
 import { chatbotEngine } from '../chatbot/chatbot.engine';
 import { inboxMediaService } from '../inbox/inbox.media';
+import { automationEngine } from '../automation/automation.engine';
 
 // ✅ Socket.ts will subscribe to this
 export const webhookEvents = new EventEmitter();
@@ -444,6 +445,23 @@ export class WebhookService {
           contact: contactWithBotName
         },
       });
+
+      // ✅ Check for keyword automations
+      try {
+        const automationTriggered = await automationEngine.triggerKeyword({
+          organizationId,
+          contactId: contact.id,
+          phone: contact.phone,
+          message: content,
+          conversationId: updatedConversation.id,
+        });
+        
+        if (automationTriggered) {
+          console.log('🤖 Automation handled this message');
+        }
+      } catch (e) {
+        console.error('Automation trigger error:', e);
+      }
 
       // ✅ Trigger Chatbot Engine
       if (msgType === 'TEXT' || msgType === 'INTERACTIVE') {

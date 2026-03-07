@@ -19,6 +19,7 @@ import {
   UpdateContactGroupInput,
   ContactGroupResponse,
 } from './contacts.types';
+import { automationEngine } from '../automation/automation.engine';
 
 import { buildINPhoneVariants, formatFullPhone, normalizeINNational10 } from '../../utils/phone';
 
@@ -317,6 +318,17 @@ export class ContactsService {
         profileFetchAttempts: 0,
       },
     });
+    
+    // Trigger automation for new contact
+    try {
+      automationEngine.triggerNewContact({
+        organizationId,
+        contactId: contact.id,
+        phone: contact.phone,
+      });
+    } catch (e) {
+      console.error('Automation trigger error:', e);
+    }
 
     if (input.groupIds && input.groupIds.length > 0) {
       await prisma.contactGroupMember.createMany({

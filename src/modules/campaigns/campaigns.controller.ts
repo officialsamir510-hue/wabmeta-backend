@@ -539,6 +539,147 @@ export class CampaignsController {
       next(error);
     }
   }
+
+  // ==========================================
+  // GET FAILED CONTACTS
+  // ==========================================
+  async getFailedContacts(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const organizationId = req.user!.organizationId;
+      if (!organizationId) {
+        throw new AppError('Organization context required', 400);
+      }
+
+      const id = String(req.params.id);
+      const { page = 1, limit = 100 } = req.query;
+
+      const result = await campaignsService.getFailedContacts(
+        organizationId,
+        id,
+        Number(page),
+        Number(limit)
+      );
+
+      return res.json({
+        success: true,
+        message: 'Failed contacts fetched successfully',
+        data: result.contacts,
+        meta: result.meta,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ==========================================
+  // EXPORT FAILED CONTACTS AS CSV
+  // ==========================================
+  async exportFailedContacts(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const organizationId = req.user!.organizationId;
+      if (!organizationId) {
+        throw new AppError('Organization context required', 400);
+      }
+
+      const id = String(req.params.id);
+      const csvData = await campaignsService.exportFailedContactsCsv(organizationId, id);
+
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename=failed-contacts-${id}.csv`);
+      return res.send(csvData);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ==========================================
+  // RETRY FAILED CONTACTS ONLY
+  // ==========================================
+  async retryFailedOnly(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const organizationId = req.user!.organizationId;
+      if (!organizationId) {
+        throw new AppError('Organization context required', 400);
+      }
+
+      const id = String(req.params.id);
+      const { contactIds } = req.body; // Optional: specific contacts to retry
+
+      const result = await campaignsService.retryFailedContacts(organizationId, id, contactIds);
+
+      return sendSuccess(res, result, result.message);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ==========================================
+  // GET ALL RECIPIENTS WITH STATUS
+  // ==========================================
+  async getAllRecipients(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const organizationId = req.user!.organizationId;
+      if (!organizationId) {
+        throw new AppError('Organization context required', 400);
+      }
+
+      const id = String(req.params.id);
+      const {
+        page = 1,
+        limit = 50,
+        status,
+        search,
+      } = req.query;
+
+      const result = await campaignsService.getAllRecipients(
+        organizationId,
+        id,
+        {
+          page: Number(page),
+          limit: Number(limit),
+          status: status as string,
+          search: search as string,
+        }
+      );
+
+      return res.json({
+        success: true,
+        message: 'Recipients fetched successfully',
+        data: result.recipients,
+        meta: result.meta,
+        summary: result.summary,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ==========================================
+  // EXPORT ALL RECIPIENTS AS CSV
+  // ==========================================
+  async exportRecipients(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const organizationId = req.user!.organizationId;
+      if (!organizationId) {
+        throw new AppError('Organization context required', 400);
+      }
+
+      const id = String(req.params.id);
+      const { status } = req.query;
+
+      const csvData = await campaignsService.exportRecipientsCsv(
+        organizationId,
+        id,
+        status as string
+      );
+
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename=campaign-recipients-${id}.csv`);
+      return res.send(csvData);
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 // ==========================================

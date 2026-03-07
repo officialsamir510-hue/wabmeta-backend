@@ -240,6 +240,57 @@ router.post(
 // ============================================
 
 /**
+ * @route   GET /api/v1/campaigns/:id/failed
+ * @desc    Get failed contacts for a campaign
+ */
+router.get(
+  '/:id/failed',
+  validate(getCampaignByIdSchema),
+  campaignsController.getFailedContacts.bind(campaignsController)
+);
+
+/**
+ * @route   GET /api/v1/campaigns/:id/failed/export
+ * @desc    Export failed contacts as CSV
+ */
+router.get(
+  '/:id/failed/export',
+  validate(getCampaignByIdSchema),
+  campaignsController.exportFailedContacts.bind(campaignsController)
+);
+
+/**
+ * @route   POST /api/v1/campaigns/:id/retry-failed
+ * @desc    Retry only failed contacts
+ */
+router.post(
+  '/:id/retry-failed',
+  validate(getCampaignByIdSchema),
+  campaignsController.retryFailedOnly.bind(campaignsController)
+);
+
+/**
+ * @route   GET /api/v1/campaigns/:id/recipients
+ * @desc    Get all recipients with their status
+ */
+router.get(
+  '/:id/recipients',
+  validate(getCampaignByIdSchema),
+  campaignsController.getAllRecipients.bind(campaignsController)
+);
+
+/**
+ * @route   GET /api/v1/campaigns/:id/recipients/export
+ * @desc    Export recipients as CSV
+ */
+router.get(
+  '/:id/recipients/export',
+  validate(getCampaignByIdSchema),
+  campaignsController.exportRecipients.bind(campaignsController)
+);
+
+
+/**
  * @route   GET /api/v1/campaigns/queue/stats
  * @desc    Get message queue statistics
  * @access  Private (Admin only recommended)

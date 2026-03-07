@@ -1,12 +1,37 @@
-// src/modules/chatbot/chatbot.engine.ts
+// ✅ REPLACE: src/modules/chatbot/chatbot.engine.ts
 
 import prisma from '../../config/database';
-import { chatbotService } from './chatbot.service';
 import { whatsappService } from '../whatsapp/whatsapp.service';
-import { FlowData, FlowNode, ChatbotSession } from './chatbot.types';
+import { webhookEvents } from '../webhooks/webhook.service';
+
+interface FlowNode {
+  id: string;
+  type: 'start' | 'message' | 'button' | 'condition' | 'delay' | 'action' | 'end';
+  data: {
+    message?: string;
+    buttons?: { id: string; text: string; nextNodeId?: string }[];
+    condition?: { variable: string; operator: string; value: string };
+    delay?: number; // milliseconds
+    action?: { type: string; params: any };
+    nextNodeId?: string;
+  };
+  position?: { x: number; y: number };
+}
+
+interface FlowData {
+  nodes: FlowNode[];
+  edges: { source: string; target: string; sourceHandle?: string }[];
+}
+
+interface SessionData {
+  currentNodeId: string;
+  variables: Record<string, any>;
+  startedAt: Date;
+  lastActivityAt: Date;
+}
 
 // In-memory session store (use Redis in production)
-const sessions = new Map<string, ChatbotSession>();
+const sessions = new Map<string, SessionData>();
 
 export class ChatbotEngine {
   // ==========================================
@@ -15,236 +40,376 @@ export class ChatbotEngine {
   async processMessage(
     conversationId: string,
     organizationId: string,
-    messageText: string,
+    messageContent: string,
     senderPhone: string,
     isNewConversation: boolean
-  ): Promise<{ handled: boolean; responses: string[] }> {
+  ): Promise<void> {
     try {
-      console.log(`🤖 Chatbot processing message for conversation ${conversationId}`);
+      console.log(`🤖 Chatbot processing: "${messageContent}" from ${senderPhone}`);
 
-      // Get or create session
-      let session = sessions.get(conversationId);
-      const responses: string[] = [];
-
-      // Find matching chatbot
-      const chatbot = await chatbotService.findMatchingChatbot(
-        organizationId,
-        messageText,
-        isNewConversation && !session
-      );
-
+      // 1. Find active chatbot
+      const chatbot = await this.findActiveChatbot(organizationId, messageContent, isNewConversation);
+      
       if (!chatbot) {
-        console.log('   No matching chatbot found');
-        return { handled: false, responses: [] };
+        console.log('🤖 No active chatbot found for this trigger');
+        return;
       }
 
-      console.log(`   Matched chatbot: ${chatbot.name}`);
+      console.log(`🤖 Using chatbot: ${chatbot.name}`);
 
-      const flowData = chatbot.flowData;
+      // 2. Get or create session
+      const sessionKey = `${conversationId}:${chatbot.id}`;
+      let session = sessions.get(sessionKey);
 
-      // If no session exists, create one and start from beginning
-      if (!session) {
-        session = {
-          conversationId,
-          chatbotId: chatbot.id,
-          currentNodeId: 'start',
-          variables: {},
-          lastInteractionAt: new Date(),
-          messageCount: 0,
-        };
-        sessions.set(conversationId, session);
-
-        // Send welcome message if it's a new conversation
-        if (isNewConversation && chatbot.welcomeMessage) {
-          responses.push(chatbot.welcomeMessage);
-        }
+      const flowData = chatbot.flowData as unknown as FlowData;
+      
+      if (!flowData || !flowData.nodes || flowData.nodes.length === 0) {
+        console.log('🤖 Chatbot has no flow configured');
+        return;
       }
 
-      // Update session
-      session.lastInteractionAt = new Date();
-      session.messageCount++;
+      // 3. Handle based on session state
+      if (!session || isNewConversation) {
+        // New conversation - start from beginning
+        session = await this.startNewSession(sessionKey, flowData);
+      } else {
+        // Existing session - process user input
+        session = await this.processUserInput(session, messageContent, flowData);
+      }
 
-      // Process flow
-      const flowResponses = await this.processFlow(
-        flowData,
+      // 4. Execute current node
+      await this.executeNode(
         session,
-        messageText,
-        chatbot
+        flowData,
+        conversationId,
+        organizationId,
+        senderPhone,
+        chatbot.id
       );
 
-      responses.push(...flowResponses);
+      // 5. Save session
+      sessions.set(sessionKey, session);
 
-      // If no responses from flow, send fallback
-      if (responses.length === 0 && chatbot.fallbackMessage) {
-        responses.push(chatbot.fallbackMessage);
-      }
-
-      // Send responses via WhatsApp
-      if (responses.length > 0) {
-        await this.sendResponses(organizationId, senderPhone, responses, conversationId);
-      }
-
-      return { handled: responses.length > 0, responses };
-    } catch (error: any) {
-      console.error('Chatbot engine error:', error);
-      return { handled: false, responses: [] };
+    } catch (error) {
+      console.error('🤖 Chatbot engine error:', error);
     }
   }
 
   // ==========================================
-  // PROCESS FLOW
+  // FIND ACTIVE CHATBOT
   // ==========================================
-  private async processFlow(
-    flowData: FlowData,
-    session: ChatbotSession,
-    userMessage: string,
-    chatbot: any
-  ): Promise<string[]> {
-    const responses: string[] = [];
-    const { nodes, edges } = flowData;
+  private async findActiveChatbot(
+    organizationId: string,
+    messageContent: string,
+    isNewConversation: boolean
+  ) {
+    // Check for keyword triggers
+    const chatbots = await prisma.chatbot.findMany({
+      where: {
+        organizationId,
+        status: 'ACTIVE',
+      },
+    });
 
-    if (!nodes || nodes.length === 0) {
-      return responses;
-    }
+    for (const chatbot of chatbots) {
+      // Check keyword triggers
+      const keywords = (chatbot.triggerKeywords as string[]) || [];
+      const lowerMessage = messageContent.toLowerCase().trim();
 
-    // Find current node
-    let currentNode = nodes.find(n => n.id === session.currentNodeId);
-
-    // If no current node or it's start, find the first message node
-    if (!currentNode || currentNode.type === 'start') {
-      const startNode = nodes.find(n => n.type === 'start');
-      if (startNode) {
-        // Find edge from start node
-        const nextEdge = edges.find(e => e.source === startNode.id);
-        if (nextEdge) {
-          currentNode = nodes.find(n => n.id === nextEdge.target);
+      for (const keyword of keywords) {
+        if (lowerMessage === keyword.toLowerCase() || 
+            lowerMessage.includes(keyword.toLowerCase())) {
+          return chatbot;
         }
       }
-    }
 
-    // Process nodes until we hit a stopping point
-    let processedNodes = 0;
-    const maxNodes = 10; // Prevent infinite loops
-
-    while (currentNode && processedNodes < maxNodes) {
-      processedNodes++;
-
-      console.log(`   Processing node: ${currentNode.type} (${currentNode.id})`);
-
-      switch (currentNode.type) {
-        case 'message':
-          // Send the message
-          if (currentNode.data.message) {
-            const processedMessage = this.processVariables(
-              currentNode.data.message,
-              session.variables
-            );
-            responses.push(processedMessage);
-          }
-          // Move to next node
-          currentNode = this.getNextNode(currentNode.id, edges, nodes);
-          break;
-
-        case 'button':
-          // Send message with buttons (interactive)
-          if (currentNode.data.message) {
-            const buttonMessage = this.formatButtonMessage(currentNode);
-            responses.push(buttonMessage);
-          }
-          // Wait for user response - update session and return
-          session.currentNodeId = currentNode.id;
-          return responses;
-
-        case 'condition':
-          // Evaluate condition and choose path
-          const conditionResult = this.evaluateCondition(
-            currentNode.data.condition!,
-            userMessage,
-            session.variables
-          );
-
-          // Find the correct edge based on condition
-          const conditionEdge = edges.find(e => 
-            e.source === currentNode!.id && 
-            (conditionResult ? e.sourceHandle === 'yes' : e.sourceHandle === 'no')
-          );
-
-          if (conditionEdge) {
-            currentNode = nodes.find(n => n.id === conditionEdge.target);
-          } else {
-            currentNode = this.getNextNode(currentNode.id, edges, nodes);
-          }
-          break;
-
-        case 'delay':
-          // In production, implement actual delay with job queue
-          // For now, just continue
-          currentNode = this.getNextNode(currentNode.id, edges, nodes);
-          break;
-
-        case 'action':
-          // Execute action
-          await this.executeAction(currentNode, session);
-          currentNode = this.getNextNode(currentNode.id, edges, nodes);
-          break;
-
-        default:
-          currentNode = this.getNextNode(currentNode.id, edges, nodes);
+      // Check for default chatbot on new conversations
+      if (isNewConversation && chatbot.isDefault) {
+        return chatbot;
       }
     }
 
-    // Update session with final node
-    if (currentNode) {
-      session.currentNodeId = currentNode.id;
-    } else {
-      // Flow completed, reset session
-      sessions.delete(session.conversationId);
-    }
-
-    return responses;
+    // Return default chatbot if exists
+    return chatbots.find(c => c.isDefault);
   }
 
   // ==========================================
-  // GET NEXT NODE
+  // START NEW SESSION
   // ==========================================
-  private getNextNode(
-    currentNodeId: string,
-    edges: FlowData['edges'],
-    nodes: FlowData['nodes']
-  ): FlowNode | undefined {
-    const edge = edges.find(e => e.source === currentNodeId);
-    if (!edge) return undefined;
-    return nodes.find(n => n.id === edge.target);
+  private async startNewSession(
+    sessionKey: string,
+    flowData: FlowData
+  ): Promise<SessionData> {
+    // Find start node
+    const startNode = flowData.nodes.find(n => n.type === 'start');
+    const firstNodeId = startNode?.data?.nextNodeId || flowData.nodes[0]?.id;
+
+    const session: SessionData = {
+      currentNodeId: firstNodeId,
+      variables: {},
+      startedAt: new Date(),
+      lastActivityAt: new Date(),
+    };
+
+    console.log(`🤖 Started new session, first node: ${firstNodeId}`);
+    return session;
+  }
+
+  // ==========================================
+  // PROCESS USER INPUT
+  // ==========================================
+  private async processUserInput(
+    session: SessionData,
+    messageContent: string,
+    flowData: FlowData
+  ): Promise<SessionData> {
+    const currentNode = flowData.nodes.find(n => n.id === session.currentNodeId);
+    
+    if (!currentNode) {
+      return session;
+    }
+
+    // If current node has buttons, check if user clicked one
+    if (currentNode.type === 'button' && currentNode.data.buttons) {
+      const clickedButton = currentNode.data.buttons.find(
+        b => b.text.toLowerCase() === messageContent.toLowerCase() ||
+             b.id === messageContent
+      );
+
+      if (clickedButton && clickedButton.nextNodeId) {
+        session.currentNodeId = clickedButton.nextNodeId;
+        console.log(`🤖 Button clicked: ${clickedButton.text}, moving to: ${clickedButton.nextNodeId}`);
+      }
+    }
+
+    // Store user input in variables
+    session.variables['lastInput'] = messageContent;
+    session.variables['lastInputAt'] = new Date().toISOString();
+    session.lastActivityAt = new Date();
+
+    return session;
+  }
+
+  // ==========================================
+  // EXECUTE NODE
+  // ==========================================
+  private async executeNode(
+    session: SessionData,
+    flowData: FlowData,
+    conversationId: string,
+    organizationId: string,
+    senderPhone: string,
+    chatbotId: string
+  ): Promise<void> {
+    const node = flowData.nodes.find(n => n.id === session.currentNodeId);
+
+    if (!node) {
+      console.log('🤖 Node not found:', session.currentNodeId);
+      return;
+    }
+
+    console.log(`🤖 Executing node: ${node.type} (${node.id})`);
+
+    switch (node.type) {
+      case 'start':
+        // Move to next node
+        if (node.data.nextNodeId) {
+          session.currentNodeId = node.data.nextNodeId;
+          await this.executeNode(session, flowData, conversationId, organizationId, senderPhone, chatbotId);
+        }
+        break;
+
+      case 'message':
+        // Send text message
+        if (node.data.message) {
+          await this.sendMessage(
+            organizationId,
+            senderPhone,
+            this.replaceVariables(node.data.message, session.variables),
+            conversationId
+          );
+        }
+        
+        // Move to next node automatically
+        if (node.data.nextNodeId) {
+          session.currentNodeId = node.data.nextNodeId;
+          // Small delay before next node
+          await this.delay(500);
+          await this.executeNode(session, flowData, conversationId, organizationId, senderPhone, chatbotId);
+        }
+        break;
+
+      case 'button':
+        // Send interactive button message
+        if (node.data.message && node.data.buttons) {
+          await this.sendButtonMessage(
+            organizationId,
+            senderPhone,
+            this.replaceVariables(node.data.message, session.variables),
+            node.data.buttons,
+            conversationId
+          );
+        }
+        // Wait for user response - don't auto-advance
+        break;
+
+      case 'condition':
+        // Evaluate condition
+        const conditionMet = this.evaluateCondition(node.data.condition, session.variables);
+        
+        // Find next node based on condition
+        const edge = flowData.edges.find(e => 
+          e.source === node.id && 
+          e.sourceHandle === (conditionMet ? 'true' : 'false')
+        );
+        
+        if (edge) {
+          session.currentNodeId = edge.target;
+          await this.executeNode(session, flowData, conversationId, organizationId, senderPhone, chatbotId);
+        } else if (node.data.nextNodeId) {
+          session.currentNodeId = node.data.nextNodeId;
+          await this.executeNode(session, flowData, conversationId, organizationId, senderPhone, chatbotId);
+        }
+        break;
+
+      case 'delay':
+        // Wait for specified time
+        const delayMs = node.data.delay || 1000;
+        await this.delay(delayMs);
+        
+        if (node.data.nextNodeId) {
+          session.currentNodeId = node.data.nextNodeId;
+          await this.executeNode(session, flowData, conversationId, organizationId, senderPhone, chatbotId);
+        }
+        break;
+
+      case 'action':
+        // Execute action (API call, tag contact, etc.)
+        await this.executeAction(node.data.action, session, organizationId, senderPhone);
+        
+        if (node.data.nextNodeId) {
+          session.currentNodeId = node.data.nextNodeId;
+          await this.executeNode(session, flowData, conversationId, organizationId, senderPhone, chatbotId);
+        }
+        break;
+
+      case 'end':
+        // End conversation - clear session
+        console.log('🤖 Flow ended');
+        break;
+
+      default:
+        console.log(`🤖 Unknown node type: ${node.type}`);
+    }
+  }
+
+  // ==========================================
+  // SEND MESSAGE
+  // ==========================================
+  private async sendMessage(
+    organizationId: string,
+    to: string,
+    message: string,
+    conversationId: string
+  ): Promise<void> {
+    try {
+      // Get default WhatsApp account
+      const account = await prisma.whatsAppAccount.findFirst({
+        where: { organizationId, status: 'CONNECTED' },
+        orderBy: { isDefault: 'desc' },
+      });
+
+      if (!account) {
+        console.error('🤖 No WhatsApp account connected');
+        return;
+      }
+
+      await whatsappService.sendTextMessage(
+        account.id,
+        to,
+        message,
+        conversationId,
+        organizationId
+      );
+
+      console.log(`🤖 Sent message: "${message.substring(0, 50)}..."`);
+    } catch (error) {
+      console.error('🤖 Failed to send message:', error);
+    }
+  }
+
+  // ==========================================
+  // SEND BUTTON MESSAGE
+  // ==========================================
+  private async sendButtonMessage(
+    organizationId: string,
+    to: string,
+    message: string,
+    buttons: { id: string; text: string }[],
+    conversationId: string
+  ): Promise<void> {
+    try {
+      const account = await prisma.whatsAppAccount.findFirst({
+        where: { organizationId, status: 'CONNECTED' },
+        orderBy: { isDefault: 'desc' },
+      });
+
+      if (!account) return;
+
+      // Send as interactive message
+      await whatsappService.sendMessage({
+        accountId: account.id,
+        to,
+        type: 'interactive',
+        content: {
+          interactive: {
+            type: 'button',
+            body: { text: message },
+            action: {
+              buttons: buttons.slice(0, 3).map(b => ({
+                type: 'reply',
+                reply: { id: b.id, title: b.text.substring(0, 20) },
+              })),
+            },
+          },
+        },
+        conversationId,
+        organizationId,
+      });
+
+      console.log(`🤖 Sent button message with ${buttons.length} buttons`);
+    } catch (error) {
+      console.error('🤖 Failed to send button message:', error);
+    }
   }
 
   // ==========================================
   // EVALUATE CONDITION
   // ==========================================
   private evaluateCondition(
-    condition: { type: string; value: string },
-    userMessage: string,
+    condition: { variable: string; operator: string; value: string } | undefined,
     variables: Record<string, any>
   ): boolean {
-    const { type, value } = condition;
-    const lowerMessage = userMessage.toLowerCase().trim();
-    const lowerValue = value.toLowerCase().trim();
+    if (!condition) return true;
 
-    switch (type) {
-      case 'keyword':
+    const { variable, operator, value } = condition;
+    const varValue = variables[variable];
+
+    switch (operator) {
+      case 'equals':
+        return String(varValue).toLowerCase() === String(value).toLowerCase();
       case 'contains':
-        return lowerMessage.includes(lowerValue);
-
-      case 'exact':
-        return lowerMessage === lowerValue;
-
-      case 'regex':
-        try {
-          const regex = new RegExp(value, 'i');
-          return regex.test(userMessage);
-        } catch {
-          return false;
-        }
-
+        return String(varValue).toLowerCase().includes(String(value).toLowerCase());
+      case 'startsWith':
+        return String(varValue).toLowerCase().startsWith(String(value).toLowerCase());
+      case 'endsWith':
+        return String(varValue).toLowerCase().endsWith(String(value).toLowerCase());
+      case 'greaterThan':
+        return Number(varValue) > Number(value);
+      case 'lessThan':
+        return Number(varValue) < Number(value);
+      case 'exists':
+        return varValue !== undefined && varValue !== null && varValue !== '';
       default:
         return false;
     }
@@ -254,152 +419,97 @@ export class ChatbotEngine {
   // EXECUTE ACTION
   // ==========================================
   private async executeAction(
-    node: FlowNode,
-    session: ChatbotSession
+    action: { type: string; params: any } | undefined,
+    session: SessionData,
+    organizationId: string,
+    phone: string
   ): Promise<void> {
-    const { action } = node.data;
     if (!action) return;
 
     switch (action.type) {
-      case 'tag':
+      case 'tagContact':
         // Add tag to contact
-        console.log(`   Action: Adding tag "${action.value}"`);
-        // TODO: Implement contact tagging
+        await prisma.contact.updateMany({
+          where: { organizationId, phone: { contains: phone.replace(/\D/g, '').slice(-10) } },
+          data: { tags: { push: action.params.tag } },
+        });
+        console.log(`🤖 Added tag: ${action.params.tag}`);
         break;
 
-      case 'assign':
-        // Assign conversation to team member
-        console.log(`   Action: Assigning to "${action.value}"`);
-        // TODO: Implement conversation assignment
-        break;
-
-      case 'variable':
-        // Set variable
-        const [varName, varValue] = action.value.split('=');
-        if (varName && varValue) {
-          session.variables[varName.trim()] = varValue.trim();
-        }
+      case 'setVariable':
+        session.variables[action.params.name] = action.params.value;
         break;
 
       case 'webhook':
-        // Send webhook
-        console.log(`   Action: Sending webhook to "${action.value}"`);
-        // TODO: Implement webhook sending
-        break;
-    }
-  }
-
-  // ==========================================
-  // FORMAT BUTTON MESSAGE
-  // ==========================================
-  private formatButtonMessage(node: FlowNode): string {
-    const { message, buttons } = node.data;
-    let formatted = message || '';
-
-    if (buttons && buttons.length > 0) {
-      formatted += '\n\n';
-      buttons.forEach((btn, index) => {
-        formatted += `${index + 1}. ${btn.text}\n`;
-      });
-      formatted += '\nReply with the number of your choice.';
-    }
-
-    return formatted;
-  }
-
-  // ==========================================
-  // PROCESS VARIABLES IN MESSAGE
-  // ==========================================
-  private processVariables(
-    message: string,
-    variables: Record<string, any>
-  ): string {
-    let processed = message;
-
-    // Replace {{variable}} with values
-    for (const [key, value] of Object.entries(variables)) {
-      const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
-      processed = processed.replace(regex, String(value));
-    }
-
-    return processed;
-  }
-
-  // ==========================================
-  // SEND RESPONSES VIA WHATSAPP
-  // ==========================================
-  private async sendResponses(
-    organizationId: string,
-    recipientPhone: string,
-    responses: string[],
-    conversationId: string
-  ): Promise<void> {
-    try {
-      // Get default WhatsApp account
-      const waAccount = await prisma.whatsAppAccount.findFirst({
-        where: {
-          organizationId,
-          status: 'CONNECTED',
-          isDefault: true,
-        },
-      });
-
-      if (!waAccount) {
-        console.error('No WhatsApp account found for chatbot responses');
-        return;
-      }
-
-      // Send each response with a small delay
-      for (let i = 0; i < responses.length; i++) {
-        const response = responses[i];
-
-        // Add small delay between messages
-        if (i > 0) {
-          await new Promise(resolve => setTimeout(resolve, 500));
+        // Call external webhook
+        try {
+          await fetch(action.params.url, {
+            method: action.params.method || 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              phone,
+              organizationId,
+              variables: session.variables,
+              ...action.params.data,
+            }),
+          });
+          console.log(`🤖 Webhook called: ${action.params.url}`);
+        } catch (e) {
+          console.error('🤖 Webhook failed:', e);
         }
+        break;
 
-        await whatsappService.sendTextMessage(
-          waAccount.id,
-          recipientPhone,
-          response,
-          conversationId
-        );
+      case 'createLead':
+        // Create CRM lead
+        await (prisma.lead.create as any)({
+          data: {
+            organizationId,
+            title: action.params?.title || 'Chatbot Lead',
+            source: 'chatbot',
+            contact: {
+              connect: {
+                organizationId_phone: {
+                  organizationId,
+                  phone: phone.startsWith('+') ? phone : `+${phone}`,
+                },
+              },
+            },
+          },
+        }).catch(() => console.log('🤖 Could not create lead'));
+        break;
 
-        console.log(`   📤 Sent chatbot response: "${response.substring(0, 50)}..."`);
-      }
-    } catch (error: any) {
-      console.error('Error sending chatbot responses:', error.message);
+      default:
+        console.log(`🤖 Unknown action type: ${action.type}`);
     }
   }
 
   // ==========================================
-  // HANDLE BUTTON RESPONSE
+  // HELPERS
   // ==========================================
-  async handleButtonResponse(
-    conversationId: string,
-    buttonPayload: string
-  ): Promise<void> {
-    const session = sessions.get(conversationId);
-    if (!session) return;
-
-    // Update session based on button clicked
-    // Find the node and update currentNodeId
-    console.log(`   Button response received: ${buttonPayload}`);
+  private replaceVariables(text: string, variables: Record<string, any>): string {
+    return text.replace(/\{\{(\w+)\}\}/g, (_, key) => {
+      return variables[key] !== undefined ? String(variables[key]) : `{{${key}}}`;
+    });
   }
 
-  // ==========================================
-  // CLEAR SESSION
-  // ==========================================
-  clearSession(conversationId: string): void {
-    sessions.delete(conversationId);
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  // ==========================================
-  // GET SESSION
-  // ==========================================
-  getSession(conversationId: string): ChatbotSession | undefined {
-    return sessions.get(conversationId);
+  // Clear expired sessions (call periodically)
+  clearExpiredSessions(maxAgeMs: number = 30 * 60 * 1000): void {
+    const now = Date.now();
+    for (const [key, session] of sessions.entries()) {
+      if (now - session.lastActivityAt.getTime() > maxAgeMs) {
+        sessions.delete(key);
+      }
+    }
   }
 }
 
 export const chatbotEngine = new ChatbotEngine();
+
+// Clean up expired sessions every 5 minutes
+setInterval(() => {
+  chatbotEngine.clearExpiredSessions();
+}, 5 * 60 * 1000);

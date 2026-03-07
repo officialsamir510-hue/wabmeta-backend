@@ -7,6 +7,7 @@ import prisma from './config/database';
 import { initializeSocket } from './socket';
 import { validateEncryptionKey } from './utils/encryption';
 import { logger } from './utils/logger';
+import { initializeScheduler } from './services/scheduler.service';
 
 // Optional services
 let messageQueueWorker: any = null;
@@ -141,6 +142,7 @@ async function bootstrap() {
     // ============================================
     console.log('⏰ Starting cron jobs...');
     startCronJobs();
+    initializeScheduler();
     console.log('✅ Cron jobs started');
 
     // ============================================

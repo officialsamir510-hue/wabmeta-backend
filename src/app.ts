@@ -28,6 +28,8 @@ import inboxRoutes from './modules/inbox/inbox.routes';
 import billingRoutes from './modules/billing/billing.routes';
 import adminRoutes from './modules/admin/admin.routes';
 import analyticsRoutes from './modules/analytics/analytics.routes';
+import crmRoutes from './modules/crm/crm.routes';
+import automationRoutes from './modules/automation/automation.routes';
 
 
 // ============================================
@@ -306,8 +308,6 @@ try {
   app.use('/api/whatsapp', whatsappRoutes);
   console.log('  ✅ /api/whatsapp');
 
-  app.use('/api/chatbot', chatbotRoutes);
-  console.log('  ✅ /api/chatbot');
 
   app.use('/api/inbox', inboxRoutes);
   console.log('  ✅ /api/inbox');
@@ -320,6 +320,15 @@ try {
 
   app.use('/api/analytics', analyticsRoutes);
   console.log('  ✅ /api/analytics');
+
+  app.use('/api/crm', crmRoutes);
+  console.log('  ✅ /api/crm');
+
+  app.use('/api/v1/automations', automationRoutes);
+  console.log('  ✅ /api/v1/automations');
+
+  app.use('/api/v1/chatbots', chatbotRoutes);
+  console.log('  ✅ /api/v1/chatbots');
 
   logger.info('✅ All API routes registered successfully');
 } catch (error: any) {
