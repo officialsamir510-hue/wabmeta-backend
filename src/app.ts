@@ -324,11 +324,11 @@ try {
   app.use('/api/crm', crmRoutes);
   console.log('  ✅ /api/crm');
 
-  app.use('/api/v1/automations', automationRoutes);
-  console.log('  ✅ /api/v1/automations');
+  app.use('/api/automations', automationRoutes);
+  console.log('  ✅ /api/automations');
 
-  app.use('/api/v1/chatbots', chatbotRoutes);
-  console.log('  ✅ /api/v1/chatbots');
+  app.use('/api/chatbots', chatbotRoutes);
+  console.log('  ✅ /api/chatbots');
 
   logger.info('✅ All API routes registered successfully');
 } catch (error: any) {

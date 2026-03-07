@@ -84,16 +84,19 @@ export class CRMService {
     // ==========================================
 
     async getLeads(organizationId: string, options: {
-        page?: number;
-        limit?: number;
+        page?: number | string;
+        limit?: number | string;
         status?: LeadStatus;
         pipelineId?: string;
         stageId?: string;
         search?: string;
         assignedToId?: string;
     }) {
-        const { page = 1, limit = 50, status, pipelineId, stageId, search, assignedToId } = options;
+        const page = Number(options.page) || 1;
+        const limit = Number(options.limit) || 50;
         const skip = (page - 1) * limit;
+
+        const { status, pipelineId, stageId, search, assignedToId } = options;
 
         const where: Prisma.LeadWhereInput = { organizationId };
 
