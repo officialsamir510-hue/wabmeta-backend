@@ -13,8 +13,21 @@ export class ChatbotController {
   async getAll(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const orgId = req.user!.organizationId!;
-      const chatbots = await chatbotService.getAll(orgId);
-      return sendSuccess(res, chatbots, 'Chatbots fetched');
+      const result = await chatbotService.getAll(orgId, {
+        page: Number(req.query.page) || 1,
+        limit: Number(req.query.limit) || 50,
+        search: req.query.search as string,
+      });
+      return res.json({
+        success: true,
+        message: 'Chatbots fetched',
+        data: result.chatbots,
+        meta: {
+          total: result.total,
+          page: result.page,
+          limit: result.limit
+        }
+      });
     } catch (e) { next(e); }
   }
 
