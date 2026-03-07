@@ -298,7 +298,7 @@ class WhatsAppController {
         message: error.message,
         stack: error.stack?.split('\n').slice(0, 3),
       });
-      next(error);
+      return errorResponse(res, error.message || 'Failed to send message', 400);
     }
   }
 
@@ -427,7 +427,7 @@ class WhatsAppController {
         message: error.message,
         stack: error.stack?.split('\n').slice(0, 3),
       });
-      next(error);
+      return errorResponse(res, error.message || 'Failed to send media', 400);
     }
   }
 
