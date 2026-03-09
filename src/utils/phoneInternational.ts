@@ -132,9 +132,28 @@ export function parseMultiplePhones(input: string): {
     valid: Array<{ fullNumber: string; countryCode: string; nationalNumber: string }>;
     invalid: Array<{ input: string; error: string }>;
 } {
-    const numbers = input
-        .split(/[\n,;\s]+/)
-        .map(n => n.trim())
+    // ✅ Pre-process: Normalize spaced phone formats BEFORE splitting
+    // Handles formats like: +91 98765 43210, +91 9876543210, +1 555 123 4567
+    // Pattern: + followed by 1-4 digit country code, then spaces between digit groups
+    let normalized = input.replace(
+        /(\+\d{1,4})\s+(\d[\d\s]{6,14}\d)/g,
+        (_match, countryCode: string, rest: string) => {
+            // Remove all spaces from the rest of the number
+            return countryCode + rest.replace(/\s+/g, '');
+        }
+    );
+
+    const numbers = normalized
+        .split(/[\n,;]+/)
+        .flatMap(line => {
+            // Within each line, split by whitespace but keep +XX... numbers intact
+            const trimmed = line.trim();
+            if (!trimmed) return [];
+            
+            // Split by whitespace
+            const parts = trimmed.split(/\s+/).filter(p => p.length > 0);
+            return parts;
+        })
         .filter(n => n.length > 0);
 
     const valid: Array<{ fullNumber: string; countryCode: string; nationalNumber: string }> = [];
