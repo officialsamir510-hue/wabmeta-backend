@@ -869,10 +869,31 @@ class BillingService {
         data: { planType: plan.type }
       });
 
+      // ✅ Create Payment record for revenue tracking
+      await prisma.payment.create({
+        data: {
+          organizationId,
+          subscriptionId: subscription.id,
+          razorpayOrderId: razorpay_order_id,
+          razorpayPaymentId: razorpay_payment_id,
+          razorpaySignature: razorpay_signature,
+          amount: Number(order.amount) || Math.round(Number(plan.monthlyPrice) * 100), // Amount in paise
+          currency: 'INR',
+          status: 'SUCCESS',
+          planId: plan.id,
+          planName: plan.name,
+          billingCycle: notes.billingCycle || 'monthly',
+          description: `${plan.name} subscription`,
+          receipt: order.receipt || `wm_${organizationId.slice(-6)}_${Date.now().toString().slice(-8)}`,
+          paidAt: now,
+        },
+      });
+
       console.log('✅ Subscription activated:', {
         subscriptionId: subscription.id,
         planName: plan.name,
         validUntil: periodEnd,
+        paymentRecorded: true,
       });
 
       return {
