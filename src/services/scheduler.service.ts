@@ -1,4 +1,4 @@
-// ✅ CREATE: src/services/scheduler.service.ts
+// ✅ OPTIMIZED: src/services/scheduler.service.ts
 
 import cron from 'node-cron';
 import { automationEngine } from '../modules/automation/automation.engine';
@@ -6,8 +6,9 @@ import { automationEngine } from '../modules/automation/automation.engine';
 export function initializeScheduler() {
   console.log('⏰ Initializing automation scheduler...');
 
-  // Run scheduled automations every minute
-  cron.schedule('* * * * *', async () => {
+  // ✅ OPTIMIZED: Run scheduled automations every 5 minutes (was every 1 minute)
+  // This reduces Redis/DB load significantly while still being accurate enough
+  cron.schedule('*/5 * * * *', async () => {
     try {
       await automationEngine.triggerScheduled();
     } catch (error) {
@@ -15,8 +16,9 @@ export function initializeScheduler() {
     }
   });
 
-  // Check for inactive contacts every hour
-  cron.schedule('0 * * * *', async () => {
+  // ✅ OPTIMIZED: Check for inactive contacts every 4 hours (was every 1 hour)
+  // Inactivity is measured in hours/days, so checking every 4h is sufficient
+  cron.schedule('0 */4 * * *', async () => {
     try {
       await automationEngine.triggerInactivity();
     } catch (error) {

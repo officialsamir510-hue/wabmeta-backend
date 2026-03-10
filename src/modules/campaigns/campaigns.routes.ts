@@ -292,119 +292,59 @@ router.get(
 
 /**
  * @route   GET /api/v1/campaigns/queue/stats
- * @desc    Get message queue statistics
- * @access  Private (Admin only recommended)
+ * @desc    Get message queue statistics (queue disabled - using direct send)
+ * @access  Private
  */
-router.get('/queue/stats', async (req, res, next) => {
-  try {
-    // Optional: Check if messageQueueWorker exists
-    const messageQueueWorker = await import('../../services/messageQueue.service').catch(() => null);
-
-    if (!messageQueueWorker) {
-      return successResponse(res, {
-        data: {
-          enabled: false,
-          message: 'Message queue service not configured',
-        },
-        message: 'Queue not available',
-      });
-    }
-
-    const stats = await messageQueueWorker.messageQueueWorker.getQueueStats();
-    return successResponse(res, { data: stats, message: 'Queue statistics' });
-  } catch (error) {
-    next(error);
-  }
+router.get('/queue/stats', async (req, res) => {
+  return successResponse(res, {
+    data: {
+      enabled: false,
+      message: 'Bull queue removed. Campaigns send directly via Meta API.',
+      waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0, total: 0,
+    },
+    message: 'Queue disabled - using direct send',
+  });
 });
 
 /**
  * @route   POST /api/v1/campaigns/queue/retry/:campaignId?
- * @desc    Retry failed messages in queue (optional campaign filter)
- * @access  Private (Admin only recommended)
+ * @desc    Retry failed messages (use campaign retry-failed endpoint instead)
+ * @access  Private
  */
-router.post('/queue/retry/:campaignId?', async (req, res, next) => {
-  try {
-    const { campaignId } = req.params as any;
-
-    const messageQueueWorker = await import('../../services/messageQueue.service').catch(() => null);
-
-    if (!messageQueueWorker) {
-      return res.status(404).json({
-        success: false,
-        message: 'Message queue service not configured',
-      });
-    }
-
-    const count = await messageQueueWorker.messageQueueWorker.retryFailedMessages(campaignId);
-
-    return successResponse(res, {
-      data: {
-        retriedCount: count,
-        campaignId: campaignId || 'all',
-      },
-      message: `${count} failed messages queued for retry`,
-    });
-  } catch (error) {
-    next(error);
-  }
+router.post('/queue/retry/:campaignId?', async (req, res) => {
+  return successResponse(res, {
+    data: { retriedCount: 0 },
+    message: 'Bull queue removed. Use POST /campaigns/:id/retry-failed instead.',
+  });
 });
 
 /**
  * @route   POST /api/v1/campaigns/queue/clear
- * @desc    Clear failed messages from queue
- * @access  Private (Admin only)
+ * @desc    Clear failed messages (queue disabled)
+ * @access  Private
  */
-router.post('/queue/clear', async (req, res, next) => {
-  try {
-    const messageQueueWorker = await import('../../services/messageQueue.service').catch(() => null);
-
-    if (!messageQueueWorker) {
-      return res.status(404).json({
-        success: false,
-        message: 'Message queue service not configured',
-      });
-    }
-
-    // Clear failed messages
-    const count = await messageQueueWorker.messageQueueWorker.clearFailedMessages();
-
-    return successResponse(res, {
-      data: {
-        clearedCount: count,
-      },
-      message: `${count} failed messages cleared from queue`,
-    });
-  } catch (error) {
-    next(error);
-  }
+router.post('/queue/clear', async (req, res) => {
+  return successResponse(res, {
+    data: { clearedCount: 0 },
+    message: 'Bull queue removed. No queue to clear.',
+  });
 });
 
 /**
  * @route   GET /api/v1/campaigns/queue/health
- * @desc    Check queue health status
- * @access  Private (Admin only)
+ * @desc    Check queue health status (queue disabled)
+ * @access  Private
  */
-router.get('/queue/health', async (req, res, next) => {
-  try {
-    const messageQueueWorker = await import('../../services/messageQueue.service').catch(() => null);
-
-    if (!messageQueueWorker) {
-      return res.json({
-        success: true,
-        data: {
-          enabled: false,
-          healthy: true,
-          message: 'Queue not configured (using direct sending)',
-        },
-      });
-    }
-
-    const health = await messageQueueWorker.messageQueueWorker.getHealthStatus();
-
-    return successResponse(res, { data: health, message: 'Queue health status' });
-  } catch (error) {
-    next(error);
-  }
+router.get('/queue/health', async (req, res) => {
+  return successResponse(res, {
+    data: {
+      enabled: false,
+      healthy: true,
+      message: 'Bull queue removed. Campaigns send directly via Meta API.',
+      timestamp: new Date(),
+    },
+    message: 'Queue disabled - system healthy',
+  });
 });
 
 export default router;

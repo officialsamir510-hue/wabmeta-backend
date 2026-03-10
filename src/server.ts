@@ -10,18 +10,9 @@ import { logger } from './utils/logger';
 import { initializeScheduler } from './services/scheduler.service';
 
 // Optional services
-let messageQueueWorker: any = null;
 let webhookService: any = null;
 
 async function loadOptionalServices() {
-  try {
-    const queueModule = await import('./services/messageQueue.service');
-    messageQueueWorker = queueModule.messageQueueWorker;
-    console.log('✅ Message queue service loaded');
-  } catch (error) {
-    console.log('ℹ️  Message queue service not available (optional)');
-  }
-
   try {
     const webhookModule = await import('./modules/webhooks/webhook.service');
     webhookService = webhookModule.webhookService;
@@ -95,38 +86,7 @@ async function bootstrap() {
     await loadOptionalServices();
 
     // ============================================
-    // Step 4: Start Message Queue Worker
-    // ============================================
-    if (messageQueueWorker) {
-      console.log('🔄 Starting message queue worker...');
-
-      try {
-        await messageQueueWorker.start();
-        console.log('✅ Message queue worker started');
-
-        messageQueueWorker.on('message:sent', (data: any) => {
-          // Silent - only log in dev if needed
-        });
-
-        messageQueueWorker.on('message:failed', (data: any) => {
-          console.error(`❌ Message failed: ${data.error}`);
-        });
-
-        messageQueueWorker.on('batch:complete', (data: any) => {
-          if (data.processed > 0) {
-            console.log(
-              `✅ Batch processed: ${data.succeeded}/${data.processed} in ${data.duration}ms`
-            );
-          }
-        });
-      } catch (error) {
-        console.error('⚠️ Failed to start message queue worker:', error);
-        console.log('ℹ️  Server will continue without queue worker');
-      }
-    }
-
-    // ============================================
-    // Step 5: Create HTTP Server
+    // Step 4: Create HTTP Server
     // ============================================
     const server = http.createServer(app);
 
@@ -170,7 +130,7 @@ async function bootstrap() {
       console.log(`   🌍 Environment:   ${config.app.env}`);
       console.log(`   🔗 Frontend:      ${config.frontendUrl}`);
       console.log(`   🔐 Encryption:    ${encryptionValid ? 'ENABLED ✓' : 'DISABLED ✗'}`);
-      console.log(`   📨 Queue Worker:  ${messageQueueWorker?.isRunning ? 'RUNNING ✓' : 'DISABLED ✗'}`);
+      console.log(`   📨 Campaigns:     DIRECT SEND ✓`);
       console.log(`   🔌 Socket.io:     ENABLED ✓`);
       console.log('');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -188,12 +148,6 @@ async function bootstrap() {
         console.log('✅ HTTP server closed');
 
         try {
-          if (messageQueueWorker && messageQueueWorker.isRunning) {
-            console.log('🔄 Stopping message queue worker...');
-            await messageQueueWorker.stop();
-            console.log('✅ Message queue worker stopped');
-          }
-
           await prisma.$disconnect();
           console.log('✅ Database disconnected');
         } catch (err) {
@@ -291,21 +245,7 @@ function startCronJobs() {
     );
   }
 
-  // ✅ 4. Clean up old queue messages daily
-  if (messageQueueWorker?.cleanupOldMessages) {
-    setInterval(
-      async () => {
-        try {
-          await messageQueueWorker.cleanupOldMessages(30);
-        } catch (error) {
-          console.error('❌ Error in queue cleanup cron:', error);
-        }
-      },
-      24 * 60 * 60 * 1000
-    );
-  }
-
-  // ✅ 5. **NEW: Process Scheduled Campaigns** (Every minute)
+  // ✅ 4. **Process Scheduled Campaigns** (Every minute)
   setInterval(
     async () => {
       try {

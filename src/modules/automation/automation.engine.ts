@@ -122,8 +122,6 @@ class AutomationEngine {
     // TRIGGER: SCHEDULE (Called by cron job)
     // ==========================================
     async triggerScheduled(): Promise<void> {
-        console.log(`🤖 [AUTOMATION] Running scheduled automations check`);
-
         try {
             const now = new Date();
             const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -135,6 +133,10 @@ class AutomationEngine {
                     isActive: true,
                 },
             });
+
+            if (automations.length === 0) return; // ✅ No log if nothing to do
+
+            console.log(`🤖 [AUTOMATION] Found ${automations.length} scheduled automations to check`);
 
             for (const automation of automations) {
                 const config = automation.triggerConfig as any;

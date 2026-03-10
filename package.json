@@ -34,7 +34,6 @@
     "@types/nodemailer": "^6.4.16",
     "axios": "^1.13.4",
     "bcryptjs": "^2.4.3",
-    "bull": "^4.16.5",
     "compression": "^1.8.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
@@ -61,7 +60,6 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@types/bull": "^3.15.9",
     "@types/cors": "^2.8.19",
     "@types/crypto-js": "^4.2.2",
     "@types/express": "^5.0.6",
