@@ -655,7 +655,8 @@ class WhatsAppService {
         }
       }
 
-      // ✅ 3. Check if contact has WhatsApp BEFORE sending (Meta API check)
+      // ✅ Skip contact check to reduce latency (Meta API will fail on send if invalid anyway)
+      /* 
       let contactValid = true;
       try {
         console.log('📞 Checking if contact has WhatsApp...');
@@ -668,45 +669,9 @@ class WhatsAppService {
 
         const status = contactCheck?.contacts?.[0]?.status;
 
-        if (status && status !== 'valid') {
-          contactValid = false;
-          const errorMsg = `Recipient does not have WhatsApp or number is invalid (status: ${status})`;
-          console.error(`❌ ${errorMsg}`);
-
-          // Find or create conversation for the failed message log
-          const contact = await this.getOrCreateContact(organizationId, to);
-          const conversation = await this.getOrCreateConversation(
-            organizationId,
-            contact.id,
-            account.phoneNumberId,
-            '',
-            conversationId
-          );
-
-          await prisma.message.create({
-            data: {
-              conversationId: conversation.id,
-              whatsappAccountId: accountId,
-              direction: MessageDirection.OUTBOUND,
-              type: this.mapMessageType(type),
-              content: this.extractMessageContent(type, content),
-              status: MessageStatus.FAILED,
-              failureReason: errorMsg,
-              sentAt: new Date(),
-              failedAt: new Date(),
-            },
-          });
-
-          throw new Error(errorMsg);
-        }
-
-        console.log('✅ Contact has WhatsApp - proceeding with send');
-      } catch (checkError: any) {
-        if (!contactValid) {
-          throw checkError;
-        }
-        console.warn('⚠️ Contact check failed, continuing anyway:', checkError.message);
-      }
+        if (status && status !== 'valid') { ... }
+      } catch (err) { ... }
+      */
 
       // Prepare message payload
       const messagePayload: any = {
@@ -865,8 +830,8 @@ class WhatsAppService {
    */
   async sendCampaignMessages(
     campaignId: string,
-    batchSize: number = 50,
-    delayMs: number = 1000
+    batchSize: number = 500,
+    delayMs: number = 50
   ): Promise<CampaignSendResult> {
     console.log(`\n📢 ========== CAMPAIGN START ==========`);
     console.log(`   Campaign ID: ${campaignId}`);
@@ -926,32 +891,13 @@ class WhatsAppService {
       try {
         const formattedPhone = this.formatPhoneNumber(recipient.contact.phone);
 
-        // ✅ Check contact BEFORE sending
+        // ✅ Skip contact check to reduce latency
+        /*
         try {
           console.log(`📞 Checking contact: ${formattedPhone}`);
-
-          const contactCheck = await metaApi.checkContact(
-            campaign.whatsappAccount.phoneNumberId,
-            accessToken,
-            formattedPhone
-          );
-
-          console.log('📞 CONTACT CHECK:', JSON.stringify(contactCheck));
-
-          const status = contactCheck?.contacts?.[0]?.status;
-
-          if (status && status !== 'valid') {
-            throw new Error(`Recipient WhatsApp check failed: ${status}`);
-          }
-
-          console.log('✅ Contact validated');
-        } catch (checkError: any) {
-          // If contact check explicitly fails, mark as failed
-          if (checkError.message.includes('WhatsApp check failed')) {
-            throw checkError;
-          }
-          console.warn('⚠️ Contact check failed:', checkError.message);
-        }
+          ...
+        } catch (checkError: any) { ... }
+        */
 
         // Build template components
         const components = this.buildTemplateComponents(campaign.template, {});

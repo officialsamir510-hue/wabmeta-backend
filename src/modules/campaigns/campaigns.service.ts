@@ -757,9 +757,9 @@ export class CampaignsService {
     const phoneNumberId = campaign.whatsappAccount.phoneNumberId;
     const template = campaign.template;
 
-    // Rate limit: 300ms per message = ~200 msgs/min (safe for Meta)
-    const MESSAGE_DELAY_MS = 300;
-    const BATCH_SIZE = 250;
+    // Rate limit: 50ms per message = ~1200 msgs/min (faster sending speed)
+    const MESSAGE_DELAY_MS = 50;
+    const BATCH_SIZE = 500;
 
     let processedCount = 0;
     let sentCount = 0;
@@ -949,8 +949,10 @@ export class CampaignsService {
           });
         }
 
-        // Update running counters after each message
-        await this.updateCampaignCounters(campaignId, organizationId, sentCount, failedCount);
+        // Update running counters every 10 messages to reduce DB load
+        if (processedCount % 10 === 0 || contacts.indexOf(campaignContact) === contacts.length - 1) {
+          await this.updateCampaignCounters(campaignId, organizationId, sentCount, failedCount);
+        }
 
         // Rate limit: short delay between messages
         if (contacts.indexOf(campaignContact) < contacts.length - 1) {

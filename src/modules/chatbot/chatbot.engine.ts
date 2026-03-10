@@ -233,8 +233,8 @@ export class ChatbotEngine {
         // Move to next node automatically
         if (node.data.nextNodeId) {
           session.currentNodeId = node.data.nextNodeId;
-          // Small delay before next node
-          await this.delay(500);
+          // Small delay before next node for snappier response
+          await this.delay(200);
           await this.executeNode(session, flowData, conversationId, organizationId, senderPhone, chatbotId);
         }
         break;
