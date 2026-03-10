@@ -199,18 +199,37 @@ export class ContactsService {
           contact.firstName === 'Unknown' ||
           (profileName && profileName !== 'Unknown' && contact.firstName !== profileName)
         ) {
-          contact = await prisma.contact.update({
-            where: { id: contact.id },
-            data: {
-              firstName: profileName,
-              whatsappProfileName: profileName,
-              phone: normalized,
-              whatsappProfileFetched: true,
-              lastProfileFetchAt: new Date(),
-              updatedAt: new Date(),
-            },
-          });
-          console.log(`✅ Updated contact: ${contact.phone} → ${profileName}`);
+          try {
+            contact = await prisma.contact.update({
+              where: { id: contact.id },
+              data: {
+                firstName: profileName,
+                whatsappProfileName: profileName,
+                phone: normalized,
+                whatsappProfileFetched: true,
+                lastProfileFetchAt: new Date(),
+                updatedAt: new Date(),
+              },
+            });
+            console.log(`✅ Updated contact: ${contact.phone} → ${profileName}`);
+          } catch (e: any) {
+            // Handle unique constraint failure (P2002) - phone number collision
+            if (e.code === 'P2002') {
+              console.warn(`⚠️ Phone collision for ${normalized}. Updating name only.`);
+              contact = await prisma.contact.update({
+                where: { id: contact.id },
+                data: {
+                  firstName: profileName,
+                  whatsappProfileName: profileName,
+                  whatsappProfileFetched: true,
+                  lastProfileFetchAt: new Date(),
+                  updatedAt: new Date(),
+                },
+              });
+            } else {
+              throw e;
+            }
+          }
         }
       } else {
         contact = await prisma.contact.create({
