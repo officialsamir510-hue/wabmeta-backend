@@ -869,8 +869,7 @@ export class CampaignsService {
             if (!conv) {
               conv = await prisma.conversation.create({
                 data: {
-                  organizationId,
-                  whatsappAccount: { connect: { id: campaign.whatsappAccountId! } },
+                  organization: { connect: { id: organizationId } },
                   contact: { connect: { id: campaignContact.contactId } },
                   lastMessageAt: now,
                   lastMessagePreview: `Template: ${template.name}`,
@@ -879,7 +878,10 @@ export class CampaignsService {
             } else {
               await prisma.conversation.update({
                 where: { id: conv.id },
-                data: { lastMessageAt: now, lastMessagePreview: `Template: ${template.name}` } as any,
+                data: { 
+                  lastMessageAt: now, 
+                  lastMessagePreview: `Template: ${template.name}` 
+                } as any,
               });
             }
             conversationId = conv.id;
@@ -1416,8 +1418,8 @@ export class CampaignsService {
       if (!conversation) {
         conversation = await prisma.conversation.create({
           data: {
-            organizationId,
-            contactId,
+            organization: { connect: { id: organizationId } },
+            contact: { connect: { id: contactId } },
             lastMessageAt: now,
             lastMessagePreview: `Template: ${templateName}`,
             lastCustomerMessageAt: null,

@@ -479,8 +479,8 @@ export class InboxService {
     if (!conversation) {
       conversation = await prisma.conversation.create({
         data: {
-          organizationId,
-          contactId,
+          organization: { connect: { id: organizationId } },
+          contact: { connect: { id: contactId } },
           isWindowOpen: true,
           unreadCount: 0,
         },

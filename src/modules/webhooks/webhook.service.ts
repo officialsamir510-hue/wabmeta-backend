@@ -214,8 +214,8 @@ export class WebhookService {
       if (!conversation) {
         conversation = await prisma.conversation.create({
           data: {
-            organizationId,
-            contactId: contact.id,
+            organization: { connect: { id: organizationId } },
+            contact: { connect: { id: contact.id } },
             isWindowOpen: true,
             windowExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
             unreadCount: 0,

@@ -268,10 +268,8 @@ class WhatsAppService {
       try {
         conversation = await prisma.conversation.create({
           data: {
-            organizationId,
-            // ❌ Removing phoneNumberId here because it's a FK to PhoneNumber.id (CUID)
-            // but we are passing Meta's numeric Phone ID. This was causing crashes.
-            contactId,
+            organization: { connect: { id: organizationId } },
+            contact: { connect: { id: contactId } },
             lastMessageAt: new Date(),
             lastMessagePreview: messagePreview,
             unreadCount: 0,
