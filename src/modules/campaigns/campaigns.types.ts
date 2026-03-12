@@ -150,9 +150,13 @@ export interface CampaignStats {
   draft: number;
   scheduled: number;
   running: number;
+  active: number;
   completed: number;
   failed: number;
   paused: number;
+  totalSent: number;
+  totalDelivered: number;
+  totalRead: number;
   totalMessagesSent: number;
   totalMessagesDelivered: number;
   totalMessagesRead: number;

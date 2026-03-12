@@ -762,8 +762,8 @@ export class CampaignsService {
     const BATCH_SIZE = 500;
 
     let processedCount = 0;
-    let sentCount = 0;
-    let failedCount = 0;
+    let sentCount = campaign.sentCount || 0;
+    let failedCount = campaign.failedCount || 0;
     let hasMore = true;
 
     while (hasMore) {
@@ -1522,10 +1522,14 @@ export class CampaignsService {
         total,
         draft: getStatusCount('DRAFT'),
         scheduled: getStatusCount('SCHEDULED'),
+        active: getStatusCount('RUNNING'), // ✅ Map running to active
         running: getStatusCount('RUNNING'),
         completed: getStatusCount('COMPLETED'),
         failed: getStatusCount('FAILED'),
         paused: getStatusCount('PAUSED'),
+        totalSent,        // ✅ Match frontend: totalSent
+        totalDelivered,   // ✅ Match frontend: totalDelivered
+        totalRead,        // ✅ Match frontend: totalRead
         totalMessagesSent: totalSent,
         totalMessagesDelivered: totalDelivered,
         totalMessagesRead: totalRead,
@@ -1538,10 +1542,14 @@ export class CampaignsService {
           total: 0,
           draft: 0,
           scheduled: 0,
+          active: 0,
           running: 0,
           completed: 0,
           failed: 0,
           paused: 0,
+          totalSent: 0,
+          totalDelivered: 0,
+          totalRead: 0,
           totalMessagesSent: 0,
           totalMessagesDelivered: 0,
           totalMessagesRead: 0,
