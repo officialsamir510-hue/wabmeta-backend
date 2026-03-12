@@ -619,7 +619,6 @@ export class ContactsController {
 
       const {
         contacts,           // Array of contact objects from CSV
-        // ❌ No defaultCountryCode parameter - auto detect
         groupId,
         tags = []
       } = req.body;
@@ -641,80 +640,134 @@ export class ContactsController {
         errors: [] as string[]
       };
 
-      // ✅ Process each contact
+      // 1. Pre-process and validate phone numbers
+      const phoneToContactMap = new Map<string, any>();
+      const validPhones: string[] = [];
+
       for (const contact of contacts) {
-        try {
-          // Parse phone number (support international)
-          const phoneInput = contact.phone || contact.phoneNumber || contact.mobile;
-          if (!phoneInput) {
-            results.skipped++;
-            continue;
-          }
+        const phoneInput = contact.phone || contact.phoneNumber || contact.mobile;
+        if (!phoneInput) {
+          results.skipped++;
+          continue;
+        }
 
-          const { valid } = parseMultiplePhones(String(phoneInput));
-          if (valid.length === 0) {
-            results.skipped++;
-            results.errors.push(`Invalid: ${phoneInput}`);
-            continue;
-          }
+        const { valid } = parseMultiplePhones(String(phoneInput));
+        if (valid.length === 0) {
+          results.skipped++;
+          results.errors.push(`Invalid: ${phoneInput}`);
+          continue;
+        }
 
-          const parsed = valid[0];
+        const parsed = valid[0];
+        // If multiple contacts have the same phone in the same CSV, last one wins or we can handle it
+        if (!phoneToContactMap.has(parsed.fullNumber)) {
+          validPhones.push(parsed.fullNumber);
+        }
+        phoneToContactMap.set(parsed.fullNumber, {
+          ...contact,
+          fullNumber: parsed.fullNumber,
+          countryCode: parsed.countryCode
+        });
+      }
 
-          // Check existing
-          const existing = await prisma.contact.findFirst({
-            where: {
-              organizationId,
-              phone: parsed.fullNumber
+      if (validPhones.length === 0) {
+        return res.json({
+          success: true,
+          data: results,
+          message: 'No valid contacts found to process'
+        });
+      }
+
+      // 2. Fetch existing contacts in one query
+      const existingContacts = await prisma.contact.findMany({
+        where: {
+          organizationId,
+          phone: { in: validPhones }
+        },
+        select: { id: true, phone: true, firstName: true, lastName: true, email: true }
+      });
+
+      const existingPhoneMap = new Map(existingContacts.map(c => [c.phone, c]));
+      const news: any[] = [];
+      const updates: any[] = [];
+
+      // 3. Categorize into news and updates
+      for (const [fullPhone, contactData] of phoneToContactMap.entries()) {
+        const existing = existingPhoneMap.get(fullPhone);
+        if (existing) {
+          updates.push({
+            id: existing.id,
+            data: {
+              firstName: contactData.firstName || contactData.first_name || existing.firstName,
+              lastName: contactData.lastName || contactData.last_name || existing.lastName,
+              email: contactData.email || existing.email,
+              tags: Array.isArray(tags) && tags.length > 0 ? { push: tags } : undefined
             }
           });
-
-          if (existing) {
-            // Update existing contact
-            await prisma.contact.update({
-              where: { id: existing.id },
-              data: {
-                firstName: contact.firstName || contact.first_name || existing.firstName,
-                lastName: contact.lastName || contact.last_name || existing.lastName,
-                email: contact.email || existing.email,
-                tags: {
-                  push: tags
-                }
-              }
-            });
-            results.updated++;
-          } else {
-            // Create new contact
-            const newContact = await prisma.contact.create({
-              data: {
-                organizationId,
-                phone: parsed.fullNumber,
-                countryCode: parsed.countryCode,
-                firstName: contact.firstName || contact.first_name || 'Unknown',
-                lastName: contact.lastName || contact.last_name || undefined,
-                email: contact.email || undefined,
-                tags: tags,
-                source: 'CSV_IMPORT',
-                status: 'ACTIVE'
-              }
-            });
-
-            // Add to group if specified
-            if (groupId) {
-              await prisma.contactGroupMember.create({
-                data: {
-                  groupId,
-                  contactId: newContact.id
-                }
-              }).catch(() => { }); // Ignore if already exists
-            }
-
-            results.created++;
-          }
-
-        } catch (err: any) {
-          results.skipped++;
-          results.errors.push(err.message);
+        } else {
+          news.push({
+            organizationId,
+            phone: fullPhone,
+            countryCode: contactData.countryCode,
+            firstName: contactData.firstName || contactData.first_name || 'Unknown',
+            lastName: contactData.lastName || contactData.last_name || undefined,
+            email: contactData.email || undefined,
+            tags: tags,
+            source: 'CSV_IMPORT',
+            status: 'ACTIVE'
+          });
         }
+      }
+
+      // 4. Bulk Create
+      if (news.length > 0) {
+        const createResult = await prisma.contact.createMany({
+          data: news,
+          skipDuplicates: true
+        });
+        results.created = createResult.count;
+      }
+
+      // 5. Sequential or Batched Updates (Prisma doesn't have bulk unique update)
+      // We'll do them in small batches or Promise.all to speed up, 
+      // but for very large numbers we still need to be careful.
+      // 50-100 updates at a time is usually fine.
+      if (updates.length > 0) {
+        const updateBatchSize = 100;
+        for (let i = 0; i < updates.length; i += updateBatchSize) {
+          const batch = updates.slice(i, i + updateBatchSize);
+          await Promise.all(batch.map(u => 
+            prisma.contact.update({
+              where: { id: u.id },
+              data: u.data
+            }).catch(err => {
+              results.errors.push(`Update failed for ${u.id}: ${err.message}`);
+            })
+          ));
+        }
+        results.updated = updates.length;
+      }
+
+      // 6. Bulk Add to Group if specified
+      if (groupId && (results.created > 0 || results.updated > 0)) {
+        // Fetch fresh IDs for new contacts
+        const allTargetContactIds = await prisma.contact.findMany({
+          where: {
+            organizationId,
+            phone: { in: validPhones }
+          },
+          select: { id: true }
+        });
+
+        const memberData = allTargetContactIds.map(c => ({
+          groupId,
+          contactId: c.id
+        }));
+
+        await prisma.contactGroupMember.createMany({
+          data: memberData,
+          skipDuplicates: true
+        }).catch(() => {});
       }
 
       return res.json({
