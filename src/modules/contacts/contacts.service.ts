@@ -1136,18 +1136,47 @@ export class ContactsService {
   async deleteGroup(organizationId: string, groupId: string): Promise<{ message: string }> {
     const group = await prisma.contactGroup.findFirst({
       where: { id: groupId, organizationId },
+      include: { members: { select: { contactId: true } } }
     });
 
     if (!group) throw new AppError('Group not found', 404);
 
-    // ✅ Nullify this group in any campaigns using it
+    const contactIds = group.members.map(m => m.contactId);
+
+    console.log(`🗑️ Deleting group ${group.name} and its ${contactIds.length} members`);
+
+    // ✅ 1. Nullify this group in any campaigns using it
     await prisma.campaign.updateMany({
       where: { contactGroupId: groupId },
       data: { contactGroupId: null },
     });
 
+    // ✅ 2. Delete contacts that were members of this group
+    // We delete the contacts directly, which will also delete their group memberships due to cascade (if configured)
+    // or we delete them here to ensure total count decreases.
+    if (contactIds.length > 0) {
+      await prisma.contact.deleteMany({
+        where: {
+          id: { in: contactIds },
+          organizationId
+        }
+      });
+    }
+
+    // ✅ 3. Delete the group itself
     await prisma.contactGroup.delete({ where: { id: groupId } });
-    return { message: 'Group deleted successfully' };
+
+    // ✅ 4. Sync organization subscription count
+    const subscription = await prisma.subscription.findFirst({ where: { organizationId } });
+    if (subscription) {
+      const remainingCount = await prisma.contact.count({ where: { organizationId } });
+      await prisma.subscription.update({
+        where: { id: subscription.id },
+        data: { contactsUsed: remainingCount }
+      });
+    }
+
+    return { message: `Group "${group.name}" and ${contactIds.length} contacts deleted successfully` };
   }
 
   async addContactsToGroup(organizationId: string, groupId: string, contactIds: string[]): Promise<{ message: string; added: number }> {
