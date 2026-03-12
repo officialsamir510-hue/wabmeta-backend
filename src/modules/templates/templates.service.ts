@@ -82,10 +82,25 @@ const toMetaLanguage = (lang?: string): string => {
   const l = String(lang || '').trim();
   if (!l) return 'en_US';
 
+  // Specific mapping for common short codes
+  const mapping: Record<string, string> = {
+    'en': 'en_US',
+    'hi': 'hi_IN',
+    'es': 'es_ES',
+    'pt': 'pt_BR',
+    'fr': 'fr_FR',
+    'de': 'de_DE',
+    'it': 'it_IT',
+  };
+
+  if (mapping[l]) return mapping[l];
+
   // If already has underscore (en_US, hi_IN), return as-is
   if (l.includes('_')) return l;
 
-  // Return short code as-is (en, hi, es)
+  // Default to en_US if it's too short and not in mapping
+  if (l.length < 4) return 'en_US';
+
   return l;
 };
 
