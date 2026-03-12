@@ -103,6 +103,7 @@ const buildMetaTemplatePayload = (t: {
   bodyText: string;
   footerText?: string | null;
   buttons?: TemplateButton[];
+  variables?: TemplateVariable[];
 }) => {
   const components: any[] = [];
   const headerType = normalizeHeaderType(t.headerType);
@@ -118,8 +119,14 @@ const buildMetaTemplatePayload = (t: {
       };
 
       if (headerVars.length > 0) {
+        // Try to find samples from provided variables
+        const samples = headerVars.map(idx => {
+          const v = t.variables?.find(var_item => var_item.index === idx);
+          return (v as any)?.example || `Example${idx}`;
+        });
+
         headerComp.example = {
-          header_text: headerVars.map((i) => `Example${i}`),
+          header_text: samples,
         };
       }
       components.push(headerComp);
@@ -129,8 +136,8 @@ const buildMetaTemplatePayload = (t: {
         format: headerType,
       };
 
-      // ✅ REQUIRED: Meta requires an example for media headers during creation
-      // We use a dummy handle or the one provided in headerContent
+      // ✅ Meta requires an example for media headers during creation
+      // If headerContent is a URL or handle, use it as the example
       const exampleHandle = t.headerContent || '4_SAMPLE_MEDIA_HANDLE_DO_NOT_USE';
       headerComp.example = {
         header_handle: [exampleHandle],
@@ -145,8 +152,14 @@ const buildMetaTemplatePayload = (t: {
   const bodyComp: any = { type: 'BODY', text: t.bodyText };
 
   if (bodyVars.length > 0) {
+    // Try to find samples from provided variables
+    const samples = bodyVars.map(idx => {
+      const v = t.variables?.find(var_item => var_item.index === idx);
+      return (v as any)?.example || `Sample ${idx}`;
+    });
+
     bodyComp.example = {
-      body_text: [bodyVars.map((i) => `Sample Value ${i}`)],
+      body_text: [samples],
     };
   }
   components.push(bodyComp);
@@ -557,6 +570,7 @@ export class TemplatesService {
           bodyText,
           footerText: footerText || null,
           buttons: (buttons || []) as any,
+          variables: finalVariables,
         });
 
         console.log('📤 Submitting template to Meta WABA:', waData.wabaId);
@@ -1130,6 +1144,7 @@ export class TemplatesService {
       bodyText: template.bodyText,
       footerText: template.footerText,
       buttons: (template.buttons as any) || [],
+      variables: (template.variables as any) || [],
     });
 
     console.log('📤 Submitting template to Meta:', {

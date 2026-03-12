@@ -15,7 +15,7 @@ export const createTemplateSchema = z.object({
     language: z.string().min(1).default('en'),
     category: z.enum(['MARKETING', 'UTILITY', 'AUTHENTICATION']).default('MARKETING'),
     headerType: z.string().optional().nullable(),
-    headerContent: z.string().max(60).optional().nullable(),
+    headerContent: z.string().max(1024).optional().nullable(),
     bodyText: z
       .string()
       .min(1, 'Body text is required')
@@ -30,6 +30,7 @@ export const createTemplateSchema = z.object({
     variables: z.array(z.object({
       index: z.number(),
       type: z.string(),
+      example: z.any().optional(),
     })).optional(),
     whatsappAccountId: z.string().optional(),
   }),
@@ -52,7 +53,7 @@ export const updateTemplateSchema = z.object({
     language: z.string().min(1).optional(),
     category: z.enum(['MARKETING', 'UTILITY', 'AUTHENTICATION']).optional(),
     headerType: z.string().optional().nullable(),
-    headerContent: z.string().max(60).optional().nullable(),
+    headerContent: z.string().max(1024).optional().nullable(),
     bodyText: z.string().min(1).max(1024).optional(),
     footerText: z.string().max(60).optional().nullable(),
     buttons: z.array(z.object({
@@ -64,6 +65,7 @@ export const updateTemplateSchema = z.object({
     variables: z.array(z.object({
       index: z.number(),
       type: z.string(),
+      example: z.any().optional(),
     })).optional(),
   }),
 });

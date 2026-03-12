@@ -18,6 +18,7 @@ export interface TemplateButton {
 export interface TemplateVariable {
   index: number;
   type: 'text' | 'currency' | 'date_time' | 'image' | 'document' | 'video';
+  example?: string;
   defaultValue?: string;
 }
 
