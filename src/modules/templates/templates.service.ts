@@ -137,10 +137,13 @@ const buildMetaTemplatePayload = (t: {
       };
 
       // ✅ Meta requires an example for media headers during creation
-      // If headerContent is a URL or handle, use it as the example
-      const exampleHandle = t.headerContent || '4_SAMPLE_MEDIA_HANDLE_DO_NOT_USE';
+      // If headerContent is a URL, we must use 'header_url' in the example object.
+      // If it's a handle (numeric), we use 'header_handle'.
+      const content = t.headerContent || '4_SAMPLE_MEDIA_HANDLE_DO_NOT_USE';
+      const isUrl = String(content).startsWith('http');
+
       headerComp.example = {
-        header_handle: [exampleHandle],
+        [isUrl ? 'header_url' : 'header_handle']: [content],
       };
 
       components.push(headerComp);
