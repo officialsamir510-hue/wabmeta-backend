@@ -579,6 +579,10 @@ export class WebhookService {
 
       console.log(`✅ Message status updated: ${message.id} -> ${newStatus}`);
 
+      if (newStatus === 'FAILED') {
+        console.error(`❌ Message ${message.id} failed. Meta Error:`, JSON.stringify(statusObj?.errors || [], null, 2));
+      }
+
       // Retrieve metadata for tempId/clientMsgId
       const metadata = (message.metadata as any) || {};
 
@@ -590,6 +594,7 @@ export class WebhookService {
         waMessageId: message.waMessageId,
         wamId: message.wamId,
         status: newStatus,
+        failureReason: updatedMessage.failureReason,
         timestamp: statusTime.toISOString(),
         tempId: metadata.tempId,
         clientMsgId: metadata.clientMsgId

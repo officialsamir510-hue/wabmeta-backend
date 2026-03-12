@@ -487,6 +487,14 @@ class WhatsAppService {
       const waMessageId = (response as any)?.messages?.[0]?.id || response?.messageId;
       if (!waMessageId) throw new Error('No message ID returned');
 
+      // ✅ 2.5 Extract Media URL for saving
+      let mediaUrlForDB = null;
+      const headerComp = components?.find((c: any) => c.type === 'header');
+      if (headerComp && headerComp.parameters && headerComp.parameters[0]) {
+          const param = headerComp.parameters[0];
+          mediaUrlForDB = param.image?.link || param.video?.link || param.document?.link || null;
+      }
+
       // ✅ 3. Save FULL CONTENT to Database
       let savedMessage = null;
       if (conversationId && organizationId) {
@@ -499,14 +507,17 @@ class WhatsAppService {
             wamId: waMessageId,
             direction: 'OUTBOUND',
             type: 'TEMPLATE',
-            content: fullContent, // ✅ Store readable text only
+            content: fullContent,
+            mediaUrl: mediaUrlForDB, // ✅ Save media URL if present
             status: 'SENT',
             sentAt: now,
-            timestamp: now, // Add timestamp for consistency
+            timestamp: now,
             createdAt: now,
             metadata: {
               ...(tempId ? { tempId } : {}),
               ...(clientMsgId ? { clientMsgId } : {}),
+              templateName,
+              buttons: template?.buttons || []
             } as any,
           },
         });
