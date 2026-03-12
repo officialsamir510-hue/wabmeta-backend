@@ -827,17 +827,56 @@ export class CampaignsService {
           try {
             const cleanPhone = phone.replace(/[^0-9]/g, '');
             const variables = (campaignContact as any).variables || {};
+            const campaignMeta = (campaign as any).templateMetadata || {};
 
             // Build template components
+            const components: any[] = [];
+
+            // 1. Handle Header (Media/Text)
+            if (template.headerType && template.headerType !== 'NONE') {
+              const hType = template.headerType.toUpperCase();
+              if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(hType)) {
+                // Get media from campaign metadata or use fallback from template
+                const mediaUrl = campaignMeta.header?.link || campaignMeta.headerUrl || template.headerContent;
+                if (mediaUrl) {
+                  components.push({
+                    type: 'header',
+                    parameters: [
+                      {
+                        type: hType.toLowerCase(),
+                        [hType.toLowerCase()]: {
+                          link: mediaUrl,
+                        },
+                      },
+                    ],
+                  });
+                }
+              } else if (hType === 'TEXT' && template.headerContent?.includes('{{1}}')) {
+                // Header text variables (usually just 1)
+                components.push({
+                  type: 'header',
+                  parameters: [
+                    {
+                      type: 'text',
+                      text: String(variables['header_var_1'] || variables['var_0'] || 'Hello'),
+                    },
+                  ],
+                });
+              }
+            }
+
+            // 2. Handle Body
             const bodyText = template.bodyText || '';
             const matches = bodyText.match(/\{\{(\d+)\}\}/g) || [];
-            const components = matches.length > 0 ? [{
-              type: 'body',
-              parameters: matches.map((_: string, i: number) => ({
-                type: 'text',
-                text: String(variables[`var_${i + 1}`] || variables[i + 1] || 'N/A'),
-              })),
-            }] : [];
+            if (matches.length > 0) {
+              components.push({
+                type: 'body',
+                parameters: matches.map((_: string, idx: number) => ({
+                  type: 'text',
+                  text: String(variables[`var_${idx + 1}`] || variables[idx + 1] || 'N/A'),
+                })),
+              });
+            }
 
             // ✅ DIRECT SEND
             const result = await metaApi.sendMessage(
@@ -890,9 +929,16 @@ export class CampaignsService {
 
           } catch (error: any) {
             let failureReason = error.message || 'Unknown error';
+            
+            // Detailed failure reason from Meta
             if (error.response?.data?.error) {
               const me = error.response.data.error;
-              failureReason = `${me.message} (Code: ${me.code})`;
+              failureReason = `${me.message} (Code: ${me.code}, Subcode: ${me.error_subcode || 'N/A'})`;
+              
+              // Map common error codes to user-friendly messages
+              if (me.code === 131030) failureReason = 'Recipient phone number is not registered with WhatsApp.';
+              if (me.code === 131026) failureReason = 'Message undeliverable - User may have blocked or the number is invalid.';
+              if (me.code === 132000) failureReason = 'Template mismatch or invalid parameters.';
             }
 
             console.error(`❌ Failed to send to ${phone}:`, failureReason);
@@ -913,7 +959,7 @@ export class CampaignsService {
               contactId: campaignContact.contactId,
               phone: phone.replace(/[^0-9]/g, ''),
               status: 'FAILED',
-              error: failureReason.substring(0, 200),
+              error: failureReason.length > 200 ? failureReason.substring(0, 197) + '...' : failureReason,
             });
           }
         }));

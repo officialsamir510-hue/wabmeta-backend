@@ -1140,6 +1140,12 @@ export class ContactsService {
 
     if (!group) throw new AppError('Group not found', 404);
 
+    // ✅ Nullify this group in any campaigns using it
+    await prisma.campaign.updateMany({
+      where: { contactGroupId: groupId },
+      data: { contactGroupId: null },
+    });
+
     await prisma.contactGroup.delete({ where: { id: groupId } });
     return { message: 'Group deleted successfully' };
   }

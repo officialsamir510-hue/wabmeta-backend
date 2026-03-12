@@ -124,10 +124,19 @@ const buildMetaTemplatePayload = (t: {
       }
       components.push(headerComp);
     } else if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerType)) {
-      throw new AppError(
-        `HeaderType ${headerType} requires media upload. Use TEXT header for now.`,
-        400
-      );
+      const headerComp: any = {
+        type: 'HEADER',
+        format: headerType,
+      };
+
+      // ✅ REQUIRED: Meta requires an example for media headers during creation
+      // We use a dummy handle or the one provided in headerContent
+      const exampleHandle = t.headerContent || '4_SAMPLE_MEDIA_HANDLE_DO_NOT_USE';
+      headerComp.example = {
+        header_handle: [exampleHandle],
+      };
+
+      components.push(headerComp);
     }
   }
 
@@ -137,7 +146,7 @@ const buildMetaTemplatePayload = (t: {
 
   if (bodyVars.length > 0) {
     bodyComp.example = {
-      body_text: [bodyVars.map((i) => `Example${i}`)],
+      body_text: [bodyVars.map((i) => `Sample Value ${i}`)],
     };
   }
   components.push(bodyComp);
@@ -149,17 +158,17 @@ const buildMetaTemplatePayload = (t: {
 
   // Buttons component
   if (t.buttons && t.buttons.length > 0) {
-    const buttons = t.buttons.slice(0, 3).map((b: any) => {
+    const buttons = t.buttons.slice(0, 10).map((b: any) => {
       const type = String(b.type || '').toUpperCase();
 
-      if (type.includes('URL')) {
+      if (type === 'URL' || type.includes('URL')) {
         if (!b.url) throw new AppError('URL button requires url field', 400);
         return { type: 'URL', text: b.text, url: b.url };
       }
 
-      if (type.includes('PHONE')) {
-        if (!b.phoneNumber) throw new AppError('PHONE button requires phoneNumber field', 400);
-        return { type: 'PHONE_NUMBER', text: b.text, phone_number: b.phoneNumber };
+      if (type === 'PHONE_NUMBER' || type.includes('PHONE')) {
+        if (!b.phoneNumber && !b.phone_number) throw new AppError('PHONE button requires phoneNumber field', 400);
+        return { type: 'PHONE_NUMBER', text: b.text, phone_number: b.phoneNumber || b.phone_number };
       }
 
       return { type: 'QUICK_REPLY', text: b.text };
