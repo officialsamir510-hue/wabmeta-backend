@@ -999,7 +999,12 @@ class MetaApiClient {
     filename: string
   ): Promise<{ id: string }> {
     try {
-      console.log(`[Meta API] Uploading media: ${filename}...`);
+      console.log(`[Meta API] Uploading media:`, {
+        filename,
+        size: file.length,
+        mimeType,
+        phoneNumberId,
+      });
 
       const FormData = require('form-data');
       const formData = new FormData();
@@ -1014,11 +1019,52 @@ class MetaApiClient {
           ...formData.getHeaders(),
           Authorization: `Bearer ${accessToken}`,
         },
+        timeout: 60000, // 1 minute
       });
 
-      console.log(`[Meta API] ✅ Media uploaded: ${response.data.id}`);
-      return { id: response.data.id };
+      console.log('[Meta API] Upload response:', {
+        status: response.status,
+        data: JSON.stringify(response.data),
+      });
+
+      // ✅ Extract media ID (handle different response formats)
+      let mediaId = null;
+
+      // Try different possible fields
+      if (response.data?.id) {
+        mediaId = response.data.id;
+      } else if (response.data?.h) {
+        mediaId = response.data.h;  // Some API versions use 'h'
+      } else if (response.data?.media_id) {
+        mediaId = response.data.media_id;
+      }
+
+      if (!mediaId) {
+        console.error('❌ No media ID found in response:', response.data);
+        throw new Error('No media ID in Meta upload response');
+      }
+
+      // ✅ Validate media ID format
+      const mediaIdStr = String(mediaId);
+      
+      // Check if it's a valid media ID (not phone number)
+      if (mediaIdStr.startsWith('92') && mediaIdStr.length === 12) {
+        console.error('❌ Received phone number instead of media ID:', mediaIdStr);
+        throw new Error('Invalid media ID - received phone number');
+      }
+
+      console.log(`[Meta API] ✅ Media uploaded successfully:`, {
+        mediaId: mediaIdStr,
+        length: mediaIdStr.length,
+      });
+
+      return { id: mediaIdStr };
     } catch (error: any) {
+      console.error('[Meta API] ❌ Upload failed:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+      });
       throw this.handleError(error, 'Failed to upload media');
     }
   }
