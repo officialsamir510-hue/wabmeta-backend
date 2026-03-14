@@ -209,22 +209,24 @@ export class AdminService {
         prisma.campaign.count(),
       ]);
 
-      // ✅ Get ACTUAL revenue from Payment table
+      // ✅ Get ACTUAL revenue from Payment table (Exclude manual/admin assigned)
       const [totalRevenue, monthlyRevenue, todayRevenue] = await Promise.all([
-        // Total all-time revenue
+        // Total all-time revenue (Only from Razorpay)
         prisma.payment.aggregate({
           where: {
-            status: 'SUCCESS'
+            status: 'SUCCESS',
+            razorpayPaymentId: { not: null } // ✅ Only count actual purchases
           },
           _sum: {
             amount: true
           }
         }),
         
-        // This month's revenue
+        // This month's revenue (Only from Razorpay)
         prisma.payment.aggregate({
           where: {
             status: 'SUCCESS',
+            razorpayPaymentId: { not: null }, // ✅ Only count actual purchases
             createdAt: {
               gte: startOfMonth
             }
@@ -234,10 +236,11 @@ export class AdminService {
           }
         }),
         
-        // Today's revenue
+        // Today's revenue (Only from Razorpay)
         prisma.payment.aggregate({
           where: {
             status: 'SUCCESS',
+            razorpayPaymentId: { not: null }, // ✅ Only count actual purchases
             createdAt: {
               gte: today,
               lt: tomorrow
@@ -249,11 +252,12 @@ export class AdminService {
         })
       ]);
 
-      // ✅ Get subscription breakdown
+      // ✅ Get subscription breakdown (Exclude manual/admin assigned for MRR)
       const subscriptionsByPlan = await prisma.subscription.groupBy({
         by: ['planId'],
         where: {
-          status: 'ACTIVE'
+          status: 'ACTIVE',
+          paymentMethod: { not: 'admin_assigned' } // ✅ Only count actual paid subscriptions for MRR
         },
         _count: true
       });
