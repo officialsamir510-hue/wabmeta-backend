@@ -996,7 +996,8 @@ class MetaApiClient {
     accessToken: string,
     file: Buffer,
     mimeType: string,
-    filename: string
+    filename: string,
+    wabaId?: string
   ): Promise<{ id: string }> {
     try {
       console.log(`[Meta API] Uploading media:`, {

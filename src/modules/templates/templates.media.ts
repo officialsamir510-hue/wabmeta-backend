@@ -127,7 +127,8 @@ export const uploadTemplateMedia = async (
       accountWithToken.accessToken,
       file.buffer,
       file.mimetype,
-      file.originalname
+      file.originalname,
+      account.wabaId  // ✅ Pass WABA ID
     );
 
     if (!uploadResult || !uploadResult.id) {
@@ -147,9 +148,9 @@ export const uploadTemplateMedia = async (
         filename: file.originalname,
         mimeType: file.mimetype,
         size: file.size,
-        wabaId: account.wabaId,           // ✅ ADD THIS
-        phoneNumberId: account.phoneNumberId,  // ✅ ADD THIS
-        whatsappAccountId: account.id,    // ✅ ADD THIS
+        wabaId: account.wabaId,
+        phoneNumberId: account.phoneNumberId,
+        whatsappAccountId: account.id,
       },
     });
   } catch (error: any) {
