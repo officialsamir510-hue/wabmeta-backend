@@ -535,6 +535,25 @@ class WhatsAppAPI {
   // ============================================
 
   /**
+   * Create message template with specific API version
+   */
+  async createMessageTemplateByVersion(wabaId: string, accessToken: string, payload: any, version: string): Promise<any> {
+    try {
+      const response = await this.clientUnversioned.post(`/${version}/${wabaId}/message_templates`, payload, {
+        params: {
+          access_token: accessToken,
+          appsecret_proof: this.generateAppSecretProof(accessToken),
+        },
+      });
+
+      return response.data;
+    } catch (error: any) {
+      console.error(`❌ Error creating template (${version}):`, this.formatError(error));
+      throw this.handleError(error, `Failed to create template with ${version}`);
+    }
+  }
+
+  /**
    * Create message template
    */
   async createMessageTemplate(wabaId: string, accessToken: string, payload: any): Promise<any> {

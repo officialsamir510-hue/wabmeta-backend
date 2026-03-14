@@ -180,14 +180,8 @@ const buildMetaTemplatePayload = (t: {
       }
 
       headerComp.example = {
-        header_url: [content],
+        header_handle: [content],
       };
-
-      // Also provide header_handle if it doesn't look like a URL (backward compatibility)
-      if (!content.startsWith('http')) {
-        headerComp.example.header_handle = [content];
-        delete (headerComp.example as any).header_url;
-      }
 
       components.push(headerComp);
     }
@@ -622,10 +616,11 @@ export class TemplatesService {
         console.log('📤 Submitting template to Meta WABA:', waData.wabaId);
         console.log('📝 Template language:', toMetaLanguage(language));
 
-        const metaRes = await whatsappApi.createMessageTemplate(
+        const metaRes = await (whatsappApi as any).createMessageTemplateByVersion(
           waData.wabaId,
           waData.accessToken,
-          metaPayload
+          metaPayload,
+          'v18.0'
         );
 
         const metaTemplateId = metaRes?.id || metaRes?.template_id;
@@ -1199,10 +1194,11 @@ export class TemplatesService {
       language: toMetaLanguage(template.language),
     });
 
-    const metaRes = await whatsappApi.createMessageTemplate(
+    const metaRes = await (whatsappApi as any).createMessageTemplateByVersion(
       waData.wabaId,
       waData.accessToken,
-      metaPayload
+      metaPayload,
+      'v18.0'
     );
 
     const metaTemplateId = metaRes?.id || metaRes?.template_id;
