@@ -764,13 +764,14 @@ export class AdminController {
 
   async getSubscriptions(req: AdminRequest, res: Response) {
     try {
-      const { page, limit, status, planType, search } = req.query;
+      const { page, limit, status, planType, excludePlanType, search } = req.query;
 
       const result = await adminBillingService.getAllSubscriptions({
         page: page ? parseInt(page as string) : undefined,
         limit: limit ? parseInt(limit as string) : undefined,
         status: status as any,
         planType: planType as any,
+        excludePlanType: excludePlanType as any,
         search: search as string,
       });
 
