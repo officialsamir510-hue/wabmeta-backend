@@ -43,7 +43,7 @@ const formatTemplate = (template: any): TemplateResponse => ({
   category: template.category,
   headerType: template.headerType,
   headerContent: template.headerContent,
-  headerMediaId: template.headerMediaId || null,
+  headerMediaId: template.headerMediaId || null,  // ✅ ADD THIS
   bodyText: template.bodyText,
   footerText: template.footerText,
   buttons: (template.buttons as TemplateButton[]) || [],
@@ -127,17 +127,29 @@ const buildMetaTemplatePayload = (t: {
   category: string;
   headerType?: string | null;
   headerContent?: string | null;
+  headerMediaId?: string | null;
   bodyText: string;
   footerText?: string | null;
   buttons?: TemplateButton[];
   variables?: TemplateVariable[];
-  headerMediaId?: string;
 }) => {
   const components: any[] = [];
   const headerType = normalizeHeaderType(t.headerType);
 
-  // Header component
+  console.log('🔧 Building Meta template payload:', {
+    name: t.name,
+    language: t.language,
+    headerType,
+    hasMediaId: !!t.headerMediaId,
+    hasContent: !!t.headerContent,
+    mediaIdPreview: t.headerMediaId ? t.headerMediaId.substring(0, 30) + '...' : null,
+  });
+
+  // ============================================
+  // HEADER COMPONENT
+  // ============================================
   if (headerType && headerType !== 'NONE') {
+    // TEXT Header
     if (headerType === 'TEXT' && t.headerContent) {
       const headerVars = extractVariables(t.headerContent);
       const headerComp: any = {
@@ -147,107 +159,110 @@ const buildMetaTemplatePayload = (t: {
       };
 
       if (headerVars.length > 0) {
-        // Try to find samples from provided variables
         const samples = headerVars.map(idx => {
           const v = t.variables?.find(var_item => var_item.index === idx);
           return (v as any)?.example || `Example${idx}`;
         });
-
         headerComp.example = {
           header_text: samples,
         };
       }
+      
       components.push(headerComp);
-    } else if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerType)) {
-      console.log('🔍 Building media header:', {
-        headerType,
-        hasMediaId: !!t.headerMediaId,
-        hasContent: !!t.headerContent,
-        mediaId: t.headerMediaId?.substring(0, 20) + '...',
-      });
-
-      // ✅ Prefer Media ID over URL
+      console.log('✅ TEXT header added');
+    }
+    // MEDIA Headers (IMAGE, VIDEO, DOCUMENT)
+    else if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerType)) {
+      // ✅ PRIORITY: Use headerMediaId first, then headerContent as fallback
       const mediaHandle = t.headerMediaId || t.headerContent;
 
+      console.log('📸 Processing media header:', {
+        headerType,
+        mediaHandle: mediaHandle ? mediaHandle.substring(0, 50) + '...' : null,
+        source: t.headerMediaId ? 'headerMediaId' : 'headerContent',
+      });
+
+      // ❌ Validation: Block invalid formats
       if (!mediaHandle) {
         throw new AppError(
-          `${headerType} header requires uploaded media. Please upload a file first.`,
+          `${headerType} header requires uploaded media. Please upload a file using the upload button.`,
           400
         );
       }
 
-      // ✅ Validate not a blob URL
       if (mediaHandle.startsWith('blob:')) {
         throw new AppError(
-          'Invalid media format. Please upload media using the upload button.',
+          'Blob URLs are not supported. Please upload media using the upload button first.',
           400
         );
       }
 
-      // ✅ Validate not a local URL
       if (mediaHandle.includes('localhost') || mediaHandle.includes('127.0.0.1')) {
         throw new AppError(
-          'Local URLs not supported. Please upload media to Meta first.',
+          'Local URLs are not accessible by Meta. Please upload media using the upload button.',
           400
         );
       }
 
+      if (mediaHandle.startsWith('file:') || mediaHandle.includes('C:\\') || mediaHandle.includes('C:/')) {
+        throw new AppError(
+          'Local file paths are not supported. Please upload media using the upload button.',
+          400
+        );
+      }
+
+      // ✅ Build media header component
       const headerComp: any = {
         type: 'HEADER',
         format: headerType,
         example: {
-          header_handle: [mediaHandle], // ✅ Use Media ID or public URL
+          header_handle: [mediaHandle],
         },
       };
 
       components.push(headerComp);
-
-      console.log('✅ Media header added:', {
-        format: headerType,
-        handle: mediaHandle.substring(0, 30) + '...',
-      });
+      console.log('✅ Media header added:', headerType);
     }
   }
 
-  // Body component
+  // ============================================
+  // BODY COMPONENT
+  // ============================================
   const bodyVars = extractVariables(t.bodyText);
   const bodyComp: any = { type: 'BODY', text: t.bodyText };
 
   if (bodyVars.length > 0) {
-    // Try to find samples from provided variables
     const samples = bodyVars.map(idx => {
       const v = t.variables?.find(var_item => var_item.index === idx);
-      return (v as any)?.example || `Sample ${idx}`;
+      return (v as any)?.example || `Sample${idx}`;
     });
-
     bodyComp.example = {
       body_text: [samples],
     };
   }
   components.push(bodyComp);
 
-  // Footer component
+  // ============================================
+  // FOOTER COMPONENT
+  // ============================================
   if (t.footerText) {
     components.push({ type: 'FOOTER', text: t.footerText });
   }
 
-  // Buttons component
+  // ============================================
+  // BUTTONS COMPONENT
+  // ============================================
   if (t.buttons && t.buttons.length > 0) {
     const buttons = t.buttons.slice(0, 10).map((b: any) => {
       const type = String(b.type || '').toUpperCase();
-      const btn: any = { type: type.includes('PHONE') ? 'PHONE_NUMBER' : (type.includes('URL') ? 'URL' : 'QUICK_REPLY'), text: b.text };
+      const btn: any = {
+        type: type.includes('PHONE') ? 'PHONE_NUMBER' : (type.includes('URL') ? 'URL' : 'QUICK_REPLY'),
+        text: b.text
+      };
 
       if (btn.type === 'URL') {
         if (!b.url) throw new AppError('URL button requires url field', 400);
         btn.url = b.url;
-        const btnVars = extractVariables(b.text);
-        if (btnVars.length > 0) {
-          // Meta requires samples for buttons with variables
-          btn.example = btnVars.map(idx => {
-            const v = t.variables?.find(var_item => var_item.index === idx);
-            return (v as any)?.example || `Sample${idx}`;
-          });
-        }
       } else if (btn.type === 'PHONE_NUMBER') {
         btn.phone_number = b.phoneNumber || b.phone_number;
       }
@@ -258,12 +273,19 @@ const buildMetaTemplatePayload = (t: {
     components.push({ type: 'BUTTONS', buttons });
   }
 
-  return {
+  // ============================================
+  // FINAL PAYLOAD
+  // ============================================
+  const payload = {
     name: t.name,
     language: toMetaLanguage(t.language),
     category: String(t.category || 'UTILITY').toUpperCase(),
     components,
   };
+
+  console.log('📦 Final Meta payload:', JSON.stringify(payload, null, 2));
+
+  return payload;
 };
 
 /**
@@ -637,11 +659,11 @@ export class TemplatesService {
           category,
           headerType: headerType || null,
           headerContent: headerContent || null,
+          headerMediaId: input.headerMediaId || null,  // ✅ ADD THIS
           bodyText,
           footerText: footerText || null,
           buttons: (buttons || []) as any,
           variables: finalVariables,
-          headerMediaId,
         });
 
         console.log('📤 Submitting template to Meta WABA:', waData.wabaId);

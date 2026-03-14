@@ -1,6 +1,6 @@
 // src/modules/templates/templates.media.ts
 
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
 import multer from 'multer';
 import { AppError } from '../../middleware/errorHandler';
 import { metaApi } from '../meta/meta.api';
@@ -17,14 +17,16 @@ const fileFilter = (req: any, file: any, cb: any) => {
   const allowedMimes = [
     'image/jpeg',
     'image/png',
+    'image/jpg',
     'video/mp4',
+    'video/3gpp',
     'application/pdf',
   ];
 
   if (allowedMimes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new AppError('Invalid file type. Allowed: JPG, PNG, MP4, PDF', 400), false);
+    cb(new AppError(`Invalid file type: ${file.mimetype}. Allowed: JPG, PNG, MP4, PDF`, 400), false);
   }
 };
 
@@ -32,7 +34,7 @@ export const uploadMiddleware = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 16 * 1024 * 1024, // 16MB
+    fileSize: 16 * 1024 * 1024, // 16MB max
   },
 });
 
@@ -40,10 +42,6 @@ export const uploadMiddleware = multer({
 // UPLOAD HANDLER
 // ============================================
 
-/**
- * Handle media upload for WhatsApp Template Headers
- * Uses 'any' for req to avoid middleware type compatibility issues with multer & custom user properties
- */
 export const uploadTemplateMedia = async (
   req: any,
   res: Response,
@@ -54,6 +52,7 @@ export const uploadTemplateMedia = async (
     const organizationId = req.user?.organizationId;
     const { whatsappAccountId } = req.body;
 
+    // Validation
     if (!file) {
       throw new AppError('No file uploaded', 400);
     }
@@ -64,38 +63,64 @@ export const uploadTemplateMedia = async (
 
     console.log('📤 Uploading template media:', {
       filename: file.originalname,
-      size: file.size,
+      size: `${(file.size / 1024).toFixed(2)} KB`,
       mime: file.mimetype,
+      organizationId,
+      requestedAccountId: whatsappAccountId,
     });
 
-    // Get WhatsApp account
-    let account = await prisma.whatsAppAccount.findFirst({
-      where: {
-        id: whatsappAccountId || undefined,
-        organizationId,
-        status: 'CONNECTED',
-      },
-      orderBy: { isDefault: 'desc' },
-    });
+    // Find WhatsApp account
+    let account = null;
 
-    if (!account) {
+    if (whatsappAccountId) {
       account = await prisma.whatsAppAccount.findFirst({
-        where: { organizationId, status: 'CONNECTED' },
+        where: {
+          id: whatsappAccountId,
+          organizationId,
+          status: 'CONNECTED',
+        },
       });
     }
 
     if (!account) {
-      throw new AppError('No connected WhatsApp account found', 400);
+      account = await prisma.whatsAppAccount.findFirst({
+        where: {
+          organizationId,
+          status: 'CONNECTED',
+        },
+        orderBy: [
+          { isDefault: 'desc' },
+          { createdAt: 'desc' },
+        ],
+      });
     }
 
-    // Decrypt token using metaService (not metaApi as indicated in the user's snippet, because it's in service)
+    if (!account) {
+      throw new AppError(
+        'No connected WhatsApp account found. Please connect your WhatsApp Business account first.',
+        400
+      );
+    }
+
+    console.log('📱 Using WhatsApp account:', {
+      id: account.id,
+      phone: account.phoneNumber,
+      phoneNumberId: account.phoneNumberId,
+    });
+
+    // Get decrypted access token
     const accountWithToken = await metaService.getAccountWithToken(account.id);
-    if (!accountWithToken) {
-      throw new AppError('Failed to get WhatsApp account credentials', 500);
+
+    if (!accountWithToken || !accountWithToken.accessToken) {
+      throw new AppError(
+        'Failed to get WhatsApp credentials. Please reconnect your WhatsApp account.',
+        500
+      );
     }
 
     // Upload to Meta
-    console.log('☁️ Uploading to Meta...');
+    console.log('☁️ Uploading to Meta Cloud API...');
+
     const uploadResult = await metaApi.uploadMedia(
       account.phoneNumberId,
       accountWithToken.accessToken,
@@ -104,7 +129,14 @@ export const uploadTemplateMedia = async (
       file.originalname
     );
 
-    console.log('✅ Media uploaded to Meta:', uploadResult.id);
+    if (!uploadResult || !uploadResult.id) {
+      throw new AppError('Meta upload failed - no media ID returned', 500);
+    }
+
+    console.log('✅ Media uploaded to Meta:', {
+      mediaId: uploadResult.id,
+      filename: file.originalname,
+    });
 
     return res.json({
       success: true,
@@ -117,7 +149,21 @@ export const uploadTemplateMedia = async (
       },
     });
   } catch (error: any) {
-    console.error('❌ Media upload failed:', error);
+    console.error('❌ Media upload failed:', {
+      message: error.message,
+      metaError: error.metaError,
+      response: error.response?.data,
+    });
+
+    // Handle Meta-specific errors
+    const metaError = error.metaError || error.response?.data?.error;
+    if (metaError) {
+      return next(new AppError(
+        `Meta upload error: ${metaError.message || metaError.error_user_msg || 'Unknown error'}`,
+        400
+      ));
+    }
+
     next(error);
   }
 };

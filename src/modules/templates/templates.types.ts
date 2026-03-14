@@ -31,12 +31,12 @@ export interface CreateTemplateInput {
   category: TemplateCategory;
   headerType?: string | null;
   headerContent?: string | null;
+  headerMediaId?: string | null;  // ✅ Meta's media ID
   bodyText: string;
   footerText?: string | null;
   buttons?: TemplateButton[];
   variables?: TemplateVariable[];
   whatsappAccountId?: string;
-  headerMediaId?: string;
 }
 
 // ============================================
@@ -48,11 +48,11 @@ export interface UpdateTemplateInput {
   category?: TemplateCategory;
   headerType?: string | null;
   headerContent?: string | null;
+  headerMediaId?: string | null;
   bodyText?: string;
   footerText?: string | null;
   buttons?: TemplateButton[];
   variables?: TemplateVariable[];
-  headerMediaId?: string;
 }
 
 // ============================================
@@ -68,6 +68,7 @@ export interface TemplatesQueryInput {
   sortBy?: 'createdAt' | 'updatedAt' | 'name' | 'status';
   sortOrder?: 'asc' | 'desc';
   whatsappAccountId?: string;
+  wabaId?: string;
 }
 
 // ============================================
@@ -80,7 +81,7 @@ export interface TemplateResponse {
   category: TemplateCategory;
   headerType: string | null;
   headerContent: string | null;
-  headerMediaId?: string | null;
+  headerMediaId: string | null;
   bodyText: string;
   footerText: string | null;
   buttons: TemplateButton[];
