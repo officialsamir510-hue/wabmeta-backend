@@ -180,8 +180,14 @@ const buildMetaTemplatePayload = (t: {
       }
 
       headerComp.example = {
-        header_handle: [content],
+        header_url: [content],
       };
+
+      // Also provide header_handle if it doesn't look like a URL (backward compatibility)
+      if (!content.startsWith('http')) {
+        headerComp.example.header_handle = [content];
+        delete (headerComp.example as any).header_url;
+      }
 
       components.push(headerComp);
     }
