@@ -180,7 +180,7 @@ const buildMetaTemplatePayload = (t: {
       }
 
       headerComp.example = {
-        header_handle: [content],
+        header_url: [content],
       };
 
       components.push(headerComp);
@@ -636,7 +636,7 @@ export class TemplatesService {
           console.log('✅ Meta template created:', metaTemplateId);
         }
       } catch (e: any) {
-        const metaErr = e?.response?.data?.error;
+        const metaErr = e.metaError || e.response?.data?.error;
         const msg = String(metaErr?.message || e?.message || 'Meta submission failed');
 
         console.error('❌ Meta template create failed:', {
@@ -646,6 +646,7 @@ export class TemplatesService {
           error_data: metaErr?.error_data,
           templateName: name,
           language: toMetaLanguage(language),
+          message_raw: e.message
         });
 
         await prisma.template.update({

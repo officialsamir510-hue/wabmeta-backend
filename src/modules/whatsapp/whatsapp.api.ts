@@ -776,22 +776,21 @@ class WhatsAppAPI {
    * Handle and format errors
    */
   private handleError(error: any, defaultMessage: string): Error {
-    if (error.response?.data?.error) {
-      const metaError = error.response.data.error;
-      let errorMessage = metaError.message || defaultMessage;
+    const err = error.response?.data?.error;
+    if (err) {
+      let msg = err.message || defaultMessage;
+      if (err.code) msg += ` (Code: ${err.code})`;
+      if (err.error_subcode) msg += ` (Subcode: ${err.error_subcode})`;
 
-      if (metaError.code) {
-        errorMessage += ` (Error Code: ${metaError.code})`;
-      }
-
-      if (metaError.error_subcode) {
-        errorMessage += ` (Subcode: ${metaError.error_subcode})`;
-      }
-
-      return new Error(errorMessage);
+      const apiErr = new Error(msg);
+      (apiErr as any).response = error.response;
+      (apiErr as any).metaError = err;
+      return apiErr;
     }
 
-    return new Error(error.message || defaultMessage);
+    const standardErr = new Error(error.message || defaultMessage);
+    (standardErr as any).response = error.response;
+    return standardErr;
   }
 }
 

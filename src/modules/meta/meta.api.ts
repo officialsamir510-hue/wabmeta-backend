@@ -1090,50 +1090,31 @@ class MetaApiClient {
   // ============================================
 
   private handleError(error: any, defaultMessage: string): Error {
-    if (error.response?.data?.error) {
-      const metaError = error.response.data.error;
-
-      let errorMessage = metaError.message || defaultMessage;
-
-      if (metaError.code) {
-        errorMessage += ` (Error Code: ${metaError.code})`;
-      }
-
-      if (metaError.error_subcode) {
-        errorMessage += ` (Subcode: ${metaError.error_subcode})`;
-      }
-
-      const errorCodes: Record<number, string> = {
-        1: 'Unknown error occurred',
-        2: 'Service temporarily unavailable',
-        4: 'Application request limit reached',
-        10: 'Permission denied',
-        100: 'Invalid parameter',
-        190: 'Invalid access token',
-        200: 'Permission error',
-        368: 'Temporarily blocked for policy violations',
-        2388001: 'Phone number not verified',
-        2388002: 'Message template not found',
-        131030: 'Phone number not registered',
-        131031: 'Phone number not in correct format',
-      };
-
-      if (metaError.code && errorCodes[metaError.code]) {
-        errorMessage = `${errorCodes[metaError.code]}: ${metaError.message}`;
-      }
-
-      return new Error(errorMessage);
+    const err = error.response?.data?.error;
+    
+    if (err) {
+      const msg = err.message || defaultMessage;
+      const apiErr = new Error(msg);
+      (apiErr as any).response = error.response;
+      (apiErr as any).metaError = err;
+      return apiErr;
     }
 
     if (error.code === 'ECONNABORTED') {
-      return new Error('Request timeout - Meta API took too long to respond');
+      const timeoutErr = new Error('Request timeout - Meta API took too long to respond');
+      (timeoutErr as any).response = error.response;
+      return timeoutErr;
     }
 
     if (error.code === 'ENOTFOUND') {
-      return new Error('Network error - Could not reach Meta API');
+      const networkErr = new Error('Network error - Could not reach Meta API');
+      (networkErr as any).response = error.response;
+      return networkErr;
     }
 
-    return new Error(error.message || defaultMessage);
+    const standardErr = new Error(error.message || defaultMessage);
+    (standardErr as any).response = error.response;
+    return standardErr;
   }
 
   // ============================================
