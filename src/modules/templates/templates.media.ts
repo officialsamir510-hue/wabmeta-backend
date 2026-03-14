@@ -40,14 +40,18 @@ export const uploadMiddleware = multer({
 // UPLOAD HANDLER
 // ============================================
 
+/**
+ * Handle media upload for WhatsApp Template Headers
+ * Uses 'any' for req to avoid middleware type compatibility issues with multer & custom user properties
+ */
 export const uploadTemplateMedia = async (
-  req: Request,
+  req: any,
   res: Response,
   next: NextFunction
 ) => {
   try {
     const file = req.file;
-    const organizationId = (req as any).user?.organizationId;
+    const organizationId = req.user?.organizationId;
     const { whatsappAccountId } = req.body;
 
     if (!file) {
