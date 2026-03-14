@@ -159,32 +159,53 @@ const buildMetaTemplatePayload = (t: {
       }
       components.push(headerComp);
     } else if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerType)) {
+      console.log('🔍 Building media header:', {
+        headerType,
+        hasMediaId: !!t.headerMediaId,
+        hasContent: !!t.headerContent,
+        mediaId: t.headerMediaId?.substring(0, 20) + '...',
+      });
+
+      // ✅ Prefer Media ID over URL
+      const mediaHandle = t.headerMediaId || t.headerContent;
+
+      if (!mediaHandle) {
+        throw new AppError(
+          `${headerType} header requires uploaded media. Please upload a file first.`,
+          400
+        );
+      }
+
+      // ✅ Validate not a blob URL
+      if (mediaHandle.startsWith('blob:')) {
+        throw new AppError(
+          'Invalid media format. Please upload media using the upload button.',
+          400
+        );
+      }
+
+      // ✅ Validate not a local URL
+      if (mediaHandle.includes('localhost') || mediaHandle.includes('127.0.0.1')) {
+        throw new AppError(
+          'Local URLs not supported. Please upload media to Meta first.',
+          400
+        );
+      }
+
       const headerComp: any = {
         type: 'HEADER',
         format: headerType,
-      };
-
-      // ✅ Meta requires an example for media headers during creation
-      // Note: Meta generally requires a 'header_handle' from their Resumable Upload API.
-      // However, some versions of the Cloud API accept 'header_handle' with a URL if it's publicly accessible.
-      // If our URL is local/private, we use a public fallback to prevent Meta 500 errors.
-      let content = t.headerContent || '';
-      
-      // If URL is missing or looks like localhost/blob, use a public fallback for the review process
-      const isLocal = !t.headerMediaId && (!content || content.includes('localhost') || content.includes('127.0.0.1') || content.startsWith('blob:'));
-      
-      if (isLocal) {
-        // Public placeholder that Meta's review system can always reach
-        if (headerType === 'IMAGE') content = 'https://raw.githubusercontent.com/Meta-Open-Source/meta-open-source/main/static/img/meta-logo.png';
-        else if (headerType === 'VIDEO') content = 'https://www.w3schools.com/html/mov_bbb.mp4';
-        else content = 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
-      }
-
-      headerComp.example = {
-        header_handle: [t.headerMediaId || content],
+        example: {
+          header_handle: [mediaHandle], // ✅ Use Media ID or public URL
+        },
       };
 
       components.push(headerComp);
+
+      console.log('✅ Media header added:', {
+        format: headerType,
+        handle: mediaHandle.substring(0, 30) + '...',
+      });
     }
   }
 
