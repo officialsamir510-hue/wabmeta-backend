@@ -36,6 +36,7 @@ export interface CreateTemplateInput {
   buttons?: TemplateButton[];
   variables?: TemplateVariable[];
   whatsappAccountId?: string;
+  headerMediaId?: string;
 }
 
 // ============================================
@@ -51,6 +52,7 @@ export interface UpdateTemplateInput {
   footerText?: string | null;
   buttons?: TemplateButton[];
   variables?: TemplateVariable[];
+  headerMediaId?: string;
 }
 
 // ============================================
@@ -78,6 +80,7 @@ export interface TemplateResponse {
   category: TemplateCategory;
   headerType: string | null;
   headerContent: string | null;
+  headerMediaId?: string | null;
   bodyText: string;
   footerText: string | null;
   buttons: TemplateButton[];

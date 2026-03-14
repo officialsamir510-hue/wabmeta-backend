@@ -73,6 +73,7 @@ class TemplatesController {
         name: input.name,
         language: input.language,
         whatsappAccountId: input.whatsappAccountId,
+        headerMediaId: input.headerMediaId,
       });
 
       // If no whatsappAccountId provided, use default

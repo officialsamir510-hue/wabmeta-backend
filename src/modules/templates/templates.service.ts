@@ -43,6 +43,7 @@ const formatTemplate = (template: any): TemplateResponse => ({
   category: template.category,
   headerType: template.headerType,
   headerContent: template.headerContent,
+  headerMediaId: template.headerMediaId || null,
   bodyText: template.bodyText,
   footerText: template.footerText,
   buttons: (template.buttons as TemplateButton[]) || [],
@@ -120,7 +121,6 @@ const normalizeHeaderType = (t?: string | null) => {
   const headerType = String(t || 'NONE').toUpperCase();
   return ['TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerType) ? headerType : 'NONE';
 };
-
 const buildMetaTemplatePayload = (t: {
   name: string;
   language: string;
@@ -131,6 +131,7 @@ const buildMetaTemplatePayload = (t: {
   footerText?: string | null;
   buttons?: TemplateButton[];
   variables?: TemplateVariable[];
+  headerMediaId?: string;
 }) => {
   const components: any[] = [];
   const headerType = normalizeHeaderType(t.headerType);
@@ -170,7 +171,7 @@ const buildMetaTemplatePayload = (t: {
       let content = t.headerContent || '';
       
       // If URL is missing or looks like localhost/blob, use a public fallback for the review process
-      const isLocal = !content || content.includes('localhost') || content.includes('127.0.0.1') || content.startsWith('blob:');
+      const isLocal = !t.headerMediaId && (!content || content.includes('localhost') || content.includes('127.0.0.1') || content.startsWith('blob:'));
       
       if (isLocal) {
         // Public placeholder that Meta's review system can always reach
@@ -180,7 +181,7 @@ const buildMetaTemplatePayload = (t: {
       }
 
       headerComp.example = {
-        header_handle: [content],
+        header_handle: [t.headerMediaId || content],
       };
 
       components.push(headerComp);
@@ -529,6 +530,7 @@ export class TemplatesService {
       buttons,
       variables,
       whatsappAccountId,
+      headerMediaId,
     } = input;
 
     // Validate template
@@ -578,6 +580,7 @@ export class TemplatesService {
       category,
       headerType: headerType || null,
       headerContent: headerContent || null,
+      headerMediaId: headerMediaId || null,
       bodyText,
       footerText: footerText || null,
       buttons: toJsonValue(buttons || []),
@@ -617,6 +620,7 @@ export class TemplatesService {
           footerText: footerText || null,
           buttons: (buttons || []) as any,
           variables: finalVariables,
+          headerMediaId,
         });
 
         console.log('📤 Submitting template to Meta WABA:', waData.wabaId);
@@ -945,12 +949,13 @@ export class TemplatesService {
       }
     }
 
-    const updateData: Prisma.TemplateUpdateInput = {
+    const updateData: Prisma.TemplateUpdateInput | any = {
       name: input.name,
       language: input.language,
       category: input.category,
       headerType: input.headerType,
       headerContent: input.headerContent,
+      headerMediaId: input.headerMediaId,
       bodyText: input.bodyText,
       footerText: input.footerText,
     };
@@ -1195,6 +1200,7 @@ export class TemplatesService {
       footerText: template.footerText,
       buttons: (template.buttons as any) || [],
       variables: (template.variables as any) || [],
+      headerMediaId: (template as any).headerMediaId || undefined,
     });
 
     console.log('📤 Submitting template to Meta:', {

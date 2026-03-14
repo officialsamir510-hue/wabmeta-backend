@@ -364,6 +364,7 @@ model Template {
   category          TemplateCategory @default(MARKETING)
   headerType        String?
   headerContent     String?
+  headerMediaId     String?
   bodyText          String
   footerText        String?
   buttons           Json             @default("[]")

@@ -13,11 +13,15 @@ import {
   submitTemplateSchema,
   previewTemplateSchema,
 } from './templates.schema';
+import { uploadMiddleware, uploadTemplateMedia } from './templates.media';
 
 const router = Router();
 
 // All routes require authentication
 router.use(authenticate);
+
+// ✅ Media Upload for Templates (Headers)
+router.post('/upload-media', uploadMiddleware.single('file'), uploadTemplateMedia);
 
 // ============================================
 // LISTING ROUTES (No strict validation)
