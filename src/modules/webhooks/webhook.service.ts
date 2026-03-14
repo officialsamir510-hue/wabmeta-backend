@@ -138,9 +138,33 @@ export class WebhookService {
         return { status: 'error', reason: 'No phone_number_id for field: ' + field };
       }
 
-      const account = await prisma.whatsAppAccount.findFirst({
+      let account: any = await prisma.whatsAppAccount.findFirst({
         where: { phoneNumberId },
       });
+
+      // ✅ Fallback: Try newer PhoneNumber table if legacy whatsAppAccount not found
+      if (!account) {
+        console.log(`🔍 phoneNumberId ${phoneNumberId} not found in legacy WhatsAppAccount, checking PhoneNumber table...`);
+        try {
+          const phoneRecord = await (prisma as any).phoneNumber.findFirst({
+            where: { phoneNumberId },
+            include: { metaConnection: true }
+          });
+
+          if (phoneRecord) {
+            console.log(`✅ Found account via PhoneNumber table fallback for ID: ${phoneNumberId}`);
+            account = {
+              id: phoneRecord.id, // Using PhoneNumber ID as account ID
+              organizationId: phoneRecord.metaConnection.organizationId,
+              phoneNumberId: phoneRecord.phoneNumberId,
+              phoneNumber: phoneRecord.phoneNumber,
+              wabaId: phoneRecord.metaConnection.wabaId
+            };
+          }
+        } catch (phoneErr) {
+          console.error('Error checking PhoneNumber fallback:', phoneErr);
+        }
+      }
 
       if (!account) {
         // For test webhooks from Meta, the ID might be "123456789012345" or similar
@@ -761,6 +785,15 @@ export class WebhookService {
           select: { organizationId: true },
         });
         organizationId = account?.organizationId || null;
+
+        // Fallback to newer PhoneNumber structure
+        if (!organizationId) {
+          const phoneRecord = await (prisma as any).phoneNumber.findFirst({
+            where: { phoneNumberId },
+            include: { metaConnection: true }
+          });
+          organizationId = phoneRecord?.metaConnection?.organizationId || null;
+        }
       }
 
       const mapped =

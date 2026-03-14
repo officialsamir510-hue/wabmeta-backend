@@ -82,10 +82,12 @@ const toMetaLanguage = (lang?: string): string => {
   const l = String(lang || '').trim();
   if (!l) return 'en_US';
 
-  // Specific mapping for common short codes
+  // Specific mapping for common codes
   const mapping: Record<string, string> = {
     'en': 'en_US',
-    'hi': 'hi_IN',
+    'en_us': 'en_US',
+    'hi': 'hi',
+    'hi_in': 'hi',
     'es': 'es_ES',
     'pt': 'pt_BR',
     'fr': 'fr_FR',
@@ -93,7 +95,9 @@ const toMetaLanguage = (lang?: string): string => {
     'it': 'it_IT',
   };
 
-  if (mapping[l]) return mapping[l];
+  const lower = l.toLowerCase();
+  if (mapping[lower]) return mapping[lower];
+
   if (l.includes('_')) return l;
   if (l.length < 4) return 'en_US';
   return l;
