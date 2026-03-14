@@ -102,10 +102,11 @@ export const uploadTemplateMedia = async (
       );
     }
 
-    console.log('📱 Using WhatsApp account:', {
+    console.log('📱 Using WhatsApp account for upload:', {
       id: account.id,
       phone: account.phoneNumber,
       phoneNumberId: account.phoneNumberId,
+      wabaId: account.wabaId,  // ✅ ADD THIS
     });
 
     // Get decrypted access token
@@ -146,6 +147,9 @@ export const uploadTemplateMedia = async (
         filename: file.originalname,
         mimeType: file.mimetype,
         size: file.size,
+        wabaId: account.wabaId,           // ✅ ADD THIS
+        phoneNumberId: account.phoneNumberId,  // ✅ ADD THIS
+        whatsappAccountId: account.id,    // ✅ ADD THIS
       },
     });
   } catch (error: any) {

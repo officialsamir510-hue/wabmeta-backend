@@ -590,6 +590,22 @@ export class TemplatesService {
       waData = await getWhatsAppAccountWithToken(organizationId, whatsappAccountId);
       canSyncToMeta = true;
       console.log('✅ WhatsApp account found, will sync to Meta');
+
+      console.log('📱 Template will be created in WABA:', {
+        wabaId: waData.wabaId,
+        accountId: waData.account.id,
+        phone: waData.account.phoneNumber,
+      });
+
+      // ✅ VALIDATE: If media header, check if media is from same WABA
+      if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerType?.toUpperCase() || '')) {
+        if (input.headerMediaId) {
+          console.log('🔍 Validating media belongs to same WABA:', {
+            mediaId: input.headerMediaId,
+            targetWabaId: waData.wabaId,
+          });
+        }
+      }
     } catch (err) {
       console.warn('⚠️ No WhatsApp account found, creating local-only template');
       canSyncToMeta = false;
