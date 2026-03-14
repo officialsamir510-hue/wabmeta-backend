@@ -180,7 +180,7 @@ const buildMetaTemplatePayload = (t: {
       }
 
       headerComp.example = {
-        header_url: [content],
+        header_handle: [content],
       };
 
       components.push(headerComp);
@@ -213,18 +213,24 @@ const buildMetaTemplatePayload = (t: {
   if (t.buttons && t.buttons.length > 0) {
     const buttons = t.buttons.slice(0, 10).map((b: any) => {
       const type = String(b.type || '').toUpperCase();
+      const btn: any = { type: type.includes('PHONE') ? 'PHONE_NUMBER' : (type.includes('URL') ? 'URL' : 'QUICK_REPLY'), text: b.text };
 
-      if (type === 'URL' || type.includes('URL')) {
+      if (btn.type === 'URL') {
         if (!b.url) throw new AppError('URL button requires url field', 400);
-        return { type: 'URL', text: b.text, url: b.url };
+        btn.url = b.url;
+        const btnVars = extractVariables(b.text);
+        if (btnVars.length > 0) {
+          // Meta requires samples for buttons with variables
+          btn.example = btnVars.map(idx => {
+            const v = t.variables?.find(var_item => var_item.index === idx);
+            return (v as any)?.example || `Sample${idx}`;
+          });
+        }
+      } else if (btn.type === 'PHONE_NUMBER') {
+        btn.phone_number = b.phoneNumber || b.phone_number;
       }
 
-      if (type === 'PHONE_NUMBER' || type.includes('PHONE')) {
-        if (!b.phoneNumber && !b.phone_number) throw new AppError('PHONE button requires phoneNumber field', 400);
-        return { type: 'PHONE_NUMBER', text: b.text, phone_number: b.phoneNumber || b.phone_number };
-      }
-
-      return { type: 'QUICK_REPLY', text: b.text };
+      return btn;
     });
 
     components.push({ type: 'BUTTONS', buttons });
@@ -616,11 +622,13 @@ export class TemplatesService {
         console.log('📤 Submitting template to Meta WABA:', waData.wabaId);
         console.log('📝 Template language:', toMetaLanguage(language));
 
+        console.log('📦 Meta Payload:', JSON.stringify(metaPayload, null, 2));
+
         const metaRes = await (whatsappApi as any).createMessageTemplateByVersion(
           waData.wabaId,
           waData.accessToken,
           metaPayload,
-          'v18.0'
+          'v17.0'
         );
 
         const metaTemplateId = metaRes?.id || metaRes?.template_id;
@@ -1199,7 +1207,7 @@ export class TemplatesService {
       waData.wabaId,
       waData.accessToken,
       metaPayload,
-      'v18.0'
+      'v17.0'
     );
 
     const metaTemplateId = metaRes?.id || metaRes?.template_id;
