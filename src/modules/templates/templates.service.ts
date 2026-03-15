@@ -691,7 +691,7 @@ export class TemplatesService {
           waData.wabaId,
           waData.accessToken,
           metaPayload,
-          'v17.0'
+          'v21.0'
         );
 
         const metaTemplateId = metaRes?.id || metaRes?.template_id;

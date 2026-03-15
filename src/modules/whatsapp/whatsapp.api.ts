@@ -537,7 +537,7 @@ class WhatsAppAPI {
   /**
    * Create message template with specific API version
    */
-  async createMessageTemplateByVersion(wabaId: string, accessToken: string, payload: any, version: string): Promise<any> {
+  async createMessageTemplateByVersion(wabaId: string, accessToken: string, payload: any, version: string = 'v21.0'): Promise<any> {
     try {
       const response = await this.clientUnversioned.post(`/${version}/${wabaId}/message_templates`, payload, {
         params: {
