@@ -173,26 +173,26 @@ const buildMetaTemplatePayload = (t: {
     }
     // MEDIA Headers (IMAGE, VIDEO, DOCUMENT)
     else if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerType)) {
-      // ✅ PRIORITY: Use headerMediaId first, then headerContent as fallback
+      // ✅ Use headerMediaId which now contains Cloudinary URL
       const mediaHandle = t.headerMediaId || t.headerContent;
 
       console.log('📸 Processing media header:', {
         headerType,
-        mediaHandle: mediaHandle ? mediaHandle.substring(0, 50) + '...' : null,
-        source: t.headerMediaId ? 'headerMediaId' : 'headerContent',
+        mediaHandle: mediaHandle ? mediaHandle.substring(0, 60) + '...' : null,
+        isUrl: mediaHandle?.startsWith('http'),
       });
 
-      // ❌ Validation: Block invalid formats
+      // Validation
       if (!mediaHandle) {
         throw new AppError(
-          `${headerType} header requires uploaded media. Please upload a file using the upload button.`,
+          `${headerType} header requires uploaded media. Please upload a file first.`,
           400
         );
       }
 
       if (mediaHandle.startsWith('blob:')) {
         throw new AppError(
-          'Blob URLs are not supported. Please upload media using the upload button first.',
+          'Blob URLs are not supported. Please upload media using the upload button.',
           400
         );
       }
@@ -204,24 +204,24 @@ const buildMetaTemplatePayload = (t: {
         );
       }
 
-      if (mediaHandle.startsWith('file:') || mediaHandle.includes('C:\\') || mediaHandle.includes('C:/')) {
+      // ✅ Validate it's a proper HTTPS URL
+      if (!mediaHandle.startsWith('https://')) {
         throw new AppError(
-          'Local file paths are not supported. Please upload media using the upload button.',
+          'Media must be a secure HTTPS URL. Please upload media again.',
           400
         );
       }
 
-      // ✅ Build media header component
       const headerComp: any = {
         type: 'HEADER',
         format: headerType,
         example: {
-          header_handle: [mediaHandle],
+          header_handle: [mediaHandle],  // ✅ Cloudinary HTTPS URL
         },
       };
 
       components.push(headerComp);
-      console.log('✅ Media header added:', headerType);
+      console.log('✅ Media header added with Cloudinary URL');
     }
   }
 

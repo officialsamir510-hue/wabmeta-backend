@@ -3,9 +3,7 @@
 import { Response, NextFunction } from 'express';
 import multer from 'multer';
 import { AppError } from '../../middleware/errorHandler';
-import { metaApi } from '../meta/meta.api';
-import { metaService } from '../meta/meta.service';
-import prisma from '../../config/database';
+import { cloudinaryService } from '../../services/cloudinary.service';
 
 // ============================================
 // MULTER CONFIGURATION
@@ -34,7 +32,7 @@ export const uploadMiddleware = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 16 * 1024 * 1024, // 16MB max
+    fileSize: 16 * 1024 * 1024, // 16MB
   },
 });
 
@@ -50,9 +48,7 @@ export const uploadTemplateMedia = async (
   try {
     const file = req.file;
     const organizationId = req.user?.organizationId;
-    const { whatsappAccountId } = req.body;
 
-    // Validation
     if (!file) {
       throw new AppError('No file uploaded', 400);
     }
@@ -66,106 +62,47 @@ export const uploadTemplateMedia = async (
       size: `${(file.size / 1024).toFixed(2)} KB`,
       mime: file.mimetype,
       organizationId,
-      requestedAccountId: whatsappAccountId,
     });
 
-    // Find WhatsApp account
-    let account = null;
+    // ✅ Upload to Cloudinary
+    console.log('☁️ Uploading to Cloudinary...');
 
-    if (whatsappAccountId) {
-      account = await prisma.whatsAppAccount.findFirst({
-        where: {
-          id: whatsappAccountId,
-          organizationId,
-          status: 'CONNECTED',
-        },
-      });
-    }
-
-    if (!account) {
-      account = await prisma.whatsAppAccount.findFirst({
-        where: {
-          organizationId,
-          status: 'CONNECTED',
-        },
-        orderBy: [
-          { isDefault: 'desc' },
-          { createdAt: 'desc' },
-        ],
-      });
-    }
-
-    if (!account) {
-      throw new AppError(
-        'No connected WhatsApp account found. Please connect your WhatsApp Business account first.',
-        400
-      );
-    }
-
-    console.log('📱 Using WhatsApp account for upload:', {
-      id: account.id,
-      phone: account.phoneNumber,
-      phoneNumberId: account.phoneNumberId,
-      wabaId: account.wabaId,  // ✅ ADD THIS
-    });
-
-    // Get decrypted access token
-    const accountWithToken = await metaService.getAccountWithToken(account.id);
-
-    if (!accountWithToken || !accountWithToken.accessToken) {
-      throw new AppError(
-        'Failed to get WhatsApp credentials. Please reconnect your WhatsApp account.',
-        500
-      );
-    }
-
-    // Upload to Meta
-    console.log('☁️ Uploading to Meta Cloud API...');
-
-    const uploadResult = await metaApi.uploadMedia(
-      account.phoneNumberId,
-      accountWithToken.accessToken,
+    const uploadResult = await cloudinaryService.uploadTemplateMedia(
       file.buffer,
-      file.mimetype,
       file.originalname,
-      account.wabaId  // ✅ Pass WABA ID
+      file.mimetype,
+      organizationId
     );
 
-    if (!uploadResult || !uploadResult.id) {
-      throw new AppError('Meta upload failed - no media ID returned', 500);
-    }
-
-    console.log('✅ Media uploaded to Meta:', {
-      mediaId: uploadResult.id,
-      filename: file.originalname,
+    console.log('✅ Media uploaded to Cloudinary:', {
+      url: uploadResult.secureUrl,
+      publicId: uploadResult.publicId,
     });
 
     return res.json({
       success: true,
       message: 'Media uploaded successfully',
       data: {
-        mediaId: uploadResult.id,
+        mediaId: uploadResult.secureUrl,  // ✅ Return public HTTPS URL
+        url: uploadResult.secureUrl,
+        publicId: uploadResult.publicId,
         filename: file.originalname,
         mimeType: file.mimetype,
         size: file.size,
-        wabaId: account.wabaId,
-        phoneNumberId: account.phoneNumberId,
-        whatsappAccountId: account.id,
+        format: uploadResult.format,
+        resourceType: uploadResult.resourceType,
       },
     });
   } catch (error: any) {
     console.error('❌ Media upload failed:', {
       message: error.message,
-      metaError: error.metaError,
-      response: error.response?.data,
+      stack: error.stack,
     });
 
-    // Handle Meta-specific errors
-    const metaError = error.metaError || error.response?.data?.error;
-    if (metaError) {
+    if (error.message?.includes('Cloudinary')) {
       return next(new AppError(
-        `Meta upload error: ${metaError.message || metaError.error_user_msg || 'Unknown error'}`,
-        400
+        'Failed to upload media to cloud storage. Please try again.',
+        500
       ));
     }
 

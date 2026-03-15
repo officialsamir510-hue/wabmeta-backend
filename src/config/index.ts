@@ -99,6 +99,13 @@ export const config = {
   redis: {
     url: getEnv('REDIS_URL'),
   },
+
+  cloudinary: {
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
+    apiKey: process.env.CLOUDINARY_API_KEY || '',
+    apiSecret: process.env.CLOUDINARY_API_SECRET || '',
+    folder: process.env.CLOUDINARY_FOLDER || 'wabmeta-templates',
+  },
 } as const;
 
 export default config;
