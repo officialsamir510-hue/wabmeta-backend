@@ -140,9 +140,7 @@ const buildMetaTemplatePayload = (t: {
     name: t.name,
     language: t.language,
     headerType,
-    hasMediaId: !!t.headerMediaId,
-    hasContent: !!t.headerContent,
-    mediaIdPreview: t.headerMediaId ? t.headerMediaId.substring(0, 30) + '...' : null,
+    hasMediaUrl: !!(t.headerMediaId || t.headerContent),
   });
 
   // ============================================
@@ -167,66 +165,46 @@ const buildMetaTemplatePayload = (t: {
           header_text: samples,
         };
       }
-      
+
       components.push(headerComp);
       console.log('✅ TEXT header added');
     }
     // MEDIA Headers (IMAGE, VIDEO, DOCUMENT)
     else if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerType)) {
-      // ✅ Use headerMediaId which now contains Cloudinary URL
-      const mediaHandle = t.headerMediaId || t.headerContent;
+      const mediaUrl = t.headerMediaId || t.headerContent;
 
-      console.log('📸 Processing media header:', {
-        headerType,
-        mediaHandle: mediaHandle ? mediaHandle.substring(0, 60) + '...' : null,
-        isUrl: mediaHandle?.startsWith('http'),
-      });
+      // ✅ Validation only
+      if (mediaUrl) {
+        if (mediaUrl.startsWith('blob:') || mediaUrl.includes('localhost')) {
+          throw new AppError(
+            'Local URLs are not supported. Please upload media first.',
+            400
+          );
+        }
 
-      // Validation
-      if (!mediaHandle) {
-        throw new AppError(
-          `${headerType} header requires uploaded media. Please upload a file first.`,
-          400
-        );
+        // Store URL for future reference (logged but not sent to Meta)
+        console.log('📸 Media URL stored:', {
+          headerType,
+          url: mediaUrl.substring(0, 80) + '...',
+          note: 'URL will be used during message send, not template creation',
+        });
       }
 
-      if (mediaHandle.startsWith('blob:')) {
-        throw new AppError(
-          'Blob URLs are not supported. Please upload media using the upload button.',
-          400
-        );
-      }
-
-      if (mediaHandle.includes('localhost') || mediaHandle.includes('127.0.0.1')) {
-        throw new AppError(
-          'Local URLs are not accessible by Meta. Please upload media using the upload button.',
-          400
-        );
-      }
-
-      // ✅ Validate it's a proper HTTPS URL
-      if (!mediaHandle.startsWith('https://')) {
-        throw new AppError(
-          'Media must be a secure HTTPS URL. Please upload media again.',
-          400
-        );
-      }
-
+      // ✅ CRITICAL: Create header WITHOUT example
+      // Meta will ask for media URL when you actually SEND a message using this template
       const headerComp: any = {
         type: 'HEADER',
         format: headerType,
-        example: {
-          header_handle: [mediaHandle],  // ✅ Cloudinary HTTPS URL
-        },
+        // NO example field!
       };
 
       components.push(headerComp);
-      console.log('✅ Media header added with Cloudinary URL');
+      console.log(`✅ ${headerType} header added (no example required for template creation)`);
     }
   }
 
   // ============================================
-  // BODY COMPONENT
+  // BODY COMPONENT (unchanged)
   // ============================================
   const bodyVars = extractVariables(t.bodyText);
   const bodyComp: any = { type: 'BODY', text: t.bodyText };
@@ -243,14 +221,14 @@ const buildMetaTemplatePayload = (t: {
   components.push(bodyComp);
 
   // ============================================
-  // FOOTER COMPONENT
+  // FOOTER COMPONENT (unchanged)
   // ============================================
   if (t.footerText) {
     components.push({ type: 'FOOTER', text: t.footerText });
   }
 
   // ============================================
-  // BUTTONS COMPONENT
+  // BUTTONS COMPONENT (unchanged)
   // ============================================
   if (t.buttons && t.buttons.length > 0) {
     const buttons = t.buttons.slice(0, 10).map((b: any) => {
@@ -273,9 +251,6 @@ const buildMetaTemplatePayload = (t: {
     components.push({ type: 'BUTTONS', buttons });
   }
 
-  // ============================================
-  // FINAL PAYLOAD
-  // ============================================
   const payload = {
     name: t.name,
     language: toMetaLanguage(t.language),
