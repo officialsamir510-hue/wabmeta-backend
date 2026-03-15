@@ -12,6 +12,10 @@ cloudinary.config({
 });
 
 export class CloudinaryService {
+  isConfigured(): boolean {
+    return !!(config.cloudinary.cloudName && config.cloudinary.apiKey && config.cloudinary.apiSecret);
+  }
+
   /**
    * Upload template media to Cloudinary
    */
@@ -27,6 +31,10 @@ export class CloudinaryService {
     format: string;
     resourceType: string;
   }> {
+    if (!this.isConfigured()) {
+      throw new Error('Cloudinary is not configured.');
+    }
+
     return new Promise((resolve, reject) => {
       const folder = `${config.cloudinary.folder}/${organizationId}`;
       
@@ -38,30 +46,54 @@ export class CloudinaryService {
         resourceType = 'raw';
       }
 
+      console.log('☁️ Uploading to Cloudinary:', {
+        folder,
+        resourceType,
+        size: file.length,
+      });
+
       // Upload stream
       const uploadStream = cloudinary.uploader.upload_stream(
         {
           folder,
           resource_type: resourceType,
-          public_id: `${Date.now()}_${filename.split('.')[0]}`,
+          // ✅ Shorter public_id
+          public_id: `${Date.now()}`,
           overwrite: false,
-          use_filename: true,
           unique_filename: true,
+          // ✅ Ensure public access
+          type: 'upload',
+          access_mode: 'public',
         },
         (error, result) => {
           if (error) {
-            console.error('❌ Cloudinary upload failed:', error);
+            console.error('❌ Cloudinary upload error:', error);
             reject(new Error(`Cloudinary upload failed: ${error.message}`));
           } else if (result) {
-            console.log('✅ Uploaded to Cloudinary:', {
-              url: result.secure_url,
+            // ✅ Get optimized URL for WhatsApp
+            let finalUrl = result.secure_url;
+
+            // For images, create optimized transformation
+            if (resourceType === 'image') {
+              finalUrl = cloudinary.url(result.public_id, {
+                transformation: [
+                  { width: 800, height: 600, crop: 'limit' },
+                  { quality: 'auto:good' },
+                  { fetch_format: 'auto' },
+                ],
+                secure: true,
+              });
+            }
+
+            console.log('✅ Cloudinary upload success:', {
+              originalUrl: result.secure_url,
+              optimizedUrl: finalUrl,
               publicId: result.public_id,
-              format: result.format,
             });
 
             resolve({
               url: result.url,
-              secureUrl: result.secure_url,
+              secureUrl: finalUrl,  // ✅ Optimized URL
               publicId: result.public_id,
               format: result.format || '',
               resourceType: result.resource_type || resourceType,

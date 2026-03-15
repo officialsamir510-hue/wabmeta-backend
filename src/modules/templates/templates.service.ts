@@ -173,33 +173,46 @@ const buildMetaTemplatePayload = (t: {
     else if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerType)) {
       const mediaUrl = t.headerMediaId || t.headerContent;
 
-      // ✅ Validation only
-      if (mediaUrl) {
-        if (mediaUrl.startsWith('blob:') || mediaUrl.includes('localhost')) {
-          throw new AppError(
-            'Local URLs are not supported. Please upload media first.',
-            400
-          );
-        }
+      console.log('📸 Processing media header:', {
+        headerType,
+        hasMediaUrl: !!mediaUrl,
+        urlLength: mediaUrl?.length,
+        urlPreview: mediaUrl?.substring(0, 80),
+      });
 
-        // Store URL for future reference (logged but not sent to Meta)
-        console.log('📸 Media URL stored:', {
-          headerType,
-          url: mediaUrl.substring(0, 80) + '...',
-          note: 'URL will be used during message send, not template creation',
-        });
+      // Validation
+      if (!mediaUrl) {
+        throw new AppError(
+          `${headerType} header requires a media URL. Please upload media first.`,
+          400
+        );
       }
 
-      // ✅ CRITICAL: Create header WITHOUT example
-      // Meta will ask for media URL when you actually SEND a message using this template
+      if (mediaUrl.startsWith('blob:') || mediaUrl.includes('localhost')) {
+        throw new AppError(
+          'Local URLs are not supported. Please upload media first.',
+          400
+        );
+      }
+
+      if (!mediaUrl.startsWith('https://')) {
+        throw new AppError(
+          'Media URL must be HTTPS.',
+          400
+        );
+      }
+
+      // ✅ Meta REQUIRES example for media headers
       const headerComp: any = {
         type: 'HEADER',
         format: headerType,
-        // NO example field!
+        example: {
+          header_handle: [mediaUrl]  // ✅ Required!
+        }
       };
 
       components.push(headerComp);
-      console.log(`✅ ${headerType} header added (no example required for template creation)`);
+      console.log(`✅ ${headerType} header added with example`);
     }
   }
 
