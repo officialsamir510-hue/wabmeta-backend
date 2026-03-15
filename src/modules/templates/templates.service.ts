@@ -173,39 +173,33 @@ const buildMetaTemplatePayload = (t: {
     else if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerType)) {
       const mediaHandle = t.headerMediaId || t.headerContent;
 
-      console.log('📸 Processing media header:', {
-        headerType,
-        hasHandle: !!mediaHandle,
-        handlePreview: mediaHandle?.substring(0, 60),
-      });
-
-      // Validation
       if (!mediaHandle) {
         throw new AppError(
-          `${headerType} header requires uploaded media. Please upload media first.`,
+          `${headerType} header requires uploaded media.`,
           400
         );
       }
 
-      // ✅ Meta handle format check
-      if (mediaHandle.startsWith('http')) {
-        throw new AppError(
-          'Public URLs are not supported for template creation. Please upload media using the upload button.',
-          400
-        );
+      if (mediaHandle.startsWith('blob:') || mediaHandle.includes('localhost')) {
+        throw new AppError('Local URLs not supported.', 400);
       }
 
-      // ✅ Use Meta's upload handle
+      // ✅ Handle both formats (Meta handle vs Cloudinary URL)
       const headerComp: any = {
         type: 'HEADER',
         format: headerType,
         example: {
-          header_handle: [mediaHandle]  // ✅ Meta's handle from Resumable Upload
+          header_handle: [mediaHandle]
         }
       };
 
+      console.log(`✅ ${headerType} header:`, {
+        isMetaHandle: !mediaHandle.startsWith('http'),
+        isUrl: mediaHandle.startsWith('http'),
+        preview: mediaHandle.substring(0, 60),
+      });
+
       components.push(headerComp);
-      console.log(`✅ ${headerType} header added with Meta handle`);
     }
   }
 

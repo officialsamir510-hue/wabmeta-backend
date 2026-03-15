@@ -3,21 +3,25 @@
 import { Response, NextFunction } from 'express';
 import multer from 'multer';
 import { AppError } from '../../middleware/errorHandler';
-import { cloudinaryService } from '../../services/cloudinary.service';
 import { metaUploadService } from '../../services/meta.upload.service';
 import { metaService } from '../meta/meta.service';
 import prisma from '../../config/database';
 
-// Multer config (same as before)
+// Try Cloudinary if available
+let cloudinaryService: any = null;
+try {
+  const mod = require('../../services/cloudinary.service');
+  cloudinaryService = mod.cloudinaryService;
+} catch (e) {
+  console.warn('⚠️ Cloudinary not available');
+}
+
 const storage = multer.memoryStorage();
 
 const fileFilter = (req: any, file: any, cb: any) => {
   const allowedMimes = [
-    'image/jpeg',
-    'image/png',
-    'image/jpg',
-    'video/mp4',
-    'video/3gpp',
+    'image/jpeg', 'image/png', 'image/jpg',
+    'video/mp4', 'video/3gpp',
     'application/pdf',
   ];
 
@@ -31,14 +35,8 @@ const fileFilter = (req: any, file: any, cb: any) => {
 export const uploadMiddleware = multer({
   storage,
   fileFilter,
-  limits: {
-    fileSize: 16 * 1024 * 1024, // 16MB
-  },
+  limits: { fileSize: 16 * 1024 * 1024 },
 });
-
-// ============================================
-// UPLOAD HANDLER
-// ============================================
 
 export const uploadTemplateMedia = async (
   req: any,
@@ -50,112 +48,121 @@ export const uploadTemplateMedia = async (
     const organizationId = req.user?.organizationId;
     const { whatsappAccountId } = req.body;
 
-    if (!file) {
-      throw new AppError('No file uploaded', 400);
-    }
+    if (!file) throw new AppError('No file uploaded', 400);
+    if (!organizationId) throw new AppError('Organization required', 400);
 
-    if (!organizationId) {
-      throw new AppError('Organization context required', 400);
-    }
-
-    console.log('📤 Uploading template media:', {
+    console.log('📤 Upload request:', {
       filename: file.originalname,
       size: `${(file.size / 1024).toFixed(2)} KB`,
       mime: file.mimetype,
-      organizationId,
     });
 
     // Get WhatsApp account
-    let account = await prisma.whatsAppAccount.findFirst({
-      where: {
-        ...(whatsappAccountId ? { id: whatsappAccountId } : {}),
-        organizationId,
-        status: 'CONNECTED',
-      },
-      orderBy: { isDefault: 'desc' },
-    });
+    let account = null;
 
-    if (!account) {
+    if (whatsappAccountId) {
       account = await prisma.whatsAppAccount.findFirst({
-        where: { organizationId, status: 'CONNECTED' },
+        where: { id: whatsappAccountId, organizationId, status: 'CONNECTED' },
       });
     }
 
     if (!account) {
-      throw new AppError('No connected WhatsApp account found', 400);
+      account = await prisma.whatsAppAccount.findFirst({
+        where: { organizationId, status: 'CONNECTED' },
+        orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
+      });
     }
 
-    console.log('📱 Using WhatsApp account:', {
-      id: account.id,
-      phone: account.phoneNumber,
-      wabaId: account.wabaId,
-    });
+    if (!account) {
+      throw new AppError('No connected WhatsApp account', 400);
+    }
 
-    // Get access token
+    // Get token
     const accountWithToken = await metaService.getAccountWithToken(account.id);
-
-    if (!accountWithToken || !accountWithToken.accessToken) {
-      throw new AppError('Failed to get WhatsApp credentials', 500);
+    if (!accountWithToken?.accessToken) {
+      throw new AppError('Failed to get credentials', 500);
     }
 
-    // ✅ CRITICAL: Upload to Meta using Resumable Upload API
-    console.log('☁️ Uploading to Meta Resumable Upload API...');
-
-    const metaUploadResult = await metaUploadService.uploadMediaForTemplate(
-      account.wabaId,
-      accountWithToken.accessToken,
-      file.buffer,
-      file.mimetype,
-      file.originalname
-    );
-
-    console.log('✅ Media uploaded to Meta:', {
-      handle: metaUploadResult.handle,
-    });
-
-    // ✅ ALSO upload to Cloudinary for backup/preview
+    let mediaHandle = '';
     let cloudinaryUrl = '';
+
+    // ✅ Method 1: Try Resumable Upload (app-level)
     try {
-      if (cloudinaryService.isConfigured()) {
-        const cloudinaryResult = await cloudinaryService.uploadTemplateMedia(
+      console.log('☁️ Trying Resumable Upload API...');
+      
+      const result = await metaUploadService.uploadMediaForTemplate(
+        'app',  // Use 'app' endpoint
+        accountWithToken.accessToken,
+        file.buffer,
+        file.mimetype,
+        file.originalname
+      );
+      
+      mediaHandle = result.handle;
+      console.log('✅ Resumable upload success!');
+    } catch (resumableError: any) {
+      console.warn('⚠️ Resumable upload failed:', resumableError.message);
+      
+      // ✅ Method 2: Try Simple Upload (phone number)
+      try {
+        console.log('☁️ Falling back to Simple Upload...');
+        
+        const result = await metaUploadService.uploadMediaSimple(
+          account.phoneNumberId,
+          accountWithToken.accessToken,
           file.buffer,
-          file.originalname,
           file.mimetype,
-          organizationId
+          file.originalname
         );
-        cloudinaryUrl = cloudinaryResult.secureUrl;
-        console.log('✅ Also uploaded to Cloudinary for backup');
+        
+        mediaHandle = result.id;
+        console.log('✅ Simple upload success!');
+      } catch (simpleError: any) {
+        console.warn('⚠️ Simple upload failed:', simpleError.message);
+        
+        // ✅ Method 3: Fallback to Cloudinary
+        if (cloudinaryService?.isConfigured()) {
+          console.log('☁️ Falling back to Cloudinary...');
+          
+          const result = await cloudinaryService.uploadTemplateMedia(
+            file.buffer,
+            file.originalname,
+            file.mimetype,
+            organizationId
+          );
+          
+          mediaHandle = result.secureUrl;
+          cloudinaryUrl = result.secureUrl;
+          console.log('✅ Cloudinary upload success!');
+        } else {
+          throw new AppError(
+            'All upload methods failed. Please try again later.',
+            500
+          );
+        }
       }
-    } catch (cloudinaryError) {
-      console.warn('⚠️ Cloudinary backup upload failed, continuing with Meta handle');
     }
+
+    console.log('✅ Final media handle:', {
+      handle: mediaHandle.substring(0, 60) + '...',
+      isUrl: mediaHandle.startsWith('http'),
+      source: cloudinaryUrl ? 'cloudinary' : 'meta',
+    });
 
     return res.json({
       success: true,
       message: 'Media uploaded successfully',
       data: {
-        mediaId: metaUploadResult.handle,  // ✅ Meta handle (required for template)
-        handle: metaUploadResult.handle,
-        url: cloudinaryUrl || '',           // Cloudinary URL (for preview)
+        mediaId: mediaHandle,
+        url: cloudinaryUrl || '',
         filename: file.originalname,
         mimeType: file.mimetype,
         size: file.size,
-        wabaId: account.wabaId,
+        source: cloudinaryUrl ? 'cloudinary' : 'meta',
       },
     });
   } catch (error: any) {
-    console.error('❌ Media upload failed:', {
-      message: error.message,
-      stack: error.stack,
-    });
-
-    if (error.message?.includes('Meta upload')) {
-      return next(new AppError(
-        'Failed to upload media to Meta. Please try again.',
-        500
-      ));
-    }
-
-    next(error);
+    console.error('❌ All upload methods failed:', error.message);
+    next(error instanceof AppError ? error : new AppError(error.message, 500));
   }
 };
