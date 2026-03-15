@@ -154,11 +154,12 @@ export const uploadTemplateMedia = async (
       message: 'Media uploaded successfully',
       data: {
         mediaId: mediaHandle,
+        handle: mediaHandle,  // ✅ Added handle
         url: cloudinaryUrl || '',
         filename: file.originalname,
         mimeType: file.mimetype,
         size: file.size,
-        source: cloudinaryUrl ? 'cloudinary' : 'meta',
+        wabaId: account.wabaId, // ✅ Added wabaId
       },
     });
   } catch (error: any) {

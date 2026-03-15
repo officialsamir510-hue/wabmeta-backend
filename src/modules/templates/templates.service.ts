@@ -42,8 +42,8 @@ const formatTemplate = (template: any): TemplateResponse => ({
   language: template.language,
   category: template.category,
   headerType: template.headerType,
-  headerContent: template.headerContent,
-  headerMediaId: template.headerMediaId || null,  // ✅ ADD THIS
+  headerContent: template.headerContent,  // ✅ This should have Cloudinary URL
+  headerMediaId: template.headerMediaId,  // ✅ This has Meta handle
   bodyText: template.bodyText,
   footerText: template.footerText,
   buttons: (template.buttons as TemplateButton[]) || [],
